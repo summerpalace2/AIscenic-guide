@@ -1,0 +1,51 @@
+spring:
+  main:
+    # 允许我们手写的 Bean 覆盖系统默认的，解决刚才的启动报错
+    allow-bean-definition-overriding: true
+  servlet:
+    multipart:
+      max-file-size: 50MB       # 修复 413 Payload Too Large
+      max-request-size: 50MB
+  ai:
+    # 1. 大模型配置（用于聊天和把文字转成向量）
+    openai:
+      api-key: ${DASHSCOPE_API_KEY} # 阿里的 KEY
+      base-url: https://dashscope.aliyuncs.com/compatible-mode # 核心：指向阿里地址
+      chat:
+        options:
+          model: qwen-plus
+      # ：Embedding 模型配置（存入向量库前必须先转向量）
+      embedding:
+        options:
+          model: text-embedding-v2 # 阿里专门用于向量化的模型名
+
+
+    # 2. Zilliz (Milvus) 向量数据库配置
+    vectorstore:
+      milvus:
+        client:
+          # Serverless 建议用 443（兼容性最好）
+          port: 443
+          secure: true
+        # 向量表的名字
+        collection-name: scenic_guide
+        # 核心参数：必须与阿里 text-embedding-v2 的维度一致
+        embedding-dimension: 1536
+        # 距离度量方式：通常使用 COSINE (余弦相似度)
+        metric-type: COSINE
+
+        #<dependency>
+        #<groupId>org.springframework.ai</groupId>
+        #<artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+        #</dependency>
+        #这里使用了openal的镜像站，OpenAI 制定了一套事实上的“行业标准接口”，这里通过指向阿里的模型以及模型地址进行下载
+
+zilliz:
+  token: ${ZILLIZ_TOKEN}
+  endpoint: ${ZILLIZ_ENDPOINT}
+
+alibabacloud:
+  bailian:
+    # 使用你截图中生成的 sk-a****8c65
+    api-key: ${BAILIAN_API_KEY}
+    rerank-url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
