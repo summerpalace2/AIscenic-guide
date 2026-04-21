@@ -1,7 +1,9 @@
 package com.ai.guide.service;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import io.milvus.client.MilvusServiceClient;
+import io.milvus.param.MetricType;
 import io.milvus.param.R;
 import io.milvus.param.dml.DeleteParam;
 import io.milvus.param.dml.InsertParam;
@@ -21,9 +23,9 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -34,13 +36,9 @@ public class ScenicDataImportService {
     private final EmbeddingModel embeddingModel;
     private final RerankService rerankService;
 
-    //NLP 切分器：800 长度，200 重叠（Overlap），确保上下文不断档
     private final TokenTextSplitter nlpSplitter = new TokenTextSplitter(800, 200, 5, 10000, true);
+    private final Pattern idPattern = Pattern.compile("[A-Z0-9]+-[0-9]+");
 
-
-    /**
-     * 数据导入总函数：所有解析出来的“初步片段”都要经过 nlpSplitter 二次处理
-     */
     public void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
@@ -48,58 +46,65 @@ public class ScenicDataImportService {
 
         log.info("【RAG系统】开始解析文件: {}", fileName);
 
-        // 自动去重
+        // 自动去重旧数据
         milvusClient.delete(DeleteParam.newBuilder()
                 .withCollectionName("scenic_guide")
                 .withExpr("metadata[\"source\"] == \"" + fileName + "\"").build());
 
-        List<String> rawChunks = new ArrayList<>();
+        List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
 
         try (InputStream inputStream = file.getInputStream()) {
             if (extension.equals("xlsx") || extension.equals("xls")) {
-                rawChunks = parseExcelStructured(inputStream);
+                rawDocs = parseExcelStructured(inputStream);
             } else if (extension.equals("docx")) {
-                rawChunks = parseWordStructured(inputStream);
+                rawDocs = parseWordStructured(inputStream);
             } else {
-                rawChunks = parseGeneralWithTika(file);
+                rawDocs = parseGeneralWithTika(file);
             }
         }
 
-        // --- 【核心修正 1：处理二次切分逻辑】 ---
-        List<String> finalChunks = new ArrayList<>();
-        for (String rc : rawChunks) {
+        // ==========================================
+        // 【防遗漏 1：二次切分与前缀继承逻辑】
+        // ==========================================
+        List<Document> finalDocs = new ArrayList<>();
+        for (Document rawDoc : rawDocs) {
+            String rc = rawDoc.getContent();
+
+            // 提取结构化前缀（比如我们在 parseExcel 里加的 【 】）
             String prefix = "";
             if (rc.startsWith("【")) {
-                prefix = rc.substring(0, rc.indexOf("】") + 1) + "\n(续): ";
+                int bracketEnd = rc.indexOf("】");
+                if (bracketEnd != -1) {
+                    prefix = rc.substring(0, bracketEnd + 1) + "\n(续): ";
+                }
             }
 
+            // 使用 nlpSplitter 确保单条数据不会超长
             List<Document> subDocs = nlpSplitter.apply(List.of(new Document(rc)));
             for (int i = 0; i < subDocs.size(); i++) {
                 String subContent = subDocs.get(i).getContent();
-                // 如果是切开的后续块，把前缀补回去
-                finalChunks.add(i > 0 && !prefix.isEmpty() ? prefix + subContent : subContent);
+                // 不是第一段的碎片，强制带上前面提取的【身份前缀】
+                String finalContent = (i > 0 && !prefix.isEmpty()) ? prefix + subContent : subContent;
+
+                Map<String, Object> meta = new HashMap<>(rawDoc.getMetadata());
+                finalDocs.add(new Document(finalContent, meta));
             }
         }
 
-        // --- 【核心修正 2：必须调用插入方法！！】 ---
-        if (!finalChunks.isEmpty()) {
-            insertToMilvus(finalChunks, fileName);
-            log.info("【RAG系统】成功入库 {} 条知识碎片", finalChunks.size());
+        if (!finalDocs.isEmpty()) {
+            insertToMilvus(finalDocs, fileName);
+            log.info("【RAG系统】文件 {} 成功入库，共生成 {} 条语义碎片", fileName, finalDocs.size());
         }
     }
 
-    /**
-     * Excel 结构化解析：将每一行转为“带身份标签”的完整句子
-     */
-    private List<String> parseExcelStructured(InputStream inputStream) throws Exception {
-        List<String> chunks = new ArrayList<>();
+    private List<Document> parseExcelStructured(InputStream inputStream) throws Exception {
+        List<Document> docs = new ArrayList<>();
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
             Row headerRow = sheet.getRow(0);
-            if (headerRow == null) return chunks;
+            if (headerRow == null) return docs;
 
-            // 1. 自动提取所有表头名
             List<String> headers = new ArrayList<>();
             for (Cell cell : headerRow) headers.add(cell.getStringCellValue().trim());
 
@@ -107,100 +112,96 @@ public class ScenicDataImportService {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
 
-                // 2. 【通用化改进】：不再找固定名字，而是默认取前两列作为“身份前缀”
-                // 无论你第一列叫什么，AI 都会把它的值作为上下文
                 StringBuilder identity = new StringBuilder("【");
                 for (int k = 0; k < Math.min(2, headers.size()); k++) {
                     identity.append(headers.get(k)).append(":").append(getCellValue(row, k)).append(" ");
                 }
                 identity.append("】\n");
 
-                // 3. 将整行转化为自描述段落
                 StringBuilder rowContent = new StringBuilder(identity);
                 for (int j = 0; j < headers.size(); j++) {
                     String val = getCellValue(row, j);
                     if (!val.isEmpty()) {
-                        // 格式：[表头]是[内容]；
-                        // 例如：门票价格是：120元；
                         rowContent.append(headers.get(j)).append("是：").append(val).append("；\n");
                     }
                 }
-                chunks.add(rowContent.toString());
+
+                Map<String, Object> metadata = new HashMap<>();
+                Matcher matcher = idPattern.matcher(rowContent.toString());
+                if (matcher.find()) {
+                    metadata.put("scenic_id", matcher.group());
+                }
+                docs.add(new Document(rowContent.toString(), metadata));
             }
         }
-        return chunks;
+        return docs;
     }
 
-    /**
-     * Word 结构化解析：文本采用滑动窗口 Overlap，表格采用 Identity Injection
-     */
-    private List<String> parseWordStructured(InputStream inputStream) throws Exception {
-        List<String> chunks = new ArrayList<>();
+    private List<Document> parseWordStructured(InputStream inputStream) throws Exception {
+        List<Document> docs = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(inputStream)) {
             StringBuilder textBuffer = new StringBuilder();
-            String lastParagraph = ""; // 用于实现手动 Overlap
+            String lastParagraph = "";
 
             for (IBodyElement element : doc.getBodyElements()) {
                 if (element instanceof XWPFParagraph para) {
                     String currentText = para.getText().trim();
                     if (currentText.isEmpty()) continue;
 
-                    // 滑动窗口策略：每积累一定量文本，封装为一个 Chunk
                     textBuffer.append(currentText).append("\n");
                     if (textBuffer.length() > 600) {
-                        chunks.add("【正文片段】\n" + textBuffer.toString());
-                        // 保留当前段落作为下一段的“重叠上下文”
+                        addDocWithExtractedMeta(docs, "【正文片段】\n" + textBuffer.toString());
                         lastParagraph = currentText;
                         textBuffer.setLength(0);
                         textBuffer.append("(接前文：").append(lastParagraph).append("...)\n");
                     }
                 } else if (element instanceof XWPFTable table) {
-                    // 表格处理：将表格行转化为带标题的独立段落
-                    processWordTable(table, chunks);
+                    processWordTable(table, docs);
                 }
             }
-            if (textBuffer.length() > 20) chunks.add("【正文片段】\n" + textBuffer.toString());
+            if (textBuffer.length() > 20) {
+                addDocWithExtractedMeta(docs, "【正文片段】\n" + textBuffer.toString());
+            }
         }
-        return chunks;
+        return docs;
     }
 
-    private void processWordTable(XWPFTable table, List<String> chunks) {
+    private void processWordTable(XWPFTable table, List<Document> docs) {
         List<XWPFTableRow> rows = table.getRows();
         if (rows.size() < 2) return;
-        // 获取列名
         List<String> headers = rows.get(0).getTableCells().stream().map(c -> c.getText().trim()).toList();
         for (int i = 1; i < rows.size(); i++) {
-            StringBuilder sb = new StringBuilder("【表格条目】");
+            StringBuilder sb = new StringBuilder("【表格条目】\n");
             List<XWPFTableCell> cells = rows.get(i).getTableCells();
             for (int j = 0; j < Math.min(headers.size(), cells.size()); j++) {
                 sb.append(headers.get(j)).append(": ").append(cells.get(j).getText().trim()).append("; ");
             }
-            chunks.add(sb.toString());
+            addDocWithExtractedMeta(docs, sb.toString());
         }
     }
 
-    /**
-     * 兜底解析（Tika）：处理 PDF 等其他格式，应用标准的 NLP Overlap 切分
-     */
-    private List<String> parseGeneralWithTika(MultipartFile file) throws Exception {
-        TikaDocumentReader reader = new TikaDocumentReader(new InputStreamResource(file.getInputStream()));
-        List<Document> rawDocs = reader.get();
-        // 使用自带 Overlap 的切分器
-        List<Document> splitDocs = nlpSplitter.apply(rawDocs);
-        return splitDocs.stream().map(Document::getContent).toList();
+    private void addDocWithExtractedMeta(List<Document> docs, String content) {
+        Map<String, Object> metadata = new HashMap<>();
+        Matcher matcher = idPattern.matcher(content);
+        if (matcher.find()) {
+            metadata.put("scenic_id", matcher.group());
+        }
+        docs.add(new Document(content, metadata));
     }
 
-    /**
-     * 最终写入 Zilliz：强制匹配 Schema 字段 id, vector, content, metadata
-     */
-    private void insertToMilvus(List<String> chunks, String sourceName) {
+    private List<Document> parseGeneralWithTika(MultipartFile file) throws Exception {
+        TikaDocumentReader reader = new TikaDocumentReader(new InputStreamResource(file.getInputStream()));
+        return reader.get();
+    }
+
+    private void insertToMilvus(List<Document> docs, String sourceName) {
         List<String> ids = new ArrayList<>();
         List<List<Float>> vectors = new ArrayList<>();
         List<String> contents = new ArrayList<>();
-        List<JSONObject> metadatas = new ArrayList<>(); // 保持 JSONObject
+        List<JSONObject> metadataObjects = new ArrayList<>();
 
-        for (String chunk : chunks) {
-            String cleanText = chunk.replace("\uFFFD", " ").trim();
+        for (Document doc : docs) {
+            String cleanText = (doc.getContent() != null) ? doc.getContent().replace("\uFFFD", " ").trim() : "";
             if (cleanText.length() < 3) continue;
 
             try {
@@ -208,14 +209,19 @@ public class ScenicDataImportService {
                 List<Float> vList = new ArrayList<>();
                 for (float f : v) vList.add(f);
 
+                // 【关键点 2】直接构建 JSONObject，不要转 String
+                JSONObject meta = new JSONObject();
+                if (doc.getMetadata() != null) {
+                    meta.putAll(doc.getMetadata());
+                }
+                meta.put("source", sourceName);
+
                 ids.add(UUID.randomUUID().toString());
                 vectors.add(vList);
                 contents.add(cleanText);
+                metadataObjects.add(meta); // 直接添加对象
 
-                JSONObject meta = new JSONObject();
-                meta.put("source", sourceName);
-                metadatas.add(meta);
-            } catch (Exception e) { log.error("向量化失败: {}", e.getMessage()); }
+            } catch (Exception e) { log.error("处理失败: {}", e.getMessage()); }
         }
 
         if (!ids.isEmpty()) {
@@ -225,89 +231,60 @@ public class ScenicDataImportService {
                             new InsertParam.Field("id", ids),
                             new InsertParam.Field("vector", vectors),
                             new InsertParam.Field("content", contents),
-                            new InsertParam.Field("metadata", metadatas)
+                            new InsertParam.Field("metadata", metadataObjects)
                     )).build());
         }
     }
 
-    /**
-     * ：既能防止 -1 报错，又使用了 DataFormatter 保证数字不乱码
-     */
     private String getCellValue(Row row, int idx) {
-        // 防御：如果列不存在，返回未知
         if (idx < 0) return "未知";
-
         Cell cell = row.getCell(idx);
-        // 防御：如果单元格是空的，返回空字符串
-        if (cell == null) return "";
-
-        // 核心：使用 DataFormatter 处理各种复杂的 Excel 格式
-        return new DataFormatter().formatCellValue(cell).trim();
+        return (cell == null) ? "" : new DataFormatter().formatCellValue(cell).trim();
     }
 
-    /**
-     * 工业级检索：向量语义召回 (广度优先) + 精准编号过滤 + Rerank 重排序 (精度优先)
-     */
     public String queryKnowledge(String queryText) {
-        log.info("【检索阶段】开始处理用户提问: {}", queryText);
+        log.info("【检索阶段】提问: {}", queryText);
 
-        // 1. 生成查询向量
         float[] queryVector = embeddingModel.embed(queryText);
         List<Float> vectorAsList = new ArrayList<>();
         for (float v : queryVector) vectorAsList.add(v);
 
-        // 2. 构造过滤表达式 (精准 ID 匹配)
         String expr = "";
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("[A-Z0-9]+-[0-9]+");
-        java.util.regex.Matcher matcher = pattern.matcher(queryText.toUpperCase());
+        Matcher matcher = idPattern.matcher(queryText.toUpperCase());
         if (matcher.find()) {
             String id = matcher.group();
-            expr = "content like \"%" + id + "%\"";
-            log.info("【精准模式】检测到编号 {}, 已启用硬匹配过滤", id);
+            expr = "metadata[\"scenic_id\"] == \"" + id + "\"";
+            log.info("【极速标签匹配】触发意图识别, ID: {}, Expr: {}", id, expr);
         }
 
-        // 3. 执行 Milvus 初筛 (广撒网策略)
-        // 将 TopK 调大到 30，确保即使有很多相似的“灵山精舍”描述占位，后面的“梵宫/素面”也能进入候选名单
-        SearchParam searchParam = SearchParam.newBuilder()
+        SearchParam.Builder searchBuilder = SearchParam.newBuilder()
                 .withCollectionName("scenic_guide")
-                .withMetricType(io.milvus.param.MetricType.COSINE)
+                .withMetricType(MetricType.COSINE)
                 .withOutFields(List.of("content"))
-                .withTopK(30) // 初筛 30 条数据
+                .withTopK(30)
                 .withVectors(List.of(vectorAsList))
-                .withVectorFieldName("vector")
-                .withExpr(expr)
-                .build();
+                .withVectorFieldName("vector");
 
-        R<io.milvus.grpc.SearchResults> response = milvusClient.search(searchParam);
+        if (!expr.isEmpty()) searchBuilder.withExpr(expr);
 
-        if (response.getStatus() != 0) {
-            log.error("【检索异常】Milvus 检索失败: {}", response.getMessage());
-            return "";
+        R<io.milvus.grpc.SearchResults> response = milvusClient.search(searchBuilder.build());
+
+        if (response.getStatus() != 0 || response.getData() == null || response.getData().getResults().getFieldsDataCount() == 0) {
+            log.warn("【检索无果】");
+            return "知识库暂无相关数据。";
         }
 
-        // 4. 解析检索到的候选文档
         SearchResultsWrapper wrapper = new SearchResultsWrapper(response.getData().getResults());
-        List<?> fieldData = wrapper.getFieldData("content", 0);
-
-        if (fieldData == null || fieldData.isEmpty()) {
-            log.warn("【检索无果】Milvus 未能找到任何匹配片段");
+        List<String> candidateDocs = new ArrayList<>();
+        try {
+            List<?> fieldData = wrapper.getFieldData("content", 0);
+            for (Object data : fieldData) candidateDocs.add(data.toString());
+        } catch (Exception e) {
+            log.error("字段提取失败: {}", e.getMessage());
             return "";
         }
 
-        List<String> candidateDocs = new ArrayList<>();
-        for (Object data : fieldData) {
-            candidateDocs.add(data.toString());
-        }
-        log.info("【检索反馈】Milvus 初筛完成，已获取 {} 条候选知识片段", candidateDocs.size());
-
-        // 5. 执行 Rerank 重排序 (精挑选策略)
-        // 利用重排模型从 30 条中选出最相关的 10 条。
-        // 调大返回给 AI 的数量至 10，能让 AI 拥有“全景视角”，看到所有餐饮选项。
         List<String> finalDocs = rerankService.rerank(queryText, candidateDocs, 10);
-
-        log.info("【检索反馈】重排序完成，最终选取 {} 条高质量背景知识提供给 AI", finalDocs.size());
-
-        // 使用自定义分割线连接，方便 AI 区分不同的知识块
         return String.join("\n---\n", finalDocs);
     }
 }

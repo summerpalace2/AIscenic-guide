@@ -1,7 +1,10 @@
 package com.ai.guide.service;
 
 import io.milvus.client.MilvusServiceClient;
+import io.milvus.grpc.ShowCollectionsResponse;
 import io.milvus.param.ConnectParam;
+import io.milvus.param.R;
+import io.milvus.param.collection.ShowCollectionsParam;
 import org.springframework.beans.factory.annotation.Value; // 导入这个
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +28,16 @@ public class MilvusConfig {
                 .withToken(token)
                 .build();
 
-        return new MilvusServiceClient(connectParam);
+        MilvusServiceClient client = new MilvusServiceClient(connectParam);
+
+        // 诊断日志
+        try {
+            R<ShowCollectionsResponse> res = client.showCollections(ShowCollectionsParam.newBuilder().build());
+            System.out.println("！！！[连接验证]：当前连接能看到的表：" + res.getData().getCollectionNamesList());
+        } catch (Exception e) {
+            System.err.println("！！！[连接验证]：获取表失败");
+        }
+
+        return client;
     }
 }
