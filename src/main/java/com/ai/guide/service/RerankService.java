@@ -12,6 +12,14 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
 
+/**
+ * 阿里百炼 gte-rerank-v2 重排序服务
+ *
+ * 从 Milvus 向量检索返回的 TOP30 候选中，调用阿里百炼重排序接口，
+ * 根据查询相关性精选 TOP10 最相关文档。
+ *
+ * 调用链：用户提问 → Milvus 检索 TOP30 → gte-rerank-v2 → 精选 TOP10
+ */
 @Slf4j
 @Service
 public class RerankService {
@@ -24,6 +32,7 @@ public class RerankService {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
+    /** 调用阿里百炼重排序 API，将候选文档按相关性重新排序并返回 TOP N */
     public List<String> rerank(String query, List<String> documents, int topN) {
         if (documents == null || documents.isEmpty()) {
             log.warn("【Rerank 调试】候选文档为空，跳过重排");

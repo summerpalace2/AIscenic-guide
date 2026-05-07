@@ -1,11 +1,11 @@
-package com.ai.guide.service;
+package com.ai.guide.config;
 
 import io.milvus.client.MilvusServiceClient;
 import io.milvus.grpc.ShowCollectionsResponse;
 import io.milvus.param.ConnectParam;
 import io.milvus.param.R;
 import io.milvus.param.collection.ShowCollectionsParam;
-import org.springframework.beans.factory.annotation.Value; // 导入这个
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;

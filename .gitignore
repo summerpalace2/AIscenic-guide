@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 环境变量 ###
+.env
+.env.local
+.env.production

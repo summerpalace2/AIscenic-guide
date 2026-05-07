@@ -6,19 +6,29 @@ spring:
     multipart:
       max-file-size: 50MB       # 修复 413 Payload Too Large
       max-request-size: 50MB
+  data:
+    redis:
+      # Aiven Cloud 生产环境使用 rediss:// URL（自动启用 SSL）
+      url: ${REDIS_URL:}
+      # 以下为本地开发默认值（REDIS_URL 为空时生效）
+      host: "${REDIS_HOST:localhost}"
+      port: "${REDIS_PORT:6379}"
+      password: "${REDIS_PASSWORD:}"
+      database: "${REDIS_DATABASE:0}"
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
   ai:
-    # 1. 大模型配置（用于聊天和把文字转成向量）
+    # 1. 大模型配置 —— DeepSeek（速度快、成本低）
     openai:
-      api-key: ${DASHSCOPE_API_KEY} # 阿里的 KEY
-      base-url: https://dashscope.aliyuncs.com/compatible-mode # 核心：指向阿里地址
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: https://api.deepseek.com
       chat:
         options:
-          model: qwen-plus
-      # ：Embedding 模型配置（存入向量库前必须先转向量）
-      embedding:
-        options:
-          model: text-embedding-v2 # 阿里专门用于向量化的模型名
-
+          model: deepseek-chat
 
     # 2. Zilliz (Milvus) 向量数据库配置
     vectorstore:
@@ -45,7 +55,8 @@ zilliz:
   endpoint: ${ZILLIZ_ENDPOINT}
 
 alibabacloud:
+  dashscope:
+    api-key: ${DASHSCOPE_API_KEY}
   bailian:
-    # 使用你截图中生成的 sk-a****8c65
     api-key: ${BAILIAN_API_KEY}
     rerank-url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank

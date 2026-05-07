@@ -27,6 +27,32 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * ============================================
+ * RAG 知识库全流程服务
+ * ============================================
+ *
+ * 入库流程：
+ *
+ * 上传文件
+ *   → 1. 文档解析：Excel 结构化解析 / Word 结构化解析 / Tika 通用解析
+ *   → 2. 去重：按 source 字段删除 Milvus 中旧数据
+ *   → 3. TokenTextSplitter 切割：每段 800 tokens，重叠 200 tokens
+ *   → 4. 前缀继承：切割后的碎片继承原始文档的【身份前缀】，防止语义丢失
+ *   → 5. text-embedding-v2 向量化：1536 维向量
+ *   → 6. Milvus 入库：写入 scenic_guide 集合
+ *
+ *
+ * 检索流程：
+ *
+ * 用户提问
+ *   → 1. 向量化查询文本
+ *   → 2. 标签过滤：若问题含 scenic_id，追加 metadata 过滤表达式
+ *   → 3. Milvus 向量检索（COSINE 相似度，TOP30）
+ *   → 4. gte-rerank-v2 重排序（TOP30 → TOP10）
+ *   → 5. 返回拼接后的 TOP10 文本
+ *
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -39,6 +65,7 @@ public class ScenicDataImportService {
     private final TokenTextSplitter nlpSplitter = new TokenTextSplitter(800, 200, 5, 10000, true);
     private final Pattern idPattern = Pattern.compile("[A-Z0-9]+-[0-9]+");
 
+    /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Milvus 入库 */
     public void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
@@ -46,7 +73,7 @@ public class ScenicDataImportService {
 
         log.info("【RAG系统】开始解析文件: {}", fileName);
 
-        // 自动去重旧数据
+        // [步骤1] 自动去重旧数据：删除 Milvus 中同一文件来源的旧向量
         milvusClient.delete(DeleteParam.newBuilder()
                 .withCollectionName("scenic_guide")
                 .withExpr("metadata[\"source\"] == \"" + fileName + "\"").build());
@@ -54,24 +81,28 @@ public class ScenicDataImportService {
         List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
 
+        // [步骤2] 文档解析：根据文件类型选择对应解析器
         try (InputStream inputStream = file.getInputStream()) {
             if (extension.equals("xlsx") || extension.equals("xls")) {
-                rawDocs = parseExcelStructured(inputStream);
+                rawDocs = parseExcelStructured(inputStream);      // Excel: 按行解析，表头作为字段名
             } else if (extension.equals("docx")) {
-                rawDocs = parseWordStructured(inputStream);
+                rawDocs = parseWordStructured(inputStream);       // Word: 段落+表格混合解析
             } else {
-                rawDocs = parseGeneralWithTika(file);
+                rawDocs = parseGeneralWithTika(file);             // 其他格式: Apache Tika 通用解析
             }
         }
 
         // ==========================================
-        // 【防遗漏 1：二次切分与前缀继承逻辑】
+        // 【防遗漏：二次切分与前缀继承逻辑】
         // ==========================================
+        // 原因：原始文档可能包含超长段落，必须二次切割。
+        // 但切割会导致碎片丢失【身份前缀】（如"景点名称:灵山大佛"），
+        // 因此对每个非首段碎片强制补上前缀，确保检索时不会因为缺前缀而漏掉。
         List<Document> finalDocs = new ArrayList<>();
         for (Document rawDoc : rawDocs) {
             String rc = rawDoc.getContent();
 
-            // 提取结构化前缀（比如我们在 parseExcel 里加的 【 】）
+            // 提取结构化前缀（在 parseExcel/parseWord 中生成的【xxx】标记）
             String prefix = "";
             if (rc.startsWith("【")) {
                 int bracketEnd = rc.indexOf("】");
@@ -80,11 +111,11 @@ public class ScenicDataImportService {
                 }
             }
 
-            // 使用 nlpSplitter 确保单条数据不会超长
+            // [步骤3] 使用 nlpSplitter 进行二次切割，确保单条数据不超 token 上限
             List<Document> subDocs = nlpSplitter.apply(List.of(new Document(rc)));
             for (int i = 0; i < subDocs.size(); i++) {
                 String subContent = subDocs.get(i).getContent();
-                // 不是第一段的碎片，强制带上前面提取的【身份前缀】
+                // [前缀继承] 非首段碎片强制补上【身份前缀】，防止语义断裂
                 String finalContent = (i > 0 && !prefix.isEmpty()) ? prefix + subContent : subContent;
 
                 Map<String, Object> meta = new HashMap<>(rawDoc.getMetadata());
@@ -92,12 +123,14 @@ public class ScenicDataImportService {
             }
         }
 
+        // [步骤4] 向量化 + Milvus 入库
         if (!finalDocs.isEmpty()) {
             insertToMilvus(finalDocs, fileName);
             log.info("【RAG系统】文件 {} 成功入库，共生成 {} 条语义碎片", fileName, finalDocs.size());
         }
     }
 
+    /** Excel 结构化解析：表头作为字段名，每行生成一个文档（带【】前缀） */
     private List<Document> parseExcelStructured(InputStream inputStream) throws Exception {
         List<Document> docs = new ArrayList<>();
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
@@ -137,6 +170,7 @@ public class ScenicDataImportService {
         return docs;
     }
 
+    /** Word 结构化解析：段落按 600 字符分段，表格按行提取，并添加上下文衔接 */
     private List<Document> parseWordStructured(InputStream inputStream) throws Exception {
         List<Document> docs = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(inputStream)) {
@@ -166,6 +200,7 @@ public class ScenicDataImportService {
         return docs;
     }
 
+    /** Word 表格处理：表头作为字段名，每行生成一个【表格条目】文档 */
     private void processWordTable(XWPFTable table, List<Document> docs) {
         List<XWPFTableRow> rows = table.getRows();
         if (rows.size() < 2) return;
@@ -180,6 +215,7 @@ public class ScenicDataImportService {
         }
     }
 
+    /** 添加文档时自动提取 scenic_id 作为元数据 */
     private void addDocWithExtractedMeta(List<Document> docs, String content) {
         Map<String, Object> metadata = new HashMap<>();
         Matcher matcher = idPattern.matcher(content);
@@ -189,11 +225,13 @@ public class ScenicDataImportService {
         docs.add(new Document(content, metadata));
     }
 
+    /** Tika 通用文档解析（PDF/Markdown/TXT 等非结构化格式） */
     private List<Document> parseGeneralWithTika(MultipartFile file) throws Exception {
         TikaDocumentReader reader = new TikaDocumentReader(new InputStreamResource(file.getInputStream()));
         return reader.get();
     }
 
+    /** 批量向量化并写入 Milvus（一条文档 → 一个 1536 维向量） */
     private void insertToMilvus(List<Document> docs, String sourceName) {
         List<String> ids = new ArrayList<>();
         List<List<Float>> vectors = new ArrayList<>();
@@ -236,19 +274,34 @@ public class ScenicDataImportService {
         }
     }
 
+    /** 从 Excel 单元格安全取值 */
     private String getCellValue(Row row, int idx) {
         if (idx < 0) return "未知";
         Cell cell = row.getCell(idx);
         return (cell == null) ? "" : new DataFormatter().formatCellValue(cell).trim();
     }
 
+    /**
+     * 知识库检索主方法
+     * <p>
+     * <b>检索步骤：</b>
+     * <ol>
+     *   <li>向量化查询文本（text-embedding-v2 → 1536 维）</li>
+     *   <li>标签过滤：若问题含 scenic_id 格式，追加 Milvus 过滤表达式</li>
+     *   <li>Milvus COSINE 检索 TOP30</li>
+     *   <li>gte-rerank-v2 重排序 TOP30 → TOP10</li>
+     *   <li>返回拼接后的知识文本</li>
+     * </ol>
+     */
     public String queryKnowledge(String queryText) {
         log.info("【检索阶段】提问: {}", queryText);
 
+        // [步骤1] 向量化查询文本
         float[] queryVector = embeddingModel.embed(queryText);
         List<Float> vectorAsList = new ArrayList<>();
         for (float v : queryVector) vectorAsList.add(v);
 
+        // [步骤2] 标签过滤：检测问题中是否包含 scenic_id 模式，有则精确过滤
         String expr = "";
         Matcher matcher = idPattern.matcher(queryText.toUpperCase());
         if (matcher.find()) {
@@ -257,6 +310,7 @@ public class ScenicDataImportService {
             log.info("【极速标签匹配】触发意图识别, ID: {}, Expr: {}", id, expr);
         }
 
+        // [步骤3] Milvus 向量检索：COSINE 相似度，TOP30
         SearchParam.Builder searchBuilder = SearchParam.newBuilder()
                 .withCollectionName("scenic_guide")
                 .withMetricType(MetricType.COSINE)
@@ -265,7 +319,7 @@ public class ScenicDataImportService {
                 .withVectors(List.of(vectorAsList))
                 .withVectorFieldName("vector");
 
-        if (!expr.isEmpty()) searchBuilder.withExpr(expr);
+        if (!expr.isEmpty()) searchBuilder.withExpr(expr);  // 有标签过滤则追加过滤条件
 
         R<io.milvus.grpc.SearchResults> response = milvusClient.search(searchBuilder.build());
 
@@ -284,6 +338,7 @@ public class ScenicDataImportService {
             return "";
         }
 
+        // [步骤4] 重排序：TOP30 候选 → gte-rerank-v2 → 精选 TOP10
         List<String> finalDocs = rerankService.rerank(queryText, candidateDocs, 10);
         return String.join("\n---\n", finalDocs);
     }
