@@ -8,14 +8,14 @@ spring:
       max-request-size: 50MB
   data:
     redis:
-      # Aiven Cloud 生产环境使用 rediss:// URL（自动启用 SSL）
-      url: ${REDIS_URL:}
-      # 以下为本地开发默认值（REDIS_URL 为空时生效）
+      # 本地默认 localhost，服务器通过环境变量覆盖
       host: "${REDIS_HOST:localhost}"
       port: "${REDIS_PORT:6379}"
       password: "${REDIS_PASSWORD:}"
       database: "${REDIS_DATABASE:0}"
       timeout: 5000ms
+      ssl:
+        enabled: "${REDIS_SSL:false}"
       lettuce:
         pool:
           max-active: 8
