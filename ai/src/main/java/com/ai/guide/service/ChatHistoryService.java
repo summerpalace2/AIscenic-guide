@@ -46,7 +46,7 @@ public class ChatHistoryService {
 
     /**
      * 获取所有会话列表，按最近活跃时间倒序
-     * <p>
+     *
      * 从 ZSet 中获取所有 sessionId，再逐个组装 ConversationVO
      * （标题取第一条用户消息的前 30 字）
      */
@@ -101,11 +101,12 @@ public class ChatHistoryService {
     }
 
     /**
-     * 删除指定会话及其所有消息
+     * 删除指定会话及其所有消息和槽位数据
      */
     public void deleteSession(String sessionId) {
         try {
             redisTemplate.delete(messageKey(sessionId));
+            redisTemplate.delete("chat:session:" + sessionId + ":slots");  // 同步清除槽位
             redisTemplate.opsForZSet().remove(SESSIONS_KEY, sessionId);
             System.out.println("[历史] 已删除会话 " + sessionId);
         } catch (Exception e) {

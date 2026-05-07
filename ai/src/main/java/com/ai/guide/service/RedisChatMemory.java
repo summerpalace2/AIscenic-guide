@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * ChatMemory 接口的 Redis 实现
@@ -31,6 +33,13 @@ public class RedisChatMemory implements ChatMemory {
     private static final String MESSAGE_KEY_SUFFIX = ":messages";
     private static final String SESSIONS_KEY = "chat:sessions";
 
+    // 异步写入线程池 —— Redis 写入不阻塞对话响应
+    private static final ExecutorService ASYNC_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "redis-async-writer");
+        t.setDaemon(true);
+        return t;
+    });
+
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
 
@@ -44,26 +53,27 @@ public class RedisChatMemory implements ChatMemory {
         return MESSAGE_KEY_PREFIX + conversationId + MESSAGE_KEY_SUFFIX;
     }
 
-    /**
-     * 保存消息到 Redis
-     * 流程：序列化消息为 JSON → RPUSH 入 List → ZADD 更新会话时间索引
-     */
+    /** 同步保存（阻塞当前线程，等待 Redis 响应） */
     @Override
     public void add(String conversationId, List<Message> messages) {
         if (messages == null || messages.isEmpty()) return;
 
         String key = messageKey(conversationId);
         try {
-            // 序列化每条消息 → RPUSH 追加到 List 尾部（保持时间顺序）
             for (Message msg : messages) {
                 String json = serializeMessage(msg);
                 redisTemplate.opsForList().rightPush(key, json);
             }
-            // ZADD 更新会话时间索引（按最后活跃时间排序）
             redisTemplate.opsForZSet().add(SESSIONS_KEY, conversationId, Instant.now().toEpochMilli());
         } catch (Exception e) {
-            System.err.println("[RedisChatMemory] 写入失败（Redis 不可用？）: " + e.getMessage());
+            System.err.println("[RedisChatMemory] 写入失败: " + e.getMessage());
         }
+    }
+
+    /** 异步保存 —— 不阻塞对话响应，后台写入 Redis */
+    public void addAsync(String conversationId, List<Message> messages) {
+        if (messages == null || messages.isEmpty()) return;
+        ASYNC_EXECUTOR.submit(() -> add(conversationId, messages));
     }
 
     /**

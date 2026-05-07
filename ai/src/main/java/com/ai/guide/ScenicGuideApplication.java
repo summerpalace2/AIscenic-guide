@@ -23,10 +23,11 @@ public class ScenicGuideApplication {
     }
 
     /**
-     * 加载项目根目录的 .env 文件，将 KEY=VALUE 注入到系统属性中
+     * 加载 .env 文件（优先 ai/.env，兼容根目录 .env）
      */
     private static void loadDotEnv() {
-        Path envPath = Paths.get(".env");
+        Path envPath = Paths.get("ai/.env");
+        if (!Files.exists(envPath)) envPath = Paths.get(".env");
         if (!Files.exists(envPath)) {
             System.out.println("[提示] 未找到 .env 文件，跳过环境变量注入");
             return;

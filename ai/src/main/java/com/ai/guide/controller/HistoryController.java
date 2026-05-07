@@ -48,7 +48,7 @@ public class HistoryController {
      * 前端用于切换会话时加载对话记录
      */
     @GetMapping("/messages")
-    public Result<List<ChatHistoryVO>> getMessages(@RequestParam String sessionId) {
+    public Result<List<ChatHistoryVO>> getMessages(@RequestParam("sessionId") String sessionId) {
         System.out.println("[历史API] 收到请求：查询会话 " + sessionId + " 的消息");
         List<ChatHistoryVO> messages = chatHistoryService.getMessages(sessionId);
         System.out.println("[历史API] 返回 " + messages.size() + " 条消息");

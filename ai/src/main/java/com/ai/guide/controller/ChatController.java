@@ -4,6 +4,7 @@ import com.ai.guide.model.Result;
 import com.ai.guide.model.ScenicResponse;
 import com.ai.guide.service.RedisChatMemory;
 import com.ai.guide.service.ScenicDataImportService;
+import com.ai.guide.service.SlotTrackingService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -25,7 +26,7 @@ import java.util.List;
  *返回格式说明
  *   /chat —— 返回纯文本 Markdown，前端直接 innerHTML 渲染
  *   /chat/stream —— SSE 流式推送（text/event-stream），非 JSON，不能用 Result 包装
- *   /chat/structured —— 返回 Result&lt;ScenicResponse&gt;，标准 JSON
+ *   /chat/structured —— 返回 Result;ScenicResponse;，标准 JSON
  *
  *
  * /chat 和 /chat/stream 不用 Result 包装的原因：
@@ -39,6 +40,7 @@ public class ChatController {
 
     private final ChatClient chatClient;
     private final RedisChatMemory redisChatMemory;
+    private final SlotTrackingService slotTrackingService;
 
     @Autowired
     private ScenicDataImportService scenicDataImportService;
@@ -50,10 +52,16 @@ public class ChatController {
        # 行为准则
        1. **承接上下文**：你拥有对话记忆，请像老朋友聊天一样回应用户。如果用户追问细节，请结合之前的回答进行深度扩充。
        2. **关联性**：只有当用户提问涉及具体景点、餐厅或政策时，才从【背景知识】中提取信息。
-       3. **不要堆砌**：如果背景知识很多，优先回答用户问的那部分，其他的可以简单提示。
+       3. **不要堆砌**：如果背景知识很多，<b>只回答用户明确问到的那一个或几个项目</b>，其他的绝口不提。
        4. **按需回答**：如果用户只是打招呼，你也只需礼貌回应并询问需求,不要额外讲其他无关的内容。
-       5.**回答自然**,比如好的，我们来介绍一些景点，结尾时可以增加一点猜你想问，猜你想问必须空出一行，在回答的开头要承接用户提出的问题顺势做出答复
+        5.**回答自然**,比如好的，我们来介绍一些景点，结尾时可以增加一点猜你想问，猜你想问必须空出一行，在回答的开头要承接用户提出的问题顺势做出答复
        
+        # 槽位感知（用户意图追踪）
+        如果提示词中包含【已知用户偏好】，这是最重要的上下文信息。
+        - <b>每当有偏好时，你必须以偏好为第一优先级来组织回答</b>。即使用户只是说"推荐一下""有什么好玩的""告诉我一些信息"这类模糊请求，也要直接按偏好推荐，不要反问或泛泛而谈。
+        - 例如用户偏好"美食+半天+一个人"，即使他问"有什么推荐的"，你也要直接推美食和半天路线，不要说"您想了解哪方面"。
+        - 回答开头要自然地提及偏好，如"根据您的偏好，我为您推荐……"，让用户感到被理解。
+        - 如果某些关键信息缺失（如可用时间、同行人群），而你准备推荐路线或需要时间安排的内容，请<b>先主动追问</b>再推荐，不要盲目假设。
       
        # 强制排版规则（卡片内部优化）：
         1. 每一个项目名必须是：### 数字. 名称
@@ -87,15 +95,17 @@ public class ChatController {
       """;
 
     /** 构造 ChatClient 和注入 Redis 记忆组件 */
-    public ChatController(ChatClient.Builder builder, RedisChatMemory redisChatMemory) {
+    public ChatController(ChatClient.Builder builder, RedisChatMemory redisChatMemory,
+                          SlotTrackingService slotTrackingService) {
         this.redisChatMemory = redisChatMemory;
+        this.slotTrackingService = slotTrackingService;
         this.chatClient = builder.build();
     }
 
     /** 将知识库上下文拼入用户消息，组装成完整提示词 */
     private String buildUserPrompt(String context, String message) {
         return String.format("""
-            请基于提供的背景知识，详细回答用户问题。
+            请基于提供的背景知识，<b>只回答用户问到的问题</b>，不要罗列无关内容。
             
             【背景知识】：
             %s
@@ -103,7 +113,7 @@ public class ChatController {
             【用户提问】：
             %s
             
-            要求：条理清晰，使用 Markdown 列表和加粗，确保回答内容全面，不要遗漏任何细节。
+            要求：条理清晰，使用 Markdown 列表和加粗。如果用户只问了一个具体问题，只答那个，不要展开其他项目。
             """, (context == null || context.isEmpty()) ? "无匹配知识" : context, message);
     }
 
@@ -117,34 +127,37 @@ public class ChatController {
     }
 
     /**
-     * 构建完整的 messages 列表：系统提示词 + 历史对话 + 当前用户消息
-     * <p>
-     * <b>顺序逻辑：</b>先读历史 → 再保存本轮，避免本轮 user 消息重复出现在上下文中
-     * （如果在读历史之前就保存了本轮 user，那么紧接着 get() 时会把这个 user 也读出来，造成重复）
+     * 构建完整的 messages 列表：系统提示词（含槽位）+ 历史对话 + 当前用户消息
+     *
+     * 顺序逻辑：先读历史 → 再保存本轮，避免本轮 user 消息重复出现在上下文中
      */
     private List<Message> buildMessages(String context, String message, String sessionId) {
         List<Message> allMessages = new ArrayList<>();
-        // [步骤1] 系统提示词：定义导游角色和行为规则
-        allMessages.add(new SystemMessage(SYSTEM_PROMPT));
-        // [步骤2] 加载最近 20 条历史（此时还不包含本轮消息，避免重复）
+        // [步骤1] 系统提示词 + 槽位快照（告知 AI 已知用户偏好）
+        String systemWithSlots = SYSTEM_PROMPT + slotTrackingService.toPromptContext(sessionId);
+        allMessages.add(new SystemMessage(systemWithSlots));
+        // [步骤2] 加载最近 20 条历史（此时还不包含本轮消息）
         allMessages.addAll(redisChatMemory.get(sessionId, 20));
-        // [步骤3] 当前用户消息（带知识库上下文，包装在 user prompt 模板中）
+        // [步骤3] 当前用户消息（带知识库上下文）
         allMessages.add(new UserMessage(buildUserPrompt(context, message)));
         return allMessages;
     }
 
-    /** 普通对话接口：问候判定 → 检索 → 构建上下文 → 调用大模型 → 保存历史 */
+    /** 普通对话接口：问候判定 → 槽位提取 → 检索 → 构建上下文 → 调用大模型 → 保存历史 */
     @GetMapping("/chat")
     public String chat(@RequestParam(value = "message", defaultValue = "你好") String message,
                        @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
+        // 0. 从用户消息中提取槽位（兴趣/时间/人群等），存入 Redis
+        slotTrackingService.extractAndSave(sessionId, message);
+
         String context = isGreeting(message) ? "" : scenicDataImportService.queryKnowledge(message);
         debugLogContext(message, context);
 
         // 1. 先构建 messages（此时历史中不含本轮 user）
         List<Message> allMessages = buildMessages(context, message, sessionId);
 
-        // 2. 再保存用户消息（存储原始问题，不含知识库上下文）
-        redisChatMemory.add(sessionId, List.of(new UserMessage(message)));
+        // 2. 异步保存用户消息（不阻塞响应）
+        redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
 
         // 3. 调用 AI
         String reply = chatClient.prompt()
@@ -152,8 +165,8 @@ public class ChatController {
                 .call()
                 .content();
 
-        // 4. 保存助手回复
-        redisChatMemory.add(sessionId, List.of(new AssistantMessage(reply)));
+        // 4. 异步保存助手回复
+        redisChatMemory.addAsync(sessionId, List.of(new AssistantMessage(reply)));
         System.out.println("[历史] 已保存对话 session=" + sessionId + " user=" + message.substring(0, Math.min(20, message.length())) + " reply=" + reply.substring(0, Math.min(30, reply.length())));
 
         return reply;
@@ -165,12 +178,14 @@ public class ChatController {
             @RequestParam(value = "message", defaultValue = "你好") String message,
             @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
 
+        slotTrackingService.extractAndSave(sessionId, message);
+
         String context = isGreeting(message) ? "" : scenicDataImportService.queryKnowledge(message);
         debugLogContext(message, context);
 
-        // 1. 构建 messages + 保存用户消息（同 chat 逻辑）
+        // 1. 构建 messages + 异步保存用户消息
         List<Message> allMessages = buildMessages(context, message, sessionId);
-        redisChatMemory.add(sessionId, List.of(new UserMessage(message)));
+        redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
 
         // 2. 用于累积完整回复文本的容器
         StringBuilder fullReply = new StringBuilder();
@@ -185,23 +200,24 @@ public class ChatController {
                     return ServerSentEvent.builder(content).build();
                 })
                 .doOnComplete(() -> {
-                    // 流结束后保存完整回复
                     String reply = fullReply.toString();
                     if (!reply.isEmpty()) {
-                        redisChatMemory.add(sessionId, List.of(new AssistantMessage(reply)));
+                        redisChatMemory.addAsync(sessionId, List.of(new AssistantMessage(reply)));
                         System.out.println("[历史] 已保存流式对话 session=" + sessionId + " reply_len=" + reply.length());
                     }
                 })
                 .doOnError(e -> System.err.println("[流式] 异常: " + e.getMessage()));
     }
 
-    /** 结构化对话接口：返回 Result&lt;ScenicResponse&gt;，同时记录对话历史 */
+    /** 结构化对话接口：返回 Result;ScenicResponse;，同时记录对话历史 */
     @GetMapping("/chat/structured")
-    public Result<ScenicResponse> chatStructured(@RequestParam String message,
+    public Result<ScenicResponse> chatStructured(@RequestParam("message") String message,
                                          @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
+        slotTrackingService.extractAndSave(sessionId, message);
+
         String context = scenicDataImportService.queryKnowledge(message);
         List<Message> allMessages = buildMessages(context, message, sessionId);
-        redisChatMemory.add(sessionId, List.of(new UserMessage(message)));
+        redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
 
         ScenicResponse response = chatClient.prompt()
                 .messages(allMessages)
@@ -209,7 +225,7 @@ public class ChatController {
                 .entity(ScenicResponse.class);
 
         if (response != null) {
-            redisChatMemory.add(sessionId, List.of(new AssistantMessage(response.toString())));
+            redisChatMemory.addAsync(sessionId, List.of(new AssistantMessage(response.toString())));
             return Result.success("查询成功", response);
         }
         return Result.error(500, "AI 未返回有效数据");
