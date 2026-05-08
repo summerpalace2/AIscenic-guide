@@ -36,3 +36,24 @@ build/
 .env
 .env.local
 .env.production
+
+
+### opencode ###
+AGENTS.md
+.sisyphus/
+
+
+### Python ###
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+venv/
+.venv/
+*.egg
+
+### Node.js ###
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

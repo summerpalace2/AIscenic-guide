@@ -13,6 +13,7 @@
 
     <modules>
         <module>ai</module>
+        <module>backend</module>
     </modules>
 
     <properties>
