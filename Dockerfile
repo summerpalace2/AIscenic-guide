@@ -1,11 +1,11 @@
 # 多模块 Maven 构建 + 运行
 FROM maven:3.9-eclipse-temurin-17 AS build
 WORKDIR /app
-COPY pom.xml mvnw mvnw.cmd ./
-COPY .mvn .mvn
+COPY pom.xml ./
 COPY ai/pom.xml ai/pom.xml
 COPY ai/src ai/src
-RUN mvnw clean package -pl ai -DskipTests
+# 用镜像自带的 mvn，不依赖 mvnw（wrapper jar 被 gitignore 了）
+RUN mvn clean package -pl ai -DskipTests
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
