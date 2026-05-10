@@ -31,6 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+.devcontainer/
+代码结构说明.md
 
 ### 环境变量 ###
 .env
