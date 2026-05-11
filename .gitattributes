@@ -1,2 +1,30 @@
-/mvnw text eol=lf
-*.cmd text eol=crlf
+* text=auto eol=lf
+
+# 明确文本文件类型（避免误判）
+*.java text
+*.xml text
+*.yml text
+*.yaml text
+*.json text
+*.md text
+*.properties text
+*.sh text eol=lf
+*.py text
+*.js text
+*.ts text
+*.html text
+*.css text
+*.scss text
+*.txt text
+*.log text
+
+# 二进制文件禁止转换
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.jar binary
+*.class binary
+*.exe binary
