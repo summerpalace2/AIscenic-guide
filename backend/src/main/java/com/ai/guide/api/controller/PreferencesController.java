@@ -1,6 +1,6 @@
 package com.ai.guide.api.controller;
 
-import com.ai.guide.model.Result;
+import com.ai.guide.common.model.Result;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 

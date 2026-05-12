@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧景区小导 - 视觉重塑版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <style>
+        /* 1. 基础 UI 样式 */
+        body { background-color: #f1f5f9; }
+        .glass { background: #ffffff; border: 1px solid #e2e8f0; }
+        
+        .chat-bubble-ai { 
+            border-radius: 4px 20px 20px 20px; 
+            border: 1px solid #e5e7eb; 
+            background: #ffffff;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+            padding: 1.5rem !important;
+        }
+        .chat-bubble-user { 
+            border-radius: 20px 4px 20px 20px; 
+            background: #4f46e5;
+            color: #ffffff;
+            padding: 1rem 1.5rem;
+        }
+        
+        /* 2. 核心：重塑 Markdown 视觉体系 */
+        .markdown-body { 
+            line-height: 1.8; 
+            color: #1f2937; 
+            font-size: 15px; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* 强制段落间距 */
+        .markdown-body p { margin-bottom: 1rem !important; display: block; }
+
+        /* 【核心修复】：大号标题卡片 */
+        .markdown-body h3 { 
+            display: block !important;
+            font-size: 1.3rem !important; /* 字体明显放大 */
+            font-weight: 800 !important;
+            color: #1e1b4b !important;
+            background: #e0e7ff !important; /* 浅紫色背景 */
+            padding: 10px 16px !important;
+            margin-top: 2.5rem !important; /* 上方拉开极大距离 */
+            margin-bottom: 0 !important; /* 下方紧贴内容 */
+            border-left: 6px solid #4338ca !important;
+            border-radius: 8px 8px 0 0 !important;
+        }
+        /* 第一个标题不留巨大顶部边距 */
+        .markdown-body h3:first-child { margin-top: 0 !important; }
+
+        /* 列表项内容区：包裹在标题下方形成卡片 */
+        .markdown-body ul { 
+            list-style-type: none !important; 
+            padding: 12px 16px !important; 
+            margin: 0 0 2rem 0 !important; 
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-top: none;
+            border-radius: 0 0 8px 8px; /* 只有下圆角 */
+        }
+        
+        /* 每一行属性加虚线分割 */
+        .markdown-body li { 
+            display: block !important; 
+            margin-bottom: 0.8rem !important; 
+            padding-bottom: 0.8rem !important;
+            border-bottom: 1px dashed #cbd5e1; 
+            position: relative;
+        }
+        .markdown-body li:last-child { border-bottom: none !important; margin-bottom: 0 !important; padding-bottom: 0 !important; }
+
+        /* 属性标签（加粗）变得像个真正的 Tag */
+        .markdown-body strong { 
+            color: #ffffff; 
+            background: #6366f1; 
+            padding: 3px 8px; 
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-right: 6px;
+            display: inline-block;
+        }
+
+        /* 处理普通文本中出现的菱形标号 */
+        .markdown-body p > strong {
+             color: #4f46e5;
+             background: transparent;
+             padding: 0;
+             font-size: 1em;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-2xl h-[90vh] flex flex-col glass rounded-3xl shadow-2xl overflow-hidden">
+        <!-- Header -->
+        <div class="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center z-10">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 p-2.5 rounded-xl text-white shadow-md shadow-indigo-200">
+                    <i data-lucide="bot" size="20"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-slate-800 text-lg">智慧景区小导</h1>
+                    <p class="text-[11px] text-emerald-500 font-medium flex items-center mt-0.5">
+                        <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse"></span>
+                        AI 导游在线中
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat Box -->
+        <div id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div class="flex justify-start">
+                <div class="chat-bubble-ai max-w-[85%]">
+                    <div class="markdown-body">
+                        您好！我是您的小导。我已经研读了景区所有文档。关于**美食、景点、游览路线**，尽管问我！😊
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white border-t border-slate-200 z-10">
+            <div class="relative flex items-center">
+                <input type="text" id="userInput" 
+                    class="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 pl-6 pr-14 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-slate-700"
+                    placeholder="问问小导：灵山有什么必去的景点？" 
+                    onkeydown="if(event.keyCode==13) sendChat()">
+                <button onclick="sendChat()" class="absolute right-2 bg-indigo-600 text-white p-3 rounded-xl shadow-md active:scale-95 transition-all">
+                    <i data-lucide="send" size="18"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+        marked.setOptions({ breaks: true, gfm: true });
+
+        async function sendChat() {
+            const input = document.getElementById('userInput');
+            const box = document.getElementById('chat-box');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            box.innerHTML += `<div class="flex justify-end"><div class="chat-bubble-user max-w-[85%] shadow-md">${msg}</div></div>`;
+            
+            const aiMsgContainer = document.createElement('div');
+            aiMsgContainer.className = "flex justify-start";
+            aiMsgContainer.innerHTML = `
+                <div class="chat-bubble-ai max-w-[95%]">
+                    <div class="markdown-body">
+                        <span class="text-slate-400 animate-pulse">小导正在为您翻阅资料...</span>
+                    </div>
+                </div>`;
+            box.appendChild(aiMsgContainer);
+            const contentDiv = aiMsgContainer.querySelector('.markdown-body');
+            input.value = '';
+            box.scrollTop = box.scrollHeight;
+
+            let fullText = ""; 
+            let buffer = ""; 
+
+            try {
+                
+                const response = await fetch(`/ai/chat/stream?message=${encodeURIComponent(msg)}`);
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    let lines = buffer.split('\n');
+                    buffer = lines.pop(); 
+
+                    for (let line of lines) {
+                        if (line.startsWith('data:')) {
+                            let content = line.substring(5);
+                            
+                            try {
+                                if (content.trim().startsWith('"')) {
+                                    content = JSON.parse(content.trim()); 
+                                }
+                            } catch (e) {
+                                content = content.replace(/^"|"$/g, '').replace(/\\n/g, '\n');
+                            }
+
+                            fullText += content;
+                            
+                            // ==========================================
+                            // 【终极自愈型排版引擎】
+                            // 针对截图里的“无标题卡片”和“行内堆砌”问题做绝杀
+                            // ==========================================
+                            let uiText = fullText
+                                // 1. 清理多余指令词
+                                .replace(/\([空留]一行\)/g, '').replace(/【[两]?个换行符】/g, '').replace(/>/g, '').replace(/\uFFFD/g, '')
+
+                                // 2. 【核心修复 1】：自动识别并补齐标题
+                                // 现象：AI 输出 "灵山胜境·五灯湖 (灯映禅心)" 而不是 "### 灵山..."
+                                // 对策：如果一行文字超过 4 个字，且后面紧跟着 " - " 列表项，强行把它变成 ### 标题
+                                .replace(/(^|\n)([\u4e00-\u9fa5A-Za-z0-9·（）\(\)]{4,30})\s*(?=\n- )/g, '$1\n### $2\n')
+                                
+                                // 3. 确保原有的 ### 格式正确（前面换行，后面带空格）
+                                .replace(/([^\n])\s*(?=###)/g, '$1\n\n') 
+                                .replace(/###([^\s#])/g, '### $1')
+                                
+                                // 4. 【核心修复 2】：切断列表粘连
+                                // 现象："景观参数：xxxx - 昼夜双韵："
+                                // 对策：只要看到 "- " 或菱形符号，且前面不是换行，强行在前面切一刀
+                                .replace(/([^\n])\s*(?=-\s\*\*|-\s[^\*]|◆|❖)/g, '$1\n')
+                                
+                                // 5. 段落长句呼吸感：句号、感叹号后强行单换行
+                                .replace(/([。！？])\s*(?=[A-Z\u4e00-\u9fa5])/g, '$1\n')
+
+                                .replace(/\n{3,}/g, '\n\n'); // 收尾防冗余空行
+
+                            contentDiv.innerHTML = marked.parse(uiText);
+                            box.scrollTop = box.scrollHeight;
+                        }
+                    }
+                }
+            } catch (error) {
+                contentDiv.innerHTML = `<span class="text-red-500 font-bold">小导断线了，请刷新重试。</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

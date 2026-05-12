@@ -1,4 +1,7 @@
 spring:
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: false
   main:
     # 允许我们手写的 Bean 覆盖系统默认的，解决刚才的启动报错
     allow-bean-definition-overriding: true
