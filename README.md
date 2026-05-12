@@ -57,3 +57,65 @@ DEEPSEEK_API_KEY / DASHSCOPE_API_KEY / BAILIAN_API_KEY
 ZILLIZ_TOKEN / ZILLIZ_ENDPOINT
 REDIS_HOST / REDIS_PORT / REDIS_PASSWORD / REDIS_DATABASE / REDIS_SSL
 ```
+
+## Docker 开发启动
+
+```bash
+# 1. 构建镜像（含编译）
+docker build -t scenic-guide .
+
+# 2. 创建 .env 并填入 API Key
+cp .env.example .env
+# 编辑 .env，填入以下密钥（从 .env.example 复制或手动填写）：
+# DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY
+# DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
+# BAILIAN_API_KEY=YOUR_BAILIAN_API_KEY
+# ZILLIZ_TOKEN=YOUR_ZILLIZ_TOKEN
+# ZILLIZ_ENDPOINT=YOUR_ZILLIZ_ENDPOINT
+# REDIS_HOST=YOUR_REDIS_HOST
+# REDIS_PORT=6379
+# REDIS_PASSWORD=YOUR_REDIS_PASSWORD
+# REDIS_DATABASE=0
+# REDIS_SSL=true
+
+# 3. 运行容器
+docker run -it --rm -p 8081:8081 -v "$(pwd):/workspace" scenic-guide
+
+# 4. 容器内启动服务
+java -jar /app/app.jar --server.port=8081
+
+# 5. 测试
+curl -G 'http://localhost:8081/ai/chat' --data-urlencode 'message=你好' --data-urlencode 'sessionId=test'
+```
+
+
+## Docker 开发启动（Windows PowerShell）
+
+```powershell
+# 1. 构建镜像（含编译）
+docker build -t scenic-guide .
+
+# 2. 创建 .env 并填入 API Key
+copy .env.example .env
+# 编辑 .env，填入以下密钥：
+# DEEPSEEK_API_KEY=YOUR_DEEPSEEK_API_KEY
+# DASHSCOPE_API_KEY=YOUR_DASHSCOPE_API_KEY
+# BAILIAN_API_KEY=YOUR_BAILIAN_API_KEY
+# ZILLIZ_TOKEN=YOUR_ZILLIZ_TOKEN
+# ZILLIZ_ENDPOINT=YOUR_ZILLIZ_ENDPOINT
+# REDIS_HOST=YOUR_REDIS_HOST
+# REDIS_PORT=6379
+# REDIS_PASSWORD=YOUR_REDIS_PASSWORD
+# REDIS_DATABASE=0
+# REDIS_SSL=true
+
+# 3. 运行容器（Windows）
+docker run -it --rm -p 8081:8081 -v "${PWD}:/workspace" scenic-guide
+
+# 4. 容器内启动服务
+java -jar /app/app.jar --server.port=8081
+
+# 5. 测试
+curl -G 'http://localhost:8081/ai/chat' --data-urlencode 'message=你好' --data-urlencode 'sessionId=test'
+```
+

@@ -33,7 +33,8 @@ build/
 .vscode/
 .devcontainer/
 代码结构说明.md
-
+ai-api.md
+ai端服务改造方案.md
 ### 环境变量 ###
 .env
 .env.local
