@@ -124,6 +124,13 @@
                     </annotationProcessorPaths>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.ai.guide.AiApplication</mainClass>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

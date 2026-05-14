@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, Text, Integer, Float
-from sqlalchemy.dialects.postgresql import UUID, JSON
+from sqlalchemy import Uuid, JSON
 from app.db.base import Base
 
 class AnalyticsReport(Base):
     __tablename__ = "analytics_reports"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(), primary_key=True, default=uuid.uuid4)
     title = Column(String(200), nullable=False)
     type = Column(String(50), default="daily")
     period_start = Column(DateTime(timezone=True), nullable=False)
@@ -17,9 +17,9 @@ class AnalyticsReport(Base):
 
 class ServiceLog(Base):
     __tablename__ = "service_logs"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(), primary_key=True, default=uuid.uuid4)
     session_id = Column(String(100), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), nullable=True)
+    user_id = Column(Uuid(), nullable=True)
     question = Column(Text, default="")
     emotion = Column(String(50), default="")
     intent = Column(String(50), default="")

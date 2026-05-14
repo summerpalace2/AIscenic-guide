@@ -1,0 +1,44 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 环境配置
+.env
+.env.*
+
+# 版本控制
+.git
+.gitignore
+.gitattributes
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试文件
+tests/
+test.db
+scenic_dev.db
+
+# 构建产物
+*.egg-info/
+dist/
+build/
+*.whl
+
+# 日志
+*.log
+logs/
+
+# 本地上传（非容器内管理）
+uploads/*
+!uploads/.gitkeep
+
+# Docker 自身
+.dockerignore
+Dockerfile
+docker-compose*.yml

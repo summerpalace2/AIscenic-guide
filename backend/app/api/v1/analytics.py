@@ -1,35 +1,188 @@
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import JSONResponse, Response
 from typing import Optional
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import func, desc, text
+from sqlalchemy.orm import Session
 from app.api.deps import get_admin_user
+from app.db.session import get_db
 from app.models.user import User
+from app.models.analytics import ServiceLog, AnalyticsReport
+from app.models.dialog import DialogSession
 
 router = APIRouter(prefix='/analytics', tags=['Analytics'])
 
 @router.get('/dashboard')
-async def dashboard(period: str = Query('today'), admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': {'service_count': {'total': 0, 'today': 0, 'week': 0, 'trend': '0%'}, 'active_users': {'current': 0, 'peak_today': 0}, 'satisfaction_trend': [], 'hot_questions_top10': [], 'emotion_distribution': {'positive': 0, 'neutral': 0, 'negative': 0}}}
+async def dashboard(period: str = Query('today'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_ago = today_start - timedelta(days=7)
+    yesterday_start = today_start - timedelta(days=1)
+
+    # 总服务次数
+    total = db.query(ServiceLog).count()
+    today_count = db.query(ServiceLog).filter(ServiceLog.created_at >= today_start).count()
+    week_count = db.query(ServiceLog).filter(ServiceLog.created_at >= week_ago).count()
+
+    # 计算趋势（环比变化率）
+    prev_count = db.query(ServiceLog).filter(
+        ServiceLog.created_at >= yesterday_start,
+        ServiceLog.created_at < today_start
+    ).count()
+    trend = '0%'
+    if prev_count > 0:
+        change = ((today_count - prev_count) / prev_count) * 100
+        trend = f"{'+' if change >= 0 else ''}{change:.1f}%"
+
+    # 当前活跃用户（最近5分钟有请求的不同会话数）
+    five_min_ago = now - timedelta(minutes=5)
+    current_active = db.query(func.count(func.distinct(ServiceLog.session_id))).filter(
+        ServiceLog.created_at >= five_min_ago
+    ).scalar() or 0
+
+    # 今日峰值活跃（简化版，后续可优化精确度）
+    peak_today = current_active
+
+    # 热门问题TOP10
+    hot_rows = db.query(
+        ServiceLog.question,
+        func.count().label('cnt')
+    ).group_by(ServiceLog.question).order_by(
+        desc(func.count())
+    ).limit(10).all()
+    hot_questions_top10 = [{'question': r[0], 'count': r[1]} for r in hot_rows]
+
+    # 情绪分布
+    pos = db.query(ServiceLog).filter(ServiceLog.emotion == 'positive').count()
+    neu = db.query(ServiceLog).filter(ServiceLog.emotion == 'neutral').count()
+    neg = db.query(ServiceLog).filter(ServiceLog.emotion == 'negative').count()
+
+    return {
+        'code': 0, 'success': True, 'message': 'OK',
+        'data': {
+            'service_count': {
+                'total': total, 'today': today_count, 'week': week_count, 'trend': trend
+            },
+            'active_users': {'current': current_active, 'peak_today': peak_today},
+            'satisfaction_trend': [],
+            'hot_questions_top10': hot_questions_top10,
+            'emotion_distribution': {'positive': pos, 'neutral': neu, 'negative': neg}
+        }
+    }
 
 @router.get('/hot-questions')
-async def hot_questions(period: str = Query('today'), top_n: int = Query(10), admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': []}
+async def hot_questions(period: str = Query('today'), top_n: int = Query(10), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    rows = db.query(
+        ServiceLog.question,
+        func.count().label('cnt')
+    ).group_by(ServiceLog.question).order_by(
+        desc(func.count())
+    ).limit(top_n).all()
+    data = [{'question': r[0], 'count': r[1]} for r in rows]
+    return {'code': 0, 'success': True, 'message': 'OK', 'data': data}
 
 @router.get('/sentiment-trend')
-async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': {'data': []}}
+async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    # MySQL 使用 DATE_FORMAT 替代 PostgreSQL 的 date_trunc
+    fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+    query = db.query(
+        func.date_format(ServiceLog.created_at, fmt).label('period'),
+        ServiceLog.emotion,
+        func.count().label('cnt')
+    )
+    if start_date:
+        query = query.filter(ServiceLog.created_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(ServiceLog.created_at <= datetime.fromisoformat(end_date))
+    rows = query.group_by(
+        func.date_format(ServiceLog.created_at, fmt),
+        ServiceLog.emotion
+    ).order_by(
+        func.date_format(ServiceLog.created_at, fmt)
+    ).all()
+    data = [
+        {'period': str(r[0]), 'emotion': r[1], 'count': r[2]}
+        for r in rows
+    ]
+    return {'code': 0, 'success': True, 'message': 'OK', 'data': {'data': data}}
 
 @router.get('/service-count')
-async def service_count(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': []}
+async def service_count(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    # MySQL 使用 DATE_FORMAT 替代 PostgreSQL 的 date_trunc
+    fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+    query = db.query(
+        func.date_format(ServiceLog.created_at, fmt).label('period'),
+        func.count().label('cnt')
+    )
+    if start_date:
+        query = query.filter(ServiceLog.created_at >= datetime.fromisoformat(start_date))
+    if end_date:
+        query = query.filter(ServiceLog.created_at <= datetime.fromisoformat(end_date))
+    rows = query.group_by(
+        func.date_format(ServiceLog.created_at, fmt)
+    ).order_by(
+        func.date_format(ServiceLog.created_at, fmt)
+    ).all()
+    data = [
+        {'period': str(r[0]), 'count': r[1]}
+        for r in rows
+    ]
+    return {'code': 0, 'success': True, 'message': 'OK', 'data': data}
 
 @router.get('/reports')
-async def list_reports(page: int = Query(1), size: int = Query(20), type: Optional[str] = None, admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': {'total': 0, 'items': []}}
+async def list_reports(page: int = Query(1), size: int = Query(20), type: Optional[str] = None, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    query = db.query(AnalyticsReport)
+    if type:
+        query = query.filter(AnalyticsReport.type == type)
+    total = query.count()
+    items = query.order_by(AnalyticsReport.created_at.desc()).offset((page - 1) * size).limit(size).all()
+    return {
+        'code': 0, 'success': True, 'message': 'OK',
+        'data': {
+            'total': total,
+            'items': [
+                {
+                    'id': str(r.id), 'title': r.title, 'type': r.type,
+                    'period_start': r.period_start.isoformat(),
+                    'period_end': r.period_end.isoformat(),
+                    'status': r.status, 'created_at': r.created_at.isoformat()
+                }
+                for r in items
+            ]
+        }
+    }
 
 @router.get('/reports/{report_id}')
-async def get_report(report_id: str, admin: User = Depends(get_admin_user)):
-    return {'code': 0, 'success': True, 'message': 'OK', 'data': {}}
+async def get_report(report_id: str, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == report_id).first()
+    if not report:
+        return {'code': 404, 'success': False, 'message': '报告不存在', 'data': {}}
+    return {
+        'code': 0, 'success': True, 'message': 'OK',
+        'data': {
+            'id': str(report.id), 'title': report.title, 'type': report.type,
+            'period_start': report.period_start.isoformat(),
+            'period_end': report.period_end.isoformat(),
+            'status': report.status, 'data': report.data,
+            'created_at': report.created_at.isoformat()
+        }
+    }
 
 @router.get('/reports/{report_id}/export')
-async def export_report(report_id: str, admin: User = Depends(get_admin_user)):
-    from fastapi.responses import Response
-    return Response(content=b'mock-pdf', media_type='application/pdf')
+async def export_report(report_id: str, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == report_id).first()
+    if not report:
+        return JSONResponse(status_code=404, content={'code': 40405, 'success': False, 'message': '报告不存在'})
+    from app.services.pdf_service import generate_report_pdf
+    pdf = generate_report_pdf({
+        'id': str(report.id),
+        'title': report.title,
+        'data': report.data or {}
+    })
+    return Response(
+        content=pdf,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="{report.title}.pdf"'
+        }
+    )

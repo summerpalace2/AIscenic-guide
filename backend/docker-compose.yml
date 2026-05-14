@@ -1,27 +1,73 @@
 version: '3.8'
+
 services:
-  backend:
+  # FastAPI 应用服务
+  app:
     build: .
     ports:
       - "8000:8000"
-    env_file:
-      - .env
+    environment:
+      # 数据库连接（使用 PostgreSQL）
+      - DATABASE_URL=postgresql://scenic:change_me@postgres:5432/scenic_guide
+      # Redis 缓存连接
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+      # AI 服务地址（Java Spring AI 模块）
+      - AI_SERVICE_URL=http://ai-service:8081
+      # JWT 密钥（生产环境务必替换为安全值）
+      - JWT_SECRET_KEY=scenic-guide-jwt-prod-key-change-me
+      - APP_NAME=AIscenic-guide
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    volumes:
+      # 持久化上传文件
+      - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # PostgreSQL 数据库
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_DB: scenic_guide
       POSTGRES_USER: scenic
       POSTGRES_PASSWORD: change_me
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scenic -d scenic_guide"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis / Valkey 缓存
   redis:
     image: valkey/valkey:8-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  redis_data:
+  uploads:

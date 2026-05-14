@@ -4,7 +4,7 @@ from functools import lru_cache
 class Settings(BaseSettings):
     APP_NAME: str = 'AI Digital Human Scenic Guide'
     API_V1_PREFIX: str = '/api/v1'
-    DATABASE_URL: str = 'postgresql://scenic:change_me@localhost:5432/scenic_guide'
+    DATABASE_URL: str = 'sqlite:///./scenic_guide.db'
     REDIS_HOST: str = 'localhost'
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: str = ''

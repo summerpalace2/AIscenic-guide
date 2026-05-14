@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.knowledge import KnowledgeCreate, KnowledgeUpdate
 from app.services.knowledge_service import knowledge_service
+from app.services.file_storage import file_storage
 from app.api.deps import get_admin_user
 from app.models.user import User
 
@@ -29,6 +30,31 @@ async def get_document(doc_id: str, admin: User = Depends(get_admin_user), db: S
 async def create_document(req: KnowledgeCreate, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
     doc = knowledge_service.create(db, req, str(admin.id))
     return {'code': 0, 'success': True, 'message': 'Created', 'data': {'id': str(doc.id)}}
+
+@router.post('/upload', status_code=201)
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    category: str = Form(...),
+    content: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+):
+    """上传文件并创建知识文档"""
+    try:
+        # 保存文件到 knowledge 子目录
+        file_url = await file_storage.save(file, sub_dir='knowledge')
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={'code': 40001, 'success': False, 'message': str(e)})
+
+    # 解析 tags（逗号分隔的字符串转为列表）
+    tag_list = [t.strip() for t in tags.split(',') if t.strip()] if tags else []
+
+    # 创建知识文档记录
+    req = KnowledgeCreate(title=title, category=category, content=content or '', tags=tag_list, file_url=file_url)
+    doc = knowledge_service.create(db, req, str(admin.id))
+    return {'code': 0, 'success': True, 'message': 'Created', 'data': {'id': str(doc.id), 'file_url': file_url}}
 
 @router.put('/{doc_id}')
 async def update_document(doc_id: str, req: KnowledgeUpdate, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):

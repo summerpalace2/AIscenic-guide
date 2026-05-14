@@ -1,4 +1,4 @@
-HELP.md
+﻿HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
@@ -32,13 +32,15 @@ build/
 ### VS Code ###
 .vscode/
 .devcontainer/
-代码结构说明.md
+浠ｇ爜缁撴瀯璇存槑.md
 ai-api.md
-ai端服务改造方案.md
+ai绔湇鍔℃敼閫犳柟妗?md
 ### 环境变量 ###
 .env
-.env.local
-.env.production
+.env.*
+
+### Python ###
+__pycache__/
 
 
 ### opencode ###
@@ -54,6 +56,7 @@ __pycache__/
 venv/
 .venv/
 *.egg
+*.db
 
 ### Node.js ###
 node_modules/
