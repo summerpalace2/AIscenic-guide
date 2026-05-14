@@ -2,8 +2,10 @@ package com.ai.guide.controller;
 
 import com.ai.guide.model.Result;
 import com.ai.guide.model.ScenicResponse;
+import com.ai.guide.service.IntentService;
 import com.ai.guide.service.RedisChatMemory;
 import com.ai.guide.service.ScenicDataImportService;
+import com.ai.guide.service.SentimentService;
 import com.ai.guide.service.SlotTrackingService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -41,6 +43,8 @@ public class ChatController {
     private final ChatClient chatClient;
     private final RedisChatMemory redisChatMemory;
     private final SlotTrackingService slotTrackingService;
+    private final IntentService intentService;
+    private final SentimentService sentimentService;
 
     @Autowired
     private ScenicDataImportService scenicDataImportService;
@@ -53,7 +57,8 @@ public class ChatController {
        1. **承接上下文**：你拥有对话记忆，请像老朋友聊天一样回应用户。如果用户追问细节，请结合之前的回答进行深度扩充。
        2. **关联性**：只有当用户提问涉及具体景点、餐厅或政策时，才从【背景知识】中提取信息。
        3. **不要堆砌**：如果背景知识很多，<b>只回答用户明确问到的那一个或几个项目</b>，其他的绝口不提。
-       4. **按需回答**：如果用户只是打招呼，你也只需礼貌回应并询问需求,不要额外讲其他无关的内容。
+        4. **按需回答**：如果用户只是打招呼，你也只需礼貌回应并询问需求,不要额外讲其他无关的内容。
+        4.5 **感受优先**：如果用户只是在表达感受（如"好玩""不好玩""真美""好失望"），<b>不要推荐任何项目</b>——只需共情回应。除非用户明确说"推荐""介绍""有什么"，才给出推荐。
         5.**回答自然**,比如好的，我们来介绍一些景点，结尾时可以增加一点猜你想问，猜你想问必须空出一行，在回答的开头要承接用户提出的问题顺势做出答复
        
         # 槽位感知（用户意图追踪）
@@ -96,13 +101,16 @@ public class ChatController {
 
     /** 构造 ChatClient 和注入 Redis 记忆组件 */
     public ChatController(ChatClient.Builder builder, RedisChatMemory redisChatMemory,
-                          SlotTrackingService slotTrackingService) {
+                          SlotTrackingService slotTrackingService,
+                          IntentService intentService, SentimentService sentimentService) {
         this.redisChatMemory = redisChatMemory;
         this.slotTrackingService = slotTrackingService;
+        this.intentService = intentService;
+        this.sentimentService = sentimentService;
         this.chatClient = builder.build();
     }
 
-    /** 将知识库上下文拼入用户消息，组装成完整提示词 */
+    /** 将知识库上下文拼入用户消息 */
     private String buildUserPrompt(String context, String message) {
         return String.format("""
             请基于提供的背景知识，<b>只回答用户问到的问题</b>，不要罗列无关内容。
@@ -115,6 +123,12 @@ public class ChatController {
             
             要求：条理清晰，使用 Markdown 列表和加粗。如果用户只问了一个具体问题，只答那个，不要展开其他项目。
             """, (context == null || context.isEmpty()) ? "无匹配知识" : context, message);
+    }
+
+    /** 判断是否需要跳过知识库检索（闲聊 + 投诉 + 问候） */
+    private boolean shouldSkipKnowledge(String message) {
+        IntentService.Intent intent = intentService.classify(message);
+        return intent == IntentService.Intent.CHITCHAT || intent == IntentService.Intent.COMPLAINT;
     }
 
     /** 控制台调试输出：记录当前问题和送给大模型的背景知识原文 */
@@ -133,11 +147,15 @@ public class ChatController {
      */
     private List<Message> buildMessages(String context, String message, String sessionId) {
         List<Message> allMessages = new ArrayList<>();
-        // [步骤1] 系统提示词 + 槽位快照（告知 AI 已知用户偏好）
-        String systemWithSlots = SYSTEM_PROMPT + slotTrackingService.toPromptContext(sessionId);
+        // [步骤1] 系统提示词 + 情感指令（最高优先级）
+        boolean isNeg = sentimentService.analyze(message) == SentimentService.Sentiment.NEGATIVE;
+        String systemWithSlots = SYSTEM_PROMPT
+                + sentimentService.toPromptHint(message);    // 情感优先
+        // 负面时抑制偏好上下文，避免 AI 借机推荐
+        if (!isNeg) systemWithSlots += slotTrackingService.toPromptContext(sessionId);
         allMessages.add(new SystemMessage(systemWithSlots));
-        // [步骤2] 加载最近 20 条历史（此时还不包含本轮消息）
-        allMessages.addAll(redisChatMemory.get(sessionId, 20));
+        // [步骤2] 负面时只取最近 3 条历史（防复用旧推荐），正常取 20 条
+        allMessages.addAll(redisChatMemory.get(sessionId, isNeg ? 3 : 20));
         // [步骤3] 当前用户消息（带知识库上下文）
         allMessages.add(new UserMessage(buildUserPrompt(context, message)));
         return allMessages;
@@ -150,7 +168,8 @@ public class ChatController {
         // 0. 从用户消息中提取槽位（兴趣/时间/人群等），存入 Redis
         slotTrackingService.extractAndSave(sessionId, message);
 
-        String context = isGreeting(message) ? "" : scenicDataImportService.queryKnowledge(message);
+        //判断是不是需要使用RAG
+        String context = shouldSkipKnowledge(message) ? "" : scenicDataImportService.queryKnowledge(message);
         debugLogContext(message, context);
 
         // 1. 先构建 messages（此时历史中不含本轮 user）
@@ -167,7 +186,7 @@ public class ChatController {
 
         // 4. 异步保存助手回复
         redisChatMemory.addAsync(sessionId, List.of(new AssistantMessage(reply)));
-        System.out.println("[历史] 已保存对话 session=" + sessionId + " user=" + message.substring(0, Math.min(20, message.length())) + " reply=" + reply.substring(0, Math.min(30, reply.length())));
+        System.out.println("[历史] 已保存对话 session=" + sessionId + "...");
 
         return reply;
     }
@@ -180,7 +199,7 @@ public class ChatController {
 
         slotTrackingService.extractAndSave(sessionId, message);
 
-        String context = isGreeting(message) ? "" : scenicDataImportService.queryKnowledge(message);
+        String context = shouldSkipKnowledge(message) ? "" : scenicDataImportService.queryKnowledge(message);
         debugLogContext(message, context);
 
         // 1. 构建 messages + 异步保存用户消息
@@ -190,8 +209,16 @@ public class ChatController {
         // 2. 用于累积完整回复文本的容器
         StringBuilder fullReply = new StringBuilder();
 
-        // 3. 流式调用
-        return chatClient.prompt()
+        // 3. 情感事件（SSE event:sentiment 通道，前端监听后驱动数字人，不出现在文本中）
+        SentimentService.Sentiment sentiment = sentimentService.analyze(message);
+        Flux<ServerSentEvent<String>> sentimentFlux = sentiment == SentimentService.Sentiment.NEUTRAL ? Flux.empty() :
+            Flux.just(ServerSentEvent.<String>builder()
+                .event("sentiment")
+                .data(sentiment.name().toLowerCase())
+                .build());
+
+        // 4. AI 流式回复
+        Flux<ServerSentEvent<String>> stream = chatClient.prompt()
                 .messages(allMessages)
                 .stream()
                 .content()
@@ -207,6 +234,8 @@ public class ChatController {
                     }
                 })
                 .doOnError(e -> System.err.println("[流式] 异常: " + e.getMessage()));
+
+        return sentimentFlux.concatWith(stream);
     }
 
     /** 结构化对话接口：返回 Result;ScenicResponse;，同时记录对话历史 */
@@ -229,14 +258,5 @@ public class ChatController {
             return Result.success("查询成功", response);
         }
         return Result.error(500, "AI 未返回有效数据");
-    }
-
-    /** 问候语判定：简短问候、自我介绍、道谢道别等跳过知识库检索 */
-    private boolean isGreeting(String message) {
-        if (message == null) return true;
-        String msg = message.trim();
-        if (msg.length() > 15) return false;
-        return msg.matches(".*(你好|早上好|下午好|晚上好|嗨|hi|hello|hey|在吗|在不在|你是谁|你叫什么|你能做什么|谢谢|再见|拜拜|晚安).*")
-                || msg.matches("^[a-zA-Z]+$") && msg.length() <= 6;
     }
 }

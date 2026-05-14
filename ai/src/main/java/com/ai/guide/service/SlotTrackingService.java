@@ -8,17 +8,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
+ * 猜你喜欢功能实现
+ *
  * 槽位追踪服务 —— 从对话中提取用户意图参数，存储到 Redis
- * <p>
+ *
  * 槽位定义：
- * <pre>
+ *
  * interest : 景点 / 美食 / 文化 / 路线 / 住宿
  * duration : 半天 / 全天 / 2小时 / 3小时 / ...
  * crowd    : 老人 / 小孩 / 情侣 / 独自 / 家庭 / 朋友
  * area     : 灵山大佛 / 梵宫 / 五印坛城 / 拈花湾 / ...
  * budget   : 经济 / 中等 / 不限
- * </pre>
- * <p>
+ *
+ *
  * Redis Key: chat:session:{id}:slots （Hash 结构）
  */
 @Service
