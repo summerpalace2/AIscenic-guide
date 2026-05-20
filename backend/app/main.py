@@ -13,6 +13,7 @@ from app.db.session import get_db
 from app.core.security import decode_token
 from fastapi.staticfiles import StaticFiles
 import os
+import uuid
 
 settings = get_settings()
 
@@ -24,6 +25,24 @@ async def lifespan(app: FastAPI):
         print('[App] 数据库表已创建/同步')
     except Exception as e:
         print(f'[App] 警告: 数据库连接失败，部分功能不可用: {e}')
+
+    # 种子数据（开发环境自动初始化）
+    try:
+        from app.db.session import SessionLocal
+        from app.models.user import User
+        from app.core.security import get_password_hash
+        from scripts.seed_spots import seed as seed_spots
+        seed_db = SessionLocal()
+        admin_exists = seed_db.query(User).filter(User.role.in_(['admin', 'super_admin'])).first()
+        if not admin_exists:
+            admin_user = User(id=uuid.uuid4(), phone='13800000000', password_hash=get_password_hash('admin123'), nickname='admin', role='admin')
+            seed_db.add(admin_user)
+            seed_db.commit()
+            print('[App] 默认管理员已创建（admin / admin123）')
+        seed_spots()
+        seed_db.close()
+    except Exception as e:
+        print(f'[App] 种子数据初始化时发生非致命错误: {e}')
 
     # 启动定时任务
     try:

@@ -5,12 +5,13 @@ from app.db.session import get_db
 from app.schemas.dialog import MessageRequest
 from app.services.dialog_service import dialog_service
 from app.api.deps import get_current_user
+from app.middleware.sensitive_words import check_sensitive_words
 from app.models.user import User
 
 router = APIRouter(prefix='/dialog', tags=['Dialog'])
 
 @router.post('/message')
-async def send_message(req: MessageRequest, user: Optional[User] = Depends(get_current_user), db: Session = Depends(get_db)):
+async def send_message(req: MessageRequest, user: Optional[User] = Depends(get_current_user), db: Session = Depends(get_db), _=Depends(check_sensitive_words)):
     data = await dialog_service.send_message(db=db, content=req.content, session_id=req.session_id, user_id=str(user.id) if user else None, scenic_spot_id=req.scenic_spot_id)
     return {'code': 0, 'success': True, 'message': 'OK', 'data': data}
 

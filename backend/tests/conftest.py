@@ -1,12 +1,16 @@
 """
 pytest 测试配置
-提供 TestClient、测试数据库会话等公共夹具
-
-注意：在导入 app 前设置 DATABASE_URL 环境变量，
-确保测试使用 SQLite 内存数据库而非 PostgreSQL。
+提供 TestClient、测试数据库会话、认证 token 等公共夹具
 """
 import os
-os.environ['DATABASE_URL'] = 'sqlite:///./test.db'
+from pathlib import Path
+
+# 测试数据库文件放在 conftest.py 同级目录，确保容器内外均可写
+_test_db_dir = Path(__file__).parent
+_test_db_path = str(_test_db_dir / 'test.db')
+os.environ['DATABASE_URL'] = f'sqlite:///{_test_db_path}'
+
+import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,8 +20,7 @@ from app.main import app
 from app.db.base import Base
 from app.db.session import get_db
 
-# 使用 SQLite 内存数据库进行测试
-engine = create_engine('sqlite:///./test.db', connect_args={'check_same_thread': False})
+engine = create_engine(f'sqlite:///{_test_db_path}', connect_args={'check_same_thread': False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -45,3 +48,16 @@ def client():
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_token(client):
+    """注册并登录，返回 JWT token"""
+    phone = f'138{hash(str(uuid.uuid4())) % 100000000:08d}'
+    client.post('/api/v1/auth/register', json={
+        'phone': phone, 'password': 'test123456', 'nickname': 'tester'
+    })
+    resp = client.post('/api/v1/auth/login', json={
+        'phone': phone, 'password': 'test123456'
+    })
+    return resp.json()['data']['token']

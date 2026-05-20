@@ -1,7 +1,13 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        env_file_encoding='utf-8',
+        extra='ignore'
+    )
+
     APP_NAME: str = 'AI Digital Human Scenic Guide'
     API_V1_PREFIX: str = '/api/v1'
     DATABASE_URL: str = 'sqlite:///./scenic_guide.db'
@@ -16,11 +22,6 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     AI_SERVICE_URL: str = 'http://localhost:8081'
     MAX_UPLOAD_SIZE: int = 50 * 1024 * 1024
-
-    class Config:
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
-        extra = 'ignore'
 
 @lru_cache()
 def get_settings() -> Settings:

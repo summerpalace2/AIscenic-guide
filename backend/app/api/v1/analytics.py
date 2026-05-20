@@ -12,6 +12,20 @@ from app.models.dialog import DialogSession
 
 router = APIRouter(prefix='/analytics', tags=['Analytics'])
 
+def _date_trunc_expr(column, granularity: str, dialect: str):
+    """根据数据库方言生成时间截断/格式化表达式"""
+    if dialect == 'mysql':
+        fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+        return func.date_format(column, fmt)
+    elif dialect == 'postgresql':
+        if granularity == 'day':
+            return func.to_char(column, 'YYYY-MM-DD')
+        else:
+            return func.to_char(column, 'YYYY-MM-DD HH24:00:00')
+    else:  # sqlite
+        fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+        return func.strftime(fmt, column)
+
 @router.get('/dashboard')
 async def dashboard(period: str = Query('today'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc)
@@ -83,10 +97,10 @@ async def hot_questions(period: str = Query('today'), top_n: int = Query(10), ad
 
 @router.get('/sentiment-trend')
 async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
-    # MySQL 使用 DATE_FORMAT 替代 PostgreSQL 的 date_trunc
-    fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+    dialect = db.bind.dialect.name if db.bind else 'sqlite'
+    period_expr = _date_trunc_expr(ServiceLog.created_at, granularity, dialect)
     query = db.query(
-        func.date_format(ServiceLog.created_at, fmt).label('period'),
+        period_expr.label('period'),
         ServiceLog.emotion,
         func.count().label('cnt')
     )
@@ -95,10 +109,10 @@ async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[s
     if end_date:
         query = query.filter(ServiceLog.created_at <= datetime.fromisoformat(end_date))
     rows = query.group_by(
-        func.date_format(ServiceLog.created_at, fmt),
+        period_expr,
         ServiceLog.emotion
     ).order_by(
-        func.date_format(ServiceLog.created_at, fmt)
+        period_expr
     ).all()
     data = [
         {'period': str(r[0]), 'emotion': r[1], 'count': r[2]}
@@ -108,10 +122,10 @@ async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[s
 
 @router.get('/service-count')
 async def service_count(start_date: Optional[str] = None, end_date: Optional[str] = None, granularity: str = Query('day'), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
-    # MySQL 使用 DATE_FORMAT 替代 PostgreSQL 的 date_trunc
-    fmt = '%Y-%m-%d' if granularity == 'day' else '%Y-%m-%d %H:00:00'
+    dialect = db.bind.dialect.name if db.bind else 'sqlite'
+    period_expr = _date_trunc_expr(ServiceLog.created_at, granularity, dialect)
     query = db.query(
-        func.date_format(ServiceLog.created_at, fmt).label('period'),
+        period_expr.label('period'),
         func.count().label('cnt')
     )
     if start_date:
@@ -119,9 +133,9 @@ async def service_count(start_date: Optional[str] = None, end_date: Optional[str
     if end_date:
         query = query.filter(ServiceLog.created_at <= datetime.fromisoformat(end_date))
     rows = query.group_by(
-        func.date_format(ServiceLog.created_at, fmt)
+        period_expr
     ).order_by(
-        func.date_format(ServiceLog.created_at, fmt)
+        period_expr
     ).all()
     data = [
         {'period': str(r[0]), 'count': r[1]}

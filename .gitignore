@@ -32,9 +32,13 @@ build/
 ### VS Code ###
 .vscode/
 .devcontainer/
-浠ｇ爜缁撴瀯璇存槑.md
-ai-api.md
-ai绔湇鍔℃敼閫犳柟妗?md
+### docs/ ###
+docs/代码结构说明.md
+docs/待办清单.md
+docs/项目说明.md
+docs/项目说明.md.bak
+docs/项目说明(1).pdf
+
 ### 环境变量 ###
 .env
 .env.*
