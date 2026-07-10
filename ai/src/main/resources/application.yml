@@ -30,29 +30,21 @@ spring:
         options:
           model: deepseek-chat
 
-    # 2. Zilliz (Milvus) 向量数据库配置
+    # 2. Qdrant 向量数据库配置
     vectorstore:
-      milvus:
-        client:
-          # Serverless 建议用 443（兼容性最好）
-          port: 443
-          secure: true
+      qdrant:
+        # 从环境变量读取（本地配置见 ai/.env）
+        host: "${QDRANT_HOST}"
+        port: "${QDRANT_PORT:6334}"
+        api-key: "${QDRANT_API_KEY:}"
+        # Qdrant Cloud 强制走 TLS
+        use-tls: true
         # 向量表的名字
         collection-name: scenic_guide
         # 核心参数：必须与阿里 text-embedding-v2 的维度一致
         embedding-dimension: 1536
-        # 距离度量方式：通常使用 COSINE (余弦相似度)
-        metric-type: COSINE
-
-        #<dependency>
-        #<groupId>org.springframework.ai</groupId>
-        #<artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-        #</dependency>
-        #这里使用了openal的镜像站，OpenAI 制定了一套事实上的“行业标准接口”，这里通过指向阿里的模型以及模型地址进行下载
-
-zilliz:
-  token: ${ZILLIZ_TOKEN}
-  endpoint: ${ZILLIZ_ENDPOINT}
+        # 启动时自动创建集合（距离默认 COSINE）
+        initialize-schema: true
 
 alibabacloud:
   dashscope:

@@ -1,8 +1,7 @@
 package com.ai.guide.service;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -15,10 +14,10 @@ import java.util.*;
 /**
  * 阿里百炼 gte-rerank-v2 重排序服务
  *
- * 从 Milvus 向量检索返回的 TOP30 候选中，调用阿里百炼重排序接口，
+ * 从向量检索返回的 TOP30 候选中，调用阿里百炼重排序接口，
  * 根据查询相关性精选 TOP10 最相关文档。
  *
- * 调用链：用户提问 → Milvus 检索 TOP30 → gte-rerank-v2 → 精选 TOP10
+ * 调用链：用户提问 → 向量检索 TOP30 → gte-rerank-v2 → 精选 TOP10
  */
 @Slf4j
 @Service
@@ -31,6 +30,7 @@ public class RerankService {
     private String rerankUrl;
 
     private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     /** 调用阿里百炼重排序 API，将候选文档按相关性重新排序并返回 TOP N */
     public List<String> rerank(String query, List<String> documents, int topN) {
@@ -58,7 +58,13 @@ public class RerankService {
         body.put("input", input);
         body.put("parameters", parameters);
 
-        String jsonBody = JSON.toJSONString(body);
+        String jsonBody;
+        try {
+            jsonBody = objectMapper.writeValueAsString(body);
+        } catch (Exception e) {
+            log.error("【Rerank 调试】请求体序列化失败: ", e);
+            return documents.subList(0, Math.min(documents.size(), topN));
+        }
         log.info("【Rerank 调试】正在发送请求至: {}", rerankUrl);
         log.debug("【Rerank 调试】请求 Body: {}", jsonBody);
 
@@ -69,18 +75,18 @@ public class RerankService {
             log.info("【Rerank 调试】收到响应，状态码: {}", response.getStatusCode());
             log.debug("【Rerank 调试】响应原文: {}", response.getBody());
 
-            JSONObject resultJson = JSON.parseObject(response.getBody());
+            JsonNode resultJson = objectMapper.readTree(response.getBody());
             // 阿里原生接口返回的层级较深，增加空指针保护
-            JSONObject output = resultJson.getJSONObject("output");
-            if (output == null) {
+            JsonNode output = resultJson.get("output");
+            if (output == null || output.isNull()) {
                 log.error("【Rerank 调试】响应中缺失 output 字段: {}", response.getBody());
                 return documents.subList(0, Math.min(documents.size(), topN));
             }
 
-            JSONArray results = output.getJSONArray("results");
+            JsonNode results = output.get("results");
             List<String> rerankedDocs = new ArrayList<>();
             for (int i = 0; i < results.size(); i++) {
-                int index = results.getJSONObject(i).getInteger("index");
+                int index = results.get(i).get("index").asInt();
                 rerankedDocs.add(documents.get(index));
             }
             return rerankedDocs;

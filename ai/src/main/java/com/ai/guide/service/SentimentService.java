@@ -36,9 +36,8 @@ public class SentimentService {
         return Sentiment.NEUTRAL;
     }
 
-    /** 情感标签转 AI 提示片段 */
-    public String toPromptHint(String message) {
-        Sentiment s = analyze(message);
+    /** 根据情感枚举生成提示（避免重复分析） */
+    public String toPromptHint(Sentiment s) {
         return switch (s) {
             case NEGATIVE -> """
                 
@@ -52,12 +51,22 @@ public class SentimentService {
         };
     }
 
-    /** 情感转前端不可见标记（marked 自动隐藏，前端 JS 可检测） */
-    public String toEmojiTag(String message) {
-        return switch (analyze(message)) {
-            case POSITIVE -> "<!--sentiment:pos-->";
-            case NEGATIVE -> "<!--sentiment:neg-->";
+    /** 根据文本分析情感并生成提示 */
+    public String toPromptHint(String message) {
+        return toPromptHint(analyze(message));
+    }
+
+    /** 情感转 SS E 标签 */
+    public String toEmojiTag(Sentiment s) {
+        return switch (s) {
+            case POSITIVE -> "positive";
+            case NEGATIVE -> "negative";
             default -> "";
         };
+    }
+
+    /** 情感转前端不可见标记 */
+    public String toEmojiTag(String message) {
+        return toEmojiTag(analyze(message));
     }
 }

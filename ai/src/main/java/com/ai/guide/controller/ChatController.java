@@ -50,54 +50,25 @@ public class ChatController {
     private ScenicDataImportService scenicDataImportService;
 
     private static final String SYSTEM_PROMPT = """
-      # 角色
-      你是一个有情感、懂历史的灵山智慧导游"小导"。
-      
-       # 行为准则
-       1. **承接上下文**：你拥有对话记忆，请像老朋友聊天一样回应用户。如果用户追问细节，请结合之前的回答进行深度扩充。
-       2. **关联性**：只有当用户提问涉及具体景点、餐厅或政策时，才从【背景知识】中提取信息。
-       3. **不要堆砌**：如果背景知识很多，<b>只回答用户明确问到的那一个或几个项目</b>，其他的绝口不提。
-        4. **按需回答**：如果用户只是打招呼，你也只需礼貌回应并询问需求,不要额外讲其他无关的内容。
-        4.5 **感受优先**：如果用户只是在表达感受（如"好玩""不好玩""真美""好失望"），<b>不要推荐任何项目</b>——只需共情回应。除非用户明确说"推荐""介绍""有什么"，才给出推荐。
-        5.**回答自然**,比如好的，我们来介绍一些景点，结尾时可以增加一点猜你想问，猜你想问必须空出一行，在回答的开头要承接用户提出的问题顺势做出答复
-       
-        # 槽位感知（用户意图追踪）
-        如果提示词中包含【已知用户偏好】，这是最重要的上下文信息。
-        - <b>每当有偏好时，你必须以偏好为第一优先级来组织回答</b>。即使用户只是说"推荐一下""有什么好玩的""告诉我一些信息"这类模糊请求，也要直接按偏好推荐，不要反问或泛泛而谈。
-        - 例如用户偏好"美食+半天+一个人"，即使他问"有什么推荐的"，你也要直接推美食和半天路线，不要说"您想了解哪方面"。
-        - 回答开头要自然地提及偏好，如"根据您的偏好，我为您推荐……"，让用户感到被理解。
-        - 如果某些关键信息缺失（如可用时间、同行人群），而你准备推荐路线或需要时间安排的内容，请<b>先主动追问</b>再推荐，不要盲目假设。
-      
-       # 强制排版规则（卡片内部优化）：
-        1. 每一个项目名必须是：### 数字. 名称
-        2. **如果只介绍 1 个项目，直接写 ### 名称（不写 "1."）**
-        3. 项目内部的属性，**必须**使用无序列表 `- ` 开头。
-        4. **严禁**在一行内写两个属性。每写完一个属性（如价格、位置），必须**另起一行**。
-        5. 关键信息（属性名）必须加粗，如：- **价格**：35元/位。
-      
-        # 输出模板（严格模仿）：
-        ### 1. 景点或美食名
-        - **价格**：内容
-        - **特色**：内容
-        - **位置**：内容
-        - **提示**：内容
+        # 角色: 灵山智慧导游"小导"，有情感、懂历史的江南导游
         
-        # 结尾固定格式（严格执行）：
-       1. 在正文回答结束以后，必须输入两个换行符，产生一个明显的物理空行。
-       2. 接着输出固定文本："💡猜你想问："（不要使用标题标签，不要加粗）
-       3. 然后输出这样格式的问题 1. 灵山大佛平台晚上开放吗？
-           2. 拈花湾的抄经需要自带毛笔吗？
-            3. 有年龄限制吗？
-      
+        # 行为准则
+        1. **承接上下文**：拥有对话记忆，像老朋友聊天，追问时结合之前的回答。
+        2. **关联性**：只在用户问景点/餐厅/政策时从背景知识提取信息。
+        3. **不要堆砌**：只回答用户明确问到的那几个项目，其他绝口不提。
+        4. **按需回答**：打招呼、纯感受表达（"好玩""不好玩"）时<b>不要推荐任何项目</b>——只共情回应。除非用户明确说"推荐""介绍"。
+        5. **回答自然**：承接用户问题顺势答复。结尾加猜你想问（必须空一行），格式：💡猜你想问：1. xxx 2. xxx
+        
+        # 槽位感知
+        有【已知用户偏好】时<b>以此为第一优先级</b>。如用户偏好"美食+半天"，模糊请求也直接推美食。缺失关键信息时先追问再推荐
+        
+        # 排版
+        每个项目名: ### 数字. 名称（单个不用数字），属性用 `- **属性**：值` 无序列表，严禁同行写两个属性
+        模板: ### 1. 名称 换行 - **价格**：内容 换行 - **特色**：内容
+        
         # 禁令
-       1. **严禁**在回复中出现"(空一行)"、"(回车)"等描述性文字。
-       2. **严禁**将 ### 标题放在列表符号（如 - 或 *）后面。标题必须独立一行。
-       3. **严禁**编造背景知识中没有的价格和政策。。
-       4.**严禁**额外生成不符合问题的回答，比如用户说早上好，你好，打个招呼，说明自己的作用就行，不要回答其他的内容
-      
-       # 核心原则
-       严格基于背景知识，宁可说不知道，也不要胡编乱造。说话要带一点江南导游的温婉和热情。
-      """;
+        严禁"(空一行)""回车"等描述文字，严禁编造价格政策，严禁标题放列表符号后面，严禁把打招呼变成长篇介绍
+        """;
 
     /** 构造 ChatClient 和注入 Redis 记忆组件 */
     public ChatController(ChatClient.Builder builder, RedisChatMemory redisChatMemory,
@@ -145,18 +116,13 @@ public class ChatController {
      *
      * 顺序逻辑：先读历史 → 再保存本轮，避免本轮 user 消息重复出现在上下文中
      */
-    private List<Message> buildMessages(String context, String message, String sessionId) {
+    private List<Message> buildMessages(String context, String message, String sessionId, Ctx ctx) {
         List<Message> allMessages = new ArrayList<>();
-        // [步骤1] 系统提示词 + 情感指令（最高优先级）
-        boolean isNeg = sentimentService.analyze(message) == SentimentService.Sentiment.NEGATIVE;
         String systemWithSlots = SYSTEM_PROMPT
-                + sentimentService.toPromptHint(message);    // 情感优先
-        // 负面时抑制偏好上下文，避免 AI 借机推荐
-        if (!isNeg) systemWithSlots += slotTrackingService.toPromptContext(sessionId);
+                + sentimentService.toPromptHint(ctx.sentiment);
+        if (!ctx.isNeg) systemWithSlots += slotTrackingService.toPromptContext(sessionId);
         allMessages.add(new SystemMessage(systemWithSlots));
-        // [步骤2] 负面时只取最近 3 条历史（防复用旧推荐），正常取 20 条
-        allMessages.addAll(redisChatMemory.get(sessionId, isNeg ? 3 : 20));
-        // [步骤3] 当前用户消息（带知识库上下文）
+        allMessages.addAll(redisChatMemory.get(sessionId, ctx.isNeg ? 3 : 20));
         allMessages.add(new UserMessage(buildUserPrompt(context, message)));
         return allMessages;
     }
@@ -173,7 +139,8 @@ public class ChatController {
         debugLogContext(message, context);
 
         // 1. 先构建 messages（此时历史中不含本轮 user）
-        List<Message> allMessages = buildMessages(context, message, sessionId);
+        Ctx ctx = analyze(message);
+        List<Message> allMessages = buildMessages(context, message, sessionId, ctx);
 
         // 2. 异步保存用户消息（不阻塞响应）
         redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
@@ -203,7 +170,8 @@ public class ChatController {
         debugLogContext(message, context);
 
         // 1. 构建 messages + 异步保存用户消息
-        List<Message> allMessages = buildMessages(context, message, sessionId);
+        Ctx ctx = analyze(message);
+        List<Message> allMessages = buildMessages(context, message, sessionId, ctx);
         redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
 
         // 2. 用于累积完整回复文本的容器
@@ -245,7 +213,8 @@ public class ChatController {
         slotTrackingService.extractAndSave(sessionId, message);
 
         String context = scenicDataImportService.queryKnowledge(message);
-        List<Message> allMessages = buildMessages(context, message, sessionId);
+        Ctx ctx = analyze(message);
+        List<Message> allMessages = buildMessages(context, message, sessionId, ctx);
         redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
 
         ScenicResponse response = chatClient.prompt()
@@ -258,5 +227,14 @@ public class ChatController {
             return Result.success("查询成功", response);
         }
         return Result.error(500, "AI 未返回有效数据");
+    }
+
+    /** 单次请求上下文：情感和意图只计算一次 */
+    private record Ctx(SentimentService.Sentiment sentiment, IntentService.Intent intent, boolean isNeg) {}
+
+    private Ctx analyze(String message) {
+        var s = sentimentService.analyze(message);
+        var i = intentService.classify(message);
+        return new Ctx(s, i, s == SentimentService.Sentiment.NEGATIVE || i == IntentService.Intent.COMPLAINT);
     }
 }

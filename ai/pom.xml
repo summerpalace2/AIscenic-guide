@@ -30,10 +30,10 @@
             <version>${spring-ai.version}</version>
         </dependency>
 
-        <!-- Spring AI Milvus -->
+        <!-- Spring AI Qdrant -->
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-milvus-store-spring-boot-starter</artifactId>
+            <artifactId>spring-ai-qdrant-store-spring-boot-starter</artifactId>
             <version>${spring-ai.version}</version>
         </dependency>
 

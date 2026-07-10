@@ -1,14 +1,12 @@
 package com.ai.guide.service;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
-import io.milvus.client.MilvusServiceClient;
-import io.milvus.param.MetricType;
-import io.milvus.param.R;
-import io.milvus.param.dml.DeleteParam;
-import io.milvus.param.dml.InsertParam;
-import io.milvus.param.dml.SearchParam;
-import io.milvus.response.SearchResultsWrapper;
+import io.qdrant.client.ConditionFactory;
+import io.qdrant.client.PointIdFactory;
+import io.qdrant.client.QdrantClient;
+import io.qdrant.client.ValueFactory;
+import io.qdrant.client.VectorsFactory;
+import io.qdrant.client.grpc.JsonWithInt;
+import io.qdrant.client.grpc.Points;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -36,19 +34,19 @@ import java.util.regex.Pattern;
  *
  * 上传文件
  *   → 1. 文档解析：Excel 结构化解析 / Word 结构化解析 / Tika 通用解析
- *   → 2. 去重：按 source 字段删除 Milvus 中旧数据
+ *   → 2. 去重：按 source 字段删除 Qdrant 中旧数据
  *   → 3. TokenTextSplitter 切割：每段 800 tokens，重叠 200 tokens
  *   → 4. 前缀继承：切割后的碎片继承原始文档的【身份前缀】，防止语义丢失
  *   → 5. text-embedding-v2 向量化：1536 维向量
- *   → 6. Milvus 入库：写入 scenic_guide 集合
+ *   → 6. Qdrant 入库：写入 scenic_guide 集合
  *
  *
  * 检索流程：
  *
  * 用户提问
  *   → 1. 向量化查询文本
- *   → 2. 标签过滤：若问题含 scenic_id，追加 metadata 过滤表达式
- *   → 3. Milvus 向量检索（COSINE 相似度，TOP30）
+ *   → 2. 标签过滤：若问题含 scenic_id，追加 payload 过滤表达式
+ *   → 3. Qdrant 向量检索（COSINE 相似度，TOP30）
  *   → 4. gte-rerank-v2 重排序（TOP30 → TOP10）
  *   → 5. 返回拼接后的 TOP10 文本
  *
@@ -58,14 +56,16 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class ScenicDataImportService {
 
-    private final MilvusServiceClient milvusClient;
+    private static final String COLLECTION_NAME = "scenic_guide";
+
+    private final QdrantClient qdrantClient;
     private final EmbeddingModel embeddingModel;
     private final RerankService rerankService;
 
     private final TokenTextSplitter nlpSplitter = new TokenTextSplitter(800, 200, 5, 10000, true);
     private final Pattern idPattern = Pattern.compile("[A-Z0-9]+-[0-9]+");
 
-    /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Milvus 入库 */
+    /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Qdrant 入库 */
     public void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
@@ -73,10 +73,15 @@ public class ScenicDataImportService {
 
         log.info("【RAG系统】开始解析文件: {}", fileName);
 
-        // [步骤1] 自动去重旧数据：删除 Milvus 中同一文件来源的旧向量
-        milvusClient.delete(DeleteParam.newBuilder()
-                .withCollectionName("scenic_guide")
-                .withExpr("metadata[\"source\"] == \"" + fileName + "\"").build());
+        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", fileName))
+                            .build()).get();
+        } catch (Exception e) {
+            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
+        }
 
         List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
@@ -123,9 +128,9 @@ public class ScenicDataImportService {
             }
         }
 
-        // [步骤4] 向量化 + Milvus 入库
+        // [步骤4] 向量化 + Qdrant 入库
         if (!finalDocs.isEmpty()) {
-            insertToMilvus(finalDocs, fileName);
+            insertToQdrant(finalDocs, fileName);
             log.info("【RAG系统】文件 {} 成功入库，共生成 {} 条语义碎片", fileName, finalDocs.size());
         }
     }
@@ -231,12 +236,9 @@ public class ScenicDataImportService {
         return reader.get();
     }
 
-    /** 批量向量化并写入 Milvus（一条文档 → 一个 1536 维向量） */
-    private void insertToMilvus(List<Document> docs, String sourceName) {
-        List<String> ids = new ArrayList<>();
-        List<List<Float>> vectors = new ArrayList<>();
-        List<String> contents = new ArrayList<>();
-        List<JSONObject> metadataObjects = new ArrayList<>();
+    /** 批量向量化并写入 Qdrant（一条文档 → 一个 1536 维向量） */
+    private void insertToQdrant(List<Document> docs, String sourceName) {
+        List<Points.PointStruct> points = new ArrayList<>();
 
         for (Document doc : docs) {
             String cleanText = (doc.getContent() != null) ? doc.getContent().replace("\uFFFD", " ").trim() : "";
@@ -244,33 +246,34 @@ public class ScenicDataImportService {
 
             try {
                 float[] v = embeddingModel.embed(cleanText);
-                List<Float> vList = new ArrayList<>();
-                for (float f : v) vList.add(f);
 
-                // 【关键点 2】直接构建 JSONObject，不要转 String
-                JSONObject meta = new JSONObject();
+                Map<String, JsonWithInt.Value> payload = new HashMap<>();
+                payload.put("content", ValueFactory.value(cleanText));
+                payload.put("source", ValueFactory.value(sourceName));
                 if (doc.getMetadata() != null) {
-                    meta.putAll(doc.getMetadata());
+                    for (Map.Entry<String, Object> entry : doc.getMetadata().entrySet()) {
+                        if (entry.getValue() != null) {
+                            payload.put(entry.getKey(), ValueFactory.value(entry.getValue().toString()));
+                        }
+                    }
                 }
-                meta.put("source", sourceName);
 
-                ids.add(UUID.randomUUID().toString());
-                vectors.add(vList);
-                contents.add(cleanText);
-                metadataObjects.add(meta); // 直接添加对象
+                Points.PointStruct point = Points.PointStruct.newBuilder()
+                        .setId(PointIdFactory.id(UUID.randomUUID()))
+                        .setVectors(VectorsFactory.vectors(toFloatList(v)))
+                        .putAllPayload(payload)
+                        .build();
+                points.add(point);
 
             } catch (Exception e) { log.error("处理失败: {}", e.getMessage()); }
         }
 
-        if (!ids.isEmpty()) {
-            milvusClient.insert(InsertParam.newBuilder()
-                    .withCollectionName("scenic_guide")
-                    .withFields(List.of(
-                            new InsertParam.Field("id", ids),
-                            new InsertParam.Field("vector", vectors),
-                            new InsertParam.Field("content", contents),
-                            new InsertParam.Field("metadata", metadataObjects)
-                    )).build());
+        if (!points.isEmpty()) {
+            try {
+                qdrantClient.upsertAsync(COLLECTION_NAME, points).get();
+            } catch (Exception e) {
+                log.error("【Qdrant 入库失败】{}", e.getMessage());
+            }
         }
     }
 
@@ -287,8 +290,8 @@ public class ScenicDataImportService {
      * <b>检索步骤：</b>
      * <ol>
      *   <li>向量化查询文本（text-embedding-v2 → 1536 维）</li>
-     *   <li>标签过滤：若问题含 scenic_id 格式，追加 Milvus 过滤表达式</li>
-     *   <li>Milvus COSINE 检索 TOP30</li>
+     *   <li>标签过滤：若问题含 scenic_id 格式，追加 payload 过滤条件</li>
+     *   <li>Qdrant COSINE 检索 TOP30</li>
      *   <li>gte-rerank-v2 重排序 TOP30 → TOP10</li>
      *   <li>返回拼接后的知识文本</li>
      * </ol>
@@ -298,48 +301,57 @@ public class ScenicDataImportService {
 
         // [步骤1] 向量化查询文本
         float[] queryVector = embeddingModel.embed(queryText);
-        List<Float> vectorAsList = new ArrayList<>();
-        for (float v : queryVector) vectorAsList.add(v);
+        List<Float> vectorAsList = toFloatList(queryVector);
 
         // [步骤2] 标签过滤：检测问题中是否包含 scenic_id 模式，有则精确过滤
-        String expr = "";
+        Points.Filter filter = null;
         Matcher matcher = idPattern.matcher(queryText.toUpperCase());
         if (matcher.find()) {
             String id = matcher.group();
-            expr = "metadata[\"scenic_id\"] == \"" + id + "\"";
-            log.info("【极速标签匹配】触发意图识别, ID: {}, Expr: {}", id, expr);
+            filter = Points.Filter.newBuilder()
+                    .addMust(ConditionFactory.matchKeyword("scenic_id", id))
+                    .build();
+            log.info("【极速标签匹配】触发意图识别, ID: {}", id);
         }
 
-        // [步骤3] Milvus 向量检索：COSINE 相似度，TOP30
-        SearchParam.Builder searchBuilder = SearchParam.newBuilder()
-                .withCollectionName("scenic_guide")
-                .withMetricType(MetricType.COSINE)
-                .withOutFields(List.of("content"))
-                .withTopK(30)
-                .withVectors(List.of(vectorAsList))
-                .withVectorFieldName("vector");
+        // [步骤3] Qdrant 向量检索：COSINE 相似度，TOP30
+        Points.SearchPoints.Builder searchBuilder = Points.SearchPoints.newBuilder()
+                .setCollectionName(COLLECTION_NAME)
+                .addAllVector(vectorAsList)
+                .setLimit(30)
+                .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
+        if (filter != null) searchBuilder.setFilter(filter);
 
-        if (!expr.isEmpty()) searchBuilder.withExpr(expr);  // 有标签过滤则追加过滤条件
+        List<Points.ScoredPoint> results;
+        try {
+            results = qdrantClient.searchAsync(searchBuilder.build()).get();
+        } catch (Exception e) {
+            log.error("【检索异常】{}", e.getMessage());
+            return "";
+        }
 
-        R<io.milvus.grpc.SearchResults> response = milvusClient.search(searchBuilder.build());
-
-        if (response.getStatus() != 0 || response.getData() == null || response.getData().getResults().getFieldsDataCount() == 0) {
+        if (results == null || results.isEmpty()) {
             log.warn("【检索无果】");
             return "知识库暂无相关数据。";
         }
 
-        SearchResultsWrapper wrapper = new SearchResultsWrapper(response.getData().getResults());
         List<String> candidateDocs = new ArrayList<>();
-        try {
-            List<?> fieldData = wrapper.getFieldData("content", 0);
-            for (Object data : fieldData) candidateDocs.add(data.toString());
-        } catch (Exception e) {
-            log.error("字段提取失败: {}", e.getMessage());
-            return "";
+        for (Points.ScoredPoint point : results) {
+            JsonWithInt.Value contentVal = point.getPayloadMap().get("content");
+            if (contentVal != null) {
+                candidateDocs.add(contentVal.getStringValue());
+            }
         }
 
         // [步骤4] 重排序：TOP30 候选 → gte-rerank-v2 → 精选 TOP10
         List<String> finalDocs = rerankService.rerank(queryText, candidateDocs, 10);
         return String.join("\n---\n", finalDocs);
+    }
+
+    /** float[] → List<Float> 便于传给 Qdrant 客户端 */
+    private static List<Float> toFloatList(float[] arr) {
+        List<Float> list = new ArrayList<>(arr.length);
+        for (float f : arr) list.add(f);
+        return list;
     }
 }
