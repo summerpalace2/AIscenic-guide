@@ -1,20 +1,36 @@
 package com.ai.guide.model;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-/**
- * 统一后端返回格式
- */
-public record Result<T>(
-        int code,       // 状态码：200 成功，500 失败
-        boolean success, // 是否成功
-        String message,  // 提示消息
-        T data           // 返回的数据（可以是文件名、ID等）
-) {
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+public class Result<T> {
+
+    private int code;
+    private String message;
+    private T data;
+    private boolean success;
+
+    public static <T> Result<T> success() {
+        return new Result<>(200, "ok", null, true);
+    }
+
+    public static <T> Result<T> success(T data) {
+        return new Result<>(200, "ok", data, true);
+    }
+
     public static <T> Result<T> success(String message, T data) {
-        return new Result<>(200, true, message, data);
+        return new Result<>(200, message, data, true);
+    }
+
+    public static <T> Result<T> error(String message) {
+        return new Result<>(500, message, null, false);
     }
 
     public static <T> Result<T> error(int code, String message) {
-        return new Result<>(code, false, message, null);
+        return new Result<>(code, message, null, false);
     }
 }

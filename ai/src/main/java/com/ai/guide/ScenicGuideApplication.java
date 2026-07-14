@@ -3,18 +3,21 @@ package com.ai.guide;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * 灵山智慧导游 - 启动类
- *
- * 启动流程：先加载 .env 环境变量（注入 System Properties）→ 再启动 Spring Boot。
- * 保证 Alibaba/DashScope/Redis 等外部服务配置在 Spring 容器初始化前已就绪。
+ * 景区导览AI后端启动类
+ * 启动前从 .env 文件加载环境变量到系统属性
  */
-@SpringBootApplication
+@SpringBootApplication(exclude = {
+        org.springframework.ai.autoconfigure.vectorstore.qdrant.QdrantVectorStoreAutoConfiguration.class
+    })
 public class ScenicGuideApplication {
 
     public static void main(String[] args) {
@@ -23,29 +26,42 @@ public class ScenicGuideApplication {
     }
 
     /**
-     * 加载 .env 文件（优先 ai/.env，兼容根目录 .env）
+     * 从 ai/.env 或 .env 读取环境变量并设入 System.getProperties()
      */
     private static void loadDotEnv() {
-        Path envPath = Paths.get("ai/.env");
-        if (!Files.exists(envPath)) envPath = Paths.get(".env");
-        if (!Files.exists(envPath)) {
+        String[] candidates = {"ai/.env", ".env"};
+        Path envPath = null;
+        for (String candidate : candidates) {
+            Path p = Paths.get(candidate);
+            if (Files.exists(p)) {
+                envPath = p;
+                break;
+            }
+        }
+
+        if (envPath == null) {
             System.out.println("[提示] 未找到 .env 文件，跳过环境变量注入");
             return;
         }
 
-        try {
-            Files.lines(envPath)
-                    .map(String::trim)
-                    .filter(line -> !line.isEmpty() && !line.startsWith("#"))
-                    .filter(line -> line.contains("="))
-                    .forEach(line -> {
-                        int idx = line.indexOf("=");
-                        String key = line.substring(0, idx).trim();
-                        String value = line.substring(idx + 1).trim();
-                        System.setProperty(key, value);
-                    });
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(new FileInputStream(envPath.toFile()), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                // 跳过空行与注释
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                int eqIndex = line.indexOf('=');
+                if (eqIndex > 0) {
+                    String key = line.substring(0, eqIndex).trim();
+                    String value = line.substring(eqIndex + 1).trim();
+                    System.getProperties().setProperty(key, value);
+                }
+            }
             System.out.println("[提示] 已从 .env 文件加载环境变量");
-        } catch (IOException e) {
+        } catch (Exception e) {
             System.err.println("[警告] 读取 .env 文件失败: " + e.getMessage());
         }
     }

@@ -1,5 +1,7 @@
 package com.ai.guide.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -8,179 +10,212 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 猜你喜欢功能实现
+ * 用户槽位追踪 Service
  *
- * 槽位追踪服务 —— 从对话中提取用户意图参数，存储到 Redis
- *
- * 槽位定义：
- *
- * interest : 景点 / 美食 / 文化 / 路线 / 住宿
- * duration : 半天 / 全天 / 2小时 / 3小时 / ...
- * crowd    : 老人 / 小孩 / 情侣 / 独自 / 家庭 / 朋友
- * area     : 灵山大佛 / 梵宫 / 五印坛城 / 拈花湾 / ...
- * budget   : 经济 / 中等 / 不限
- *
- *
- * Redis Key: chat:session:{id}:slots （Hash 结构）
+ * 所有槽位均从用户消息中提取，存储策略不同：
+ * - interest：滑动窗口 3 条（兴趣可多样，保留多个）
+ * - duration / crowd / area：单值覆盖（只保留最新一次）
  */
 @Service
 public class SlotTrackingService {
 
     private static final String SLOTS_KEY_SUFFIX = ":slots";
+    private static final String USER_PREFS_KEY = "user:prefs";
+    /** interest 槽位滑动窗口上限 */
+    private static final int MAX_INTEREST_ITEMS = 3;
 
-    // 槽位提取规则 —— 关键词 → 槽值映射
-    private static final Map<String, Map<String, String>> SLOT_PATTERNS = Map.of(
-        "interest", Map.of(
-            "景点|景区|风景|玩的|游览|观赏|观光", "景点",
-            "美食|好吃的|餐厅|吃饭|小吃|素斋|素食", "美食",
-            "文化|历史|故事|渊源|来历|传统|佛教|禅", "文化",
-            "路线|行程|规划|怎么走|游玩顺序|游览路线|推荐路线", "路线",
-            "住宿|酒店|住哪|房间|客栈|民宿", "住宿"
-        ),
-        "duration", Map.of(
-            "半天|上午|下午|半天时间", "半天",
-            "全天|一天|一日|整天|一整天", "全天",
-            "2小时|两小时|2个小时|两个小时", "2小时",
-            "3小时|三小时|3个小时|三个小时", "3小时",
-            "4小时|四小时|4个小时|四个小时", "4小时",
-            "6小时|六小时|6个小时|六个小时", "6小时"
-        ),
-        "crowd", Map.of(
-            "老人|长辈|父母|老年|年长|爸妈|爸妈一起|带着父母", "老人",
-            "小孩|孩子|儿童|亲子|带娃|宝贝|小朋友", "小孩",
-            "情侣|对象|男朋友|女朋友|约会|两人|浪漫", "情侣",
-            "独自|一个人|自己|独行|单独", "独自",
-            "家庭|一家|全家|一家人|阖家", "家庭",
-            "朋友|闺蜜|哥们|兄弟|姐妹们|几个朋友", "朋友"
-        )
-    );
+    /** 槽位匹配正则：字段名 → {正则 → 标准值} */
+    private static final Map<String, Map<String, String>> SLOT_PATTERNS;
 
-    // 景区区域名称匹配
-    private static final Pattern AREA_PATTERN = Pattern.compile(
-        "灵山大佛|梵宫|五印坛城|拈花湾|祥符禅寺|曼飞龙塔|降魔堂|佛手广场|胜境广场|香水海|南门|九龙灌浴"
-    );
+    /** 区域名称正则 */
+    private static final Pattern AREA_PATTERN =
+            Pattern.compile("灵山大佛|梵宫|五印坛城|拈花湾|祥符禅寺|曼飞龙塔|降魔堂|佛手广场|胜境广场|香水海|南门|九龙灌浴");
 
     private final RedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    static {
+        SLOT_PATTERNS = new HashMap<>();
+
+        // 兴趣偏好 → 滑动窗口 3 条
+        Map<String, String> interest = new LinkedHashMap<>();
+        interest.put("景点|景区|风景|玩的|游览|观赏|观光", "景点");
+        interest.put("美食|好吃的|餐厅|吃饭|小吃|素斋|素食", "美食");
+        interest.put("文化|历史|故事|渊源|来历|传统|佛教|禅", "文化");
+        interest.put("路线|行程|规划|怎么走|游玩顺序|游览路线|推荐路线", "路线");
+        interest.put("住宿|酒店|住哪|房间|客栈|民宿", "住宿");
+        SLOT_PATTERNS.put("interest", interest);
+
+        // 游玩时长 → 单值覆盖
+        Map<String, String> duration = new LinkedHashMap<>();
+        duration.put("半天|上午|下午|半天时间", "半天");
+        duration.put("全天|一天|一日|整天|一整天", "全天");
+        duration.put("2小时|两小时|2个小时|两个小时", "2小时");
+        duration.put("3小时|三小时|3个小时|三个小时", "3小时");
+        duration.put("4小时|四小时|4个小时|四个小时", "4小时");
+        duration.put("6小时|六小时|6个小时|六个小时", "6小时");
+        SLOT_PATTERNS.put("duration", duration);
+
+        // 游客人群 → 单值覆盖
+        Map<String, String> crowd = new LinkedHashMap<>();
+        crowd.put("老人|长辈|父母|老年|年长|爸妈|爸妈一起|带着父母", "老人");
+        crowd.put("小孩|孩子|儿童|亲子|带娃|宝贝|小朋友", "小孩");
+        crowd.put("情侣|对象|男朋友|女朋友|约会|两人|浪漫", "情侣");
+        crowd.put("独自|一个人|自己|独行|单独", "独自");
+        crowd.put("家庭|一家|全家|一家人|阖家", "家庭");
+        crowd.put("朋友|闺蜜|哥们|兄弟|姐妹们|几个朋友", "朋友");
+        SLOT_PATTERNS.put("crowd", crowd);
+    }
 
     public SlotTrackingService(RedisTemplate<String, String> redisTemplate) {
         this.redisTemplate = redisTemplate;
     }
 
-    private String slotsKey(String sessionId) {
-        return "chat:session:" + sessionId + SLOTS_KEY_SUFFIX;
-    }
+    // ==================== 核心：每条消息都触发提取 ====================
 
     /**
-     * 从用户消息中提取槽位并存储到 Redis
+     * 从用户消息中提取所有槽位
+     * - interest：滑动窗口 3 条（兴趣可多样）
+     * - duration / crowd / area：单值覆盖（只保留最新）
      */
-    public void extractAndSave(String sessionId, String userMessage) {
-        if (userMessage == null || userMessage.isBlank()) return;
-        String key = slotsKey(sessionId);
+    public void extractAndSave(String userId, String message) {
+        if (message == null || message.isBlank()) return;
 
-        // 兴趣偏好
-        String interest = matchSlot(userMessage, SLOT_PATTERNS.get("interest"));
-        if (interest != null) redisTemplate.opsForHash().put(key, "interest", interest);
+        String key = slotsKey(userId);
 
-        // 时间
-        String duration = matchSlot(userMessage, SLOT_PATTERNS.get("duration"));
-        if (duration != null) redisTemplate.opsForHash().put(key, "duration", duration);
+        // interest → 滑动窗口 3 条
+        for (Map.Entry<String, String> entry : SLOT_PATTERNS.get("interest").entrySet()) {
+            if (Pattern.compile(entry.getKey()).matcher(message).find()) {
+                pushSlotItemLimited(key, "interest", entry.getValue(), MAX_INTEREST_ITEMS);
+            }
+        }
 
-        // 人群
-        String crowd = matchSlot(userMessage, SLOT_PATTERNS.get("crowd"));
-        if (crowd != null) redisTemplate.opsForHash().put(key, "crowd", crowd);
+        // duration → 单值覆盖
+        String durationMatch = matchSlot(message, SLOT_PATTERNS.get("duration"));
+        if (durationMatch != null) {
+            redisTemplate.opsForHash().put(key, "duration", durationMatch);
+        }
 
-        // 区域
-        Matcher areaMatcher = AREA_PATTERN.matcher(userMessage);
-        if (areaMatcher.find()) {
-            redisTemplate.opsForHash().put(key, "area", areaMatcher.group());
+        // crowd → 单值覆盖
+        String crowdMatch = matchSlot(message, SLOT_PATTERNS.get("crowd"));
+        if (crowdMatch != null) {
+            redisTemplate.opsForHash().put(key, "crowd", crowdMatch);
+        }
+
+        // area → 单值覆盖（只保留最新提到的区域）
+        Matcher matcher = AREA_PATTERN.matcher(message);
+        String lastArea = null;
+        while (matcher.find()) {
+            lastArea = matcher.group();
+        }
+        if (lastArea != null) {
+            redisTemplate.opsForHash().put(key, "area", lastArea);
         }
     }
 
     /**
-     * 获取当前会话的完整槽位快照
+     * 向指定槽位追加一条值（带滑动窗口限制，仅 interest）
      */
-    public Map<String, String> getSlots(String sessionId) {
+    private void pushSlotItemLimited(String redisKey, String slotName, String value, int maxItems) {
         try {
-            Map<Object, Object> entries = redisTemplate.opsForHash().entries(slotsKey(sessionId));
-            Map<String, String> slots = new LinkedHashMap<>();
-            entries.forEach((k, v) -> slots.put(k.toString(), v.toString()));
-            return slots;
+            String raw = (String) redisTemplate.opsForHash().get(redisKey, slotName);
+            List<String> items = parseList(raw);
+            if (items.contains(value)) return;
+            items.add(value);
+            if (items.size() > maxItems) {
+                items.remove(0);
+            }
+            redisTemplate.opsForHash().put(redisKey, slotName, objectMapper.writeValueAsString(items));
         } catch (Exception e) {
-            return Map.of();
+            redisTemplate.opsForHash().put(redisKey, slotName, value);
         }
     }
 
+    // ==================== 读取 ====================
+
     /**
-     * 删除会话的槽位数据
+     * 获取所有槽位（Map<槽位名, List<值>>）
+     * interest 返回 List（滑动窗口），其余返回单元素 List
      */
-    public void clearSlots(String sessionId) {
-        try {
-            redisTemplate.delete(slotsKey(sessionId));
-        } catch (Exception ignored) {}
+    public Map<String, List<String>> getSlots(String userId) {
+        String key = slotsKey(userId);
+        Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
+        Map<String, List<String>> result = new HashMap<>();
+        entries.forEach((k, v) -> result.put(k.toString(), parseList(v.toString())));
+        return result;
     }
 
     /**
-     * 将槽位快照 + 用户手动设置的偏好合并，转为 AI 可读的上下文片段
-     * <p>
-     * 优先级：手动偏好 > 自动提取槽位
+     * 获取格式化后的偏好提示词（供 LLM 使用）
      */
-    public String toPromptContext(String sessionId) {
-        // 合并手动偏好 + 自动槽位（手动优先）
-        Map<String, String> merged = new LinkedHashMap<>();
-        merged.putAll(getSlots(sessionId));               // 先放自动提取的
-        merged.putAll(getManualPreferences());            // 手动设置覆盖自动
+    public String toPromptContext(String userId) {
+        Map<String, List<String>> slots = getSlots(userId);
+        if (slots.isEmpty()) {
+            Map<String, String> fallback = getManualPreferences();
+            if (fallback.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder("【用户画像】\n");
+            fallback.forEach((k, v) -> sb.append(k).append("：").append(v).append("\n"));
+            return sb.toString().trim();
+        }
+        return buildSlotContextString(slots);
+    }
 
-        if (merged.isEmpty()) return "";
-
-        StringBuilder sb = new StringBuilder("\n# 已知用户偏好\n");
-        merged.forEach((key, value) -> {
-            String label = switch (key) {
+    /**
+     * 构建槽位上下文（内部方法）
+     */
+    public String buildSlotContextString(Map<String, List<String>> slots) {
+        StringBuilder sb = new StringBuilder("【用户画像】\n");
+        slots.forEach((k, v) -> {
+            String label = switch (k) {
                 case "interest" -> "兴趣偏好";
-                case "duration" -> "可用时间";
-                case "crowd"   -> "同行人群";
-                case "area"    -> "关注区域";
-                case "budget"  -> "预算范围";
-                default -> key;
+                case "duration" -> "游玩时长";
+                case "crowd" -> "游客人群";
+                case "area" -> "关注区域";
+                default -> k;
             };
-            sb.append("- **").append(label).append("**：").append(value).append("\n");
+            sb.append(label).append("：").append(String.join("、", v)).append("\n");
         });
-
-        // 缺失槽位提醒
-        List<String> missing = new ArrayList<>();
-        if (!merged.containsKey("interest")) missing.add("兴趣偏好");
-        if (!merged.containsKey("duration")) missing.add("可用时间");
-        if (!merged.containsKey("crowd"))   missing.add("同行人群");
-
-        if (!missing.isEmpty()) {
-            sb.append("\n⚠ 以下信息尚未收集，推荐相关问题时请主动追问：")
-              .append(String.join("、", missing)).append("\n");
-        }
-
-        return sb.toString();
+        return sb.toString().trim();
     }
 
-    // ========== 手动偏好（用户前端弹窗选择，存 Redis 全局键）==========
-    // 当前用固定键，未来接入登录后改为 user:{userId}:prefs
+    // ==================== 管理接口 ====================
 
-    private static final String USER_PREFS_KEY = "user:preferences";
+    public void clearSlots(String userId) {
+        redisTemplate.delete(slotsKey(userId));
+    }
+
+    // ==================== 私有工具 ====================
+
+    private String slotsKey(String userId) {
+        return "user:" + userId + SLOTS_KEY_SUFFIX;
+    }
+
+    private List<String> parseList(String json) {
+        if (json == null || json.isBlank()) return new ArrayList<>();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            // 降级：duration/crowd/area 是纯字符串
+            List<String> single = new ArrayList<>();
+            single.add(json);
+            return single;
+        }
+    }
 
     private Map<String, String> getManualPreferences() {
-        try {
-            Map<Object, Object> entries = redisTemplate.opsForHash().entries(USER_PREFS_KEY);
-            Map<String, String> prefs = new LinkedHashMap<>();
-            entries.forEach((k, v) -> prefs.put(k.toString(), v.toString()));
-            return prefs;
-        } catch (Exception e) {
-            return Map.of();
-        }
+        Map<Object, Object> prefs = redisTemplate.opsForHash().entries(USER_PREFS_KEY);
+        Map<String, String> result = new HashMap<>();
+        prefs.forEach((k, v) -> result.put(k.toString(), v.toString()));
+        if (!result.containsKey("interest")) result.put("interest", "景点");
+        if (!result.containsKey("duration")) result.put("duration", "全天");
+        if (!result.containsKey("crowd")) result.put("crowd", "家庭");
+        return result;
     }
 
-    // ========== 内部方法 ==========
-
-    /** 按正则关键词匹配槽值，返回首个命中 */
-    private String matchSlot(String text, Map<String, String> patterns) {
+    private String matchSlot(String message, Map<String, String> patterns) {
+        if (patterns == null) return null;
         for (Map.Entry<String, String> entry : patterns.entrySet()) {
-            if (Pattern.compile(entry.getKey()).matcher(text).find()) {
+            if (Pattern.compile(entry.getKey()).matcher(message).find()) {
                 return entry.getValue();
             }
         }

@@ -44,6 +44,18 @@
             <version>${spring-ai.version}</version>
         </dependency>
 
+                <!-- gRPC (Qdrant 编译时需要, 版本与 transitive grpc-core 一致) -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-api</artifactId>
+            <version>1.59.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-core</artifactId>
+            <version>1.59.0</version>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

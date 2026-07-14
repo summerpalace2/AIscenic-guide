@@ -348,6 +348,31 @@ public class ScenicDataImportService {
         return String.join("\n---\n", finalDocs);
     }
 
+
+    /**
+     * 统计 Qdrant 中所有碎片数量
+     */
+    public long countDocuments() {
+        try {
+            return qdrantClient.countAsync(COLLECTION_NAME).get();
+        } catch (Exception e) {
+            log.error("countDocuments failed: {}", e.getMessage(), e);
+            return -1;
+        }
+    }
+
+    /**
+     * 清空知识库所有数据
+     */
+    public void deleteAllDocuments() {
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME, Points.Filter.newBuilder().build(), java.time.Duration.ofSeconds(30)).get();
+            log.info("【知识库清空】已删除全部数据");
+        } catch (Exception e) {
+            log.error("deleteAllDocuments failed: {}", e.getMessage(), e);
+            throw new RuntimeException("知识库清空失败", e);
+        }
+    }
     /** float[] → List<Float> 便于传给 Qdrant 客户端 */
     private static List<Float> toFloatList(float[] arr) {
         List<Float> list = new ArrayList<>(arr.length);
