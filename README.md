@@ -342,7 +342,7 @@ L3（语义）    Key: SimHash(64bit)        → Hamming ≤ 3      → <1ms
 | `/ai/cache/stats`      | GET    | 缓存统计               |
 | `/ai/cache/clear`      | POST   | 清空缓存               |
 
-详细请求/响应示例见 **[API 接口文档](./API接口文档.md)**。
+
 
 ---
 
@@ -407,18 +407,7 @@ context:
   keep-recent: 12                 # 上下文压缩保留条数
 ```
 
-### 调优建议
-
-| 参数                | 当前  | 更快            | 更准             |
-| ------------------- | ----- | --------------- | ---------------- |
-| Rerank 超时（正常） | 800ms | ↓ 500ms         | ↑ 1500ms         |
-| Rerank topN（正常） | 10    | ↓ 5             | ↑ 15             |
-| context.keep-recent | 12    | ↓ 6（省 token） | ↑ 20（保留更多） |
-| max-tokens          | 2000  | ↓ 800           | ↑ 4000           |
-| temperature         | 0.3   | —               | ↑ 0.7 更创意     |
 
 ---
 
-## License
 
-MIT License
