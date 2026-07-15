@@ -1,12 +1,13 @@
 package com.ai.guide.controller;
 
 import com.ai.guide.model.Result;
-import com.ai.guide.service.ScenicDataImportService;
 import com.ai.guide.service.RerankService;
+import com.ai.guide.service.ScenicDataImportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import java.util.Map;
+
 import java.util.HashMap;
+import java.util.Map;
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -25,7 +26,7 @@ public class RagController {
             Map<String, Object> stats = new HashMap<>();
             stats.put("totalChunks", scenicDataImportService.countDocuments());
             stats.put("cacheStats", rerankService.getCacheStats());
-            stats.put("sourceCount", 0);
+            stats.put("sourceCount", scenicDataImportService.countDistinctSources());
             return Result.success("查询成功", stats);
         } catch (Exception e) {
             return Result.error(500, "查询失败: " + e.getMessage());

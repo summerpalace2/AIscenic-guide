@@ -61,7 +61,7 @@ public class RerankService {
 
     // ==================== 核心入口 ====================
 
-    public List<String> rerank(String query, List<String> documents, int topN, long timeoutMs) {
+    public List<String> rerank(String query, List<String> documents, int topN, long timeoutMs, boolean useSemanticCache) {
         if (documents == null || documents.isEmpty()) {
             log.warn("【Rerank】候选文档为空，跳过重排");
             return Collections.emptyList();
@@ -76,27 +76,29 @@ public class RerankService {
             return new ArrayList<>(l1Hit.result);
         }
 
-        // L2: 归一化匹配
-        String normalized = QueryNormalizer.normalize(query);
-        if (!normalized.isEmpty()) {
-            CacheEntry l2Hit = l2Cache.get(normalized);
-            if (l2Hit != null && !isExpired(l2Hit)) {
-                l2Hits.incrementAndGet();
-                putL1(cacheKey, l2Hit.result);
-                return new ArrayList<>(l2Hit.result);
+        // L2/L3 语义缓存（深度模式跳过，保证重排质量）
+        if (useSemanticCache) {
+            String normalized = QueryNormalizer.normalize(query);
+            if (!normalized.isEmpty()) {
+                CacheEntry l2Hit = l2Cache.get(normalized + "|" + topN);
+                if (l2Hit != null && !isExpired(l2Hit)) {
+                    l2Hits.incrementAndGet();
+                    putL1(cacheKey, l2Hit.result);
+                    return new ArrayList<>(l2Hit.result);
+                }
             }
-        }
 
-        // L3: 语义匹配
-        long fingerprint = SimHash.compute(query);
-        for (Map.Entry<Long, CacheEntry> entry : l3Cache.entrySet()) {
-            if (SimHash.isSimilar(fingerprint, entry.getKey())) {
-                CacheEntry l3Hit = entry.getValue();
-                if (!isExpired(l3Hit)) {
-                    l3Hits.incrementAndGet();
-                    putL1(cacheKey, l3Hit.result);
-                    if (!normalized.isEmpty()) putL2(normalized, l3Hit.result);
-                    return new ArrayList<>(l3Hit.result);
+            long fingerprint = SimHash.compute(query + "|" + topN);
+            for (Map.Entry<Long, CacheEntry> entry : l3Cache.entrySet()) {
+                if (SimHash.isSimilar(fingerprint, entry.getKey())) {
+                    CacheEntry l3Hit = entry.getValue();
+                    if (!isExpired(l3Hit)) {
+                        l3Hits.incrementAndGet();
+                        putL1(cacheKey, l3Hit.result);
+                        String normL2 = QueryNormalizer.normalize(query);
+                        if (!normL2.isEmpty()) putL2(normL2 + "|" + topN, l3Hit.result);
+                        return new ArrayList<>(l3Hit.result);
+                    }
                 }
             }
         }
@@ -107,18 +109,30 @@ public class RerankService {
 
         if (result != null && !result.isEmpty()) {
             putL1(cacheKey, result);
-            if (!normalized.isEmpty()) putL2(normalized, result);
-            putL3(fingerprint, result);
+            if (useSemanticCache) {
+                String normL2 = QueryNormalizer.normalize(query);
+                if (!normL2.isEmpty()) putL2(normL2 + "|" + topN, result);
+                long fingerprint = SimHash.compute(query + "|" + topN);
+                putL3(fingerprint, result);
+            }
         }
 
         return result;
     }
 
     public List<String> rerank(String query, List<String> documents, int topN) {
-        return rerank(query, documents, topN, 1500);
+        return rerank(query, documents, topN, 1500, true);
     }
 
-    // ==================== 缓存管理 ====================
+    public List<String> rerank(String query, List<String> documents, int topN, long timeoutMs) {
+        return rerank(query, documents, topN, timeoutMs, true);
+    }
+
+    /** 深度模式（跳过 L2/L3 语义缓存，保证重排质量） */
+    public List<String> rerankDeep(String query, List<String> documents, int topN, long timeoutMs) {
+        return rerank(query, documents, topN, timeoutMs, false);
+    }
+
 
     private boolean isExpired(CacheEntry entry) {
         return (System.currentTimeMillis() - entry.timestamp) > (CACHE_TTL_SECONDS * 1000);

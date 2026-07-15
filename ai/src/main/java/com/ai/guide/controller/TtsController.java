@@ -1,14 +1,11 @@
 package com.ai.guide.controller;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URLEncoder;
@@ -28,8 +25,11 @@ public class TtsController {
 
     private static final String TTS_URL = "https://tsn.baidu.com/text2audio";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
-    private static final String API_KEY = "vRjlpNUtBFVrWOIssCim9Gf7";
-    private static final String SECRET_KEY = "x2UHJKifgL1zxfK2P3m0eiMniAJXyGd9";
+    @Value("${baidu.api-key:}")
+    private String apiKey;
+
+    @Value("${baidu.secret-key:}")
+    private String secretKey;
 
     /** 默认音色：度博文（专业讲解风） */
     private static final String DEFAULT_VOICE_PER = "106";
@@ -80,7 +80,7 @@ public class TtsController {
     }
 
     private String getAccessToken() throws Exception {
-        String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + API_KEY + "&client_secret=" + SECRET_KEY;
+        String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
         ResponseEntity<Map> resp = restTemplate.getForEntity(tokenUrl, Map.class);
         Map<String, Object> b = resp.getBody();
         if (b != null && b.containsKey("access_token")) return (String) b.get("access_token");

@@ -2,11 +2,9 @@ package com.ai.guide.controller;
 
 import com.ai.guide.model.Result;
 import com.ai.guide.model.ScenicResponse;
-import com.ai.guide.service.IntentService;
-import com.ai.guide.service.RedisChatMemory;
-import com.ai.guide.service.ScenicDataImportService;
-import com.ai.guide.service.SentimentService;
-import com.ai.guide.service.SlotTrackingService;
+import com.ai.guide.service.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -16,10 +14,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 对话系统入口控制器
@@ -40,14 +39,22 @@ import java.util.List;
 @RequestMapping("/ai")
 public class ChatController {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+
     private final ChatClient chatClient;
     private final RedisChatMemory redisChatMemory;
     private final SlotTrackingService slotTrackingService;
     private final IntentService intentService;
     private final SentimentService sentimentService;
 
-    @Autowired
+@Autowired
     private ScenicDataImportService scenicDataImportService;
+
+    @Autowired
+    private QueryDecompositionService queryDecompositionService;
+
+    @Autowired
+    private ParallelRagService parallelRagService;
 
     private static final String SYSTEM_PROMPT = """
         # 角色: 灵山智慧导游"小导"，有情感、懂历史的江南导游
@@ -67,7 +74,7 @@ public class ChatController {
         模板: ### 1. 名称 换行 - **价格**：内容 换行 - **特色**：内容
         
         # 禁令
-        严禁"(空一行)""回车"等描述文字，严禁编造价格政策，严禁标题放列表符号后面，严禁把打招呼变成长篇介绍
+        严禁"(空一行)""回车"等描述文字，严禁编造任何知识库中不存在的信息（酒店名称/价格/距离/时间/政策等），知识库未覆盖时必须明确说\"暂无相关信息\"，不得编造看似合理的内容，哪怕用户追问也要保持一致；严禁编造价格政策，严禁标题放列表符号后面，严禁把打招呼变成长篇介绍
         """;
 
     /** 构造 ChatClient 和注入 Redis 记忆组件 */
@@ -81,10 +88,27 @@ public class ChatController {
         this.chatClient = builder.build();
     }
 
-    /** 将知识库上下文拼入用户消息 */
+    /** 将知识库上下文拼入用户消息（双模式：有知识=问答 / 无知识=闲聊） */
     private String buildUserPrompt(String context, String message) {
+        // 无知识上下文 → 闲聊模式（不引用知识库）
+        if (context == null || context.isEmpty()) {
+            return String.format("""
+                【用户发言】：%s
+                
+                这是闲聊/问候/情感表达。请：
+                - 像朋友一样自然回应，不要引用任何知识库
+                - 简洁温暖（1-2句话），不啰嗦推荐
+                - 不要提"知识库""暂无""官方咨询"等机械措辞
+                - 可顺势问一句引导话题，如"有什么想了解的随时问我～"
+                """, message);
+        }
+        // 有知识上下文 → 问答模式
         return String.format("""
-            请基于提供的背景知识回答。开放性问题（推荐/建议/路线等）可适当展开多个维度，封闭性问题简洁精准。
+            请严格基于下方【背景知识】回答。开放性问题多维度展开，封闭性问题简洁精准。
+            
+            【防幻觉约束】
+            - 如果背景知识中没有答案或不完整，明确说\"暂无相关信息，建议咨询景区官方\"
+            - 严禁编造人名、店名、价格、时间、距离、政策等事实性信息
             
             【背景知识】：
             %s
@@ -92,11 +116,11 @@ public class ChatController {
             【用户提问】：
             %s
             
-            要求：条理清晰，使用 Markdown 列表和加粗。推荐类问题给出 3-5 条推荐，每条含名称/位置/价格/特色；简洁问题直接回答。
-            """, (context == null || context.isEmpty()) ? "无匹配知识" : context, message);
+            要求：条理清晰，Markdown 列表+加粗。推荐类 3-5 条（名称/位置/价格/特色）；简洁问题直接回答。
+            """, context, message);
     }
 
-    /** 判断是否需要跳过知识库检索（闲聊 + 投诉 + 问候） */
+        /** 判断是否需要跳过知识库检索（闲聊 + 投诉 + 问候） */
     private boolean shouldSkipKnowledge(String message) {
         IntentService.Intent intent = intentService.classify(message);
         return intent == IntentService.Intent.CHITCHAT || intent == IntentService.Intent.COMPLAINT;
@@ -130,12 +154,33 @@ public class ChatController {
     /** 普通对话接口：问候判定 → 槽位提取 → 检索 → 构建上下文 → 调用大模型 → 保存历史 */
     @GetMapping("/chat")
     public String chat(@RequestParam(value = "message", defaultValue = "你好") String message,
-                       @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
+                       @RequestParam(value = "sessionId", defaultValue = "default") String sessionId,
+                       @RequestParam(value = "mode", defaultValue = "normal") String mode) {
         // 0. 从用户消息中提取槽位（兴趣/时间/人群等），存入 Redis
         slotTrackingService.extractAndSave(sessionId, message);
 
         //判断是不是需要使用RAG
-        String context = shouldSkipKnowledge(message) ? "" : scenicDataImportService.queryKnowledge(message);
+        // 判断是不是需要使用RAG（深度模式跳过规则检查，信 LLM 意图分析）
+        String context;
+        if ("deep".equals(mode)) {
+            var decomposed = queryDecompositionService.decompose(message);
+            if (decomposed != null && !decomposed.isEmpty()) {
+                // 并行检索子问题 + 原始 query 兜底合并
+                String parallelContext = parallelRagService.search(decomposed.subQueries());
+                String baseContext = scenicDataImportService.queryKnowledge(message, 1500);
+                context = mergeContexts(parallelContext, baseContext);
+                log.info("[Deep] 子问题合并 + base query 兜底, 并行碎片={}, base碎片={}, 合并后={}",
+                        parallelContext.split("\\n---\\n").length,
+                        baseContext.split("\\n---\\n").length,
+                        context.split("\\n---\\n").length);
+            } else {
+                context = "";
+            }
+        } else if (shouldSkipKnowledge(message)) {
+            context = "";
+        } else {
+            context = scenicDataImportService.queryKnowledge(message, 800);
+        }
         debugLogContext(message, context);
 
         // 1. 先构建 messages（此时历史中不含本轮 user）
@@ -162,11 +207,33 @@ public class ChatController {
     @GetMapping(value = "/chat/stream", produces = "text/event-stream;charset=UTF-8")
     public Flux<ServerSentEvent<String>> chatStream(
             @RequestParam(value = "message", defaultValue = "你好") String message,
-            @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
+            @RequestParam(value = "sessionId", defaultValue = "default") String sessionId,
+                       @RequestParam(value = "mode", defaultValue = "normal") String mode) {
 
         slotTrackingService.extractAndSave(sessionId, message);
+        log.info("[DEBUG] chatStream mode=\"{}\", sessionId=\"{}\", message=\"{}\"", mode, sessionId, message);
 
-        String context = shouldSkipKnowledge(message) ? "" : scenicDataImportService.queryKnowledge(message);
+        // 判断是不是需要使用RAG（深度模式跳过规则检查，信 LLM 意图分析）
+        String context;
+        if ("deep".equals(mode)) {
+            var decomposed = queryDecompositionService.decompose(message);
+            if (decomposed != null && !decomposed.isEmpty()) {
+                // 并行检索子问题 + 原始 query 兜底合并
+                String parallelContext = parallelRagService.search(decomposed.subQueries());
+                String baseContext = scenicDataImportService.queryKnowledge(message, 1500);
+                context = mergeContexts(parallelContext, baseContext);
+                log.info("[Deep] 子问题合并 + base query 兜底, 并行碎片={}, base碎片={}, 合并后={}",
+                        parallelContext.split("\\n---\\n").length,
+                        baseContext.split("\\n---\\n").length,
+                        context.split("\\n---\\n").length);
+            } else {
+                context = "";
+            }
+        } else if (shouldSkipKnowledge(message)) {
+            context = "";
+        } else {
+            context = scenicDataImportService.queryKnowledge(message, 800);
+        }
         debugLogContext(message, context);
 
         // 1. 构建 messages + 异步保存用户消息
@@ -209,10 +276,11 @@ public class ChatController {
     /** 结构化对话接口：返回 Result;ScenicResponse;，同时记录对话历史 */
     @GetMapping("/chat/structured")
     public Result<ScenicResponse> chatStructured(@RequestParam("message") String message,
-                                         @RequestParam(value = "sessionId", defaultValue = "default") String sessionId) {
+                                         @RequestParam(value = "sessionId", defaultValue = "default") String sessionId,
+            @RequestParam(value = "mode", defaultValue = "normal") String mode) {
         slotTrackingService.extractAndSave(sessionId, message);
 
-        String context = scenicDataImportService.queryKnowledge(message);
+        String context = scenicDataImportService.queryKnowledge(message, 800);
         Ctx ctx = analyze(message);
         List<Message> allMessages = buildMessages(context, message, sessionId, ctx);
         redisChatMemory.addAsync(sessionId, List.of(new UserMessage(message)));
@@ -236,5 +304,30 @@ public class ChatController {
         var s = sentimentService.analyze(message);
         var i = intentService.classify(message);
         return new Ctx(s, i, s == SentimentService.Sentiment.NEGATIVE || i == IntentService.Intent.COMPLAINT);
+    }
+
+    /**
+     * 合并并行检索结果和 base query 结果（去重，并行优先）
+     * 并行检索结果已经过交叉验证重排（频次高的在前），优先保留
+     * base query 结果作为兜底，补充平行检索未覆盖的知识碎片
+     */
+    private String mergeContexts(String parallelContext, String baseContext) {
+        if (parallelContext == null || parallelContext.isBlank()) return baseContext != null ? baseContext : "";
+        if (baseContext == null || baseContext.isBlank()) return parallelContext;
+        Set<String> seen = new HashSet<>();
+        List<String> merged = new ArrayList<>();
+        // 先加入并行结果（已按置信度排序）
+        for (String frag : parallelContext.split("\\n---\\n")) {
+            String norm = frag.replaceAll("\\s+", "").toLowerCase();
+            if (norm.length() > 10 && seen.add(norm)) merged.add(frag);
+        }
+        // 补充 base query 独有的碎片
+        for (String frag : baseContext.split("\\n---\\n")) {
+            String norm = frag.replaceAll("\\s+", "").toLowerCase();
+            if (norm.length() > 10 && seen.add(norm)) merged.add(frag);
+        }
+        // 上限 15 条（并行 12 + base 3 兜底）
+        if (merged.size() > 15) merged = merged.subList(0, 15);
+        return String.join("\n---\n", merged);
     }
 }

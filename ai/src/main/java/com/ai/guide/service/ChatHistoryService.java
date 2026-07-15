@@ -31,8 +31,8 @@ import java.util.Set;
 @Service
 public class ChatHistoryService {
 
-    private static final String MESSAGE_KEY_PREFIX = "chat:session:";
-    private static final String MESSAGE_KEY_SUFFIX = ":messages";
+    private static final String MESSAGE_KEY_PREFIX = "chat:history:";
+    private static final String MESSAGE_KEY_SUFFIX = "";
     private static final String SESSIONS_KEY = "chat:sessions";
 
     private final RedisTemplate<String, String> redisTemplate;

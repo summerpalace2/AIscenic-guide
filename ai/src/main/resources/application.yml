@@ -37,5 +37,8 @@ qdrant:
   host: "${QDRANT_HOST:localhost}"
   port: "${QDRANT_PORT:6334}"
   api-key: "${QDRANT_API_KEY:}"
+baidu:
+  api-key: "${BAIDU_API_KEY:}"
+  secret-key: "${BAIDU_SECRET_KEY:}"
 context:
   keep-recent: 12

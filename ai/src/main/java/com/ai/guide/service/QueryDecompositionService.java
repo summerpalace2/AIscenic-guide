@@ -2,12 +2,16 @@ package com.ai.guide.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 查询分解 Service（Agentic RAG 核心）
@@ -15,6 +19,10 @@ import java.util.*;
  */
 @Service
 public class QueryDecompositionService {
+
+    private static final Logger log = LoggerFactory.getLogger(QueryDecompositionService.class);
+
+
 
     private static final String DECOMPOSE_PROMPT = """
             你是问题分析专家。判断用户输入是否需要查询景区知识库，如果需要则拆解为子问题。
@@ -50,7 +58,7 @@ public class QueryDecompositionService {
         }
 
         try {
-            System.out.println("[Deep] Step1 LLM 拆解中... query=\"" + query + "\"");
+            log.info("[Deep] Step1 LLM 拆解中... query=\"{}\"", query);
             long t0 = System.currentTimeMillis();
 
             String response = chatClient.prompt()
@@ -59,13 +67,13 @@ public class QueryDecompositionService {
                     .content();
 
             long llmTime = System.currentTimeMillis() - t0;
-            System.out.println("[Deep] Step1 LLM 完成, 耗时=" + llmTime + "ms, 原始响应=" + response.substring(0, Math.min(120, response.length())));
+            log.info("[Deep] Step1 LLM 完成, 耗时={}ms, 原始响应={}", llmTime, response.substring(0, Math.min(120, response.length())));
 
             DecomposeResult result = parseResponse(response);
-            System.out.println("[Deep] Step1 解析: needSearch=" + result.needSearch() + ", 子问题=" + result.subQueries());
+            log.info("[Deep] Step1 解析: needSearch={}, 子问题={}", result.needSearch(), result.subQueries());
             return result;
         } catch (Exception e) {
-            System.err.println("[Deep] ❌ LLM 拆解失败: " + e.getMessage() + " →  fallback 为直接检索");
+            log.error("[Deep] LLM 拆解失败: {} → fallback 为直接检索", e.getMessage());
             return new DecomposeResult(true, List.of(query));
         }
     }
@@ -96,7 +104,7 @@ public class QueryDecompositionService {
             }
             return new DecomposeResult(needSearch, subQueries);
         } catch (Exception e) {
-            System.err.println("[Deep] JSON 解析失败: " + json);
+            log.warn("[Deep] JSON 解析失败: {}", json);
             return new DecomposeResult(true, Collections.emptyList());
         }
     }

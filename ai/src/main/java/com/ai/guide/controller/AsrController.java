@@ -3,22 +3,15 @@ package com.ai.guide.controller;
 import com.ai.guide.model.Result;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,8 +29,11 @@ public class AsrController {
 
     private static final String ASR_URL = "http://vop.baidu.com/server_api";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
-    private static final String API_KEY = "vRjlpNUtBFVrWOIssCim9Gf7";
-    private static final String SECRET_KEY = "x2UHJKifgL1zxfK2P3m0eiMniAJXyGd9";
+    @Value("${baidu.api-key:}")
+    private String apiKey;
+
+    @Value("${baidu.secret-key:}")
+    private String secretKey;
 
     /** 1537 = 中文普通话 */
     private static final int DEV_PID = 1537;
@@ -118,7 +114,7 @@ public class AsrController {
      * 获取百度 Access Token（与 TTS 共用同一套 API Key）
      */
     private String getAccessToken() throws Exception {
-        String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + API_KEY + "&client_secret=" + SECRET_KEY;
+        String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
         ResponseEntity<Map> resp = restTemplate.getForEntity(tokenUrl, Map.class);
         Map<String, Object> b = resp.getBody();
         if (b != null && b.containsKey("access_token")) {
