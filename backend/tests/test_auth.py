@@ -1,8 +1,6 @@
 """
 认证模块测试
 """
-import pytest
-from fastapi.testclient import TestClient
 
 
 class TestAuth:

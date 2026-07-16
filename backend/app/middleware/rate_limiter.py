@@ -20,7 +20,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._records: dict[str, list[float]] = defaultdict(list)
         self._cleanup_counter = 0
         self._whitelist = ['/health', '/docs', '/redoc', '/openapi.json',
-                           '/auth/login', '/auth/register']
+                           '/api/v1/auth/login', '/api/v1/auth/register']
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path

@@ -1,14 +1,15 @@
+import uuid
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 from typing import Optional
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import func, desc, text
+from sqlalchemy import func, desc, case
 from sqlalchemy.orm import Session
+from collections import defaultdict
 from app.api.deps import get_admin_user
 from app.db.session import get_db
 from app.models.user import User
 from app.models.analytics import ServiceLog, AnalyticsReport
-from app.models.dialog import DialogSession
 
 router = APIRouter(prefix='/analytics', tags=['Analytics'])
 
@@ -64,12 +65,28 @@ async def dashboard(period: str = Query('today'), admin: User = Depends(get_admi
     ).group_by(ServiceLog.question).order_by(
         desc(func.count())
     ).limit(10).all()
-    hot_questions_top10 = [{'question': r[0], 'count': r[1]} for r in hot_rows]
+    hot_questions_top10 = [{'rank': i + 1, 'question': r[0], 'count': r[1]} for i, r in enumerate(hot_rows)]
 
-    # 情绪分布
+    # 情绪分布（比率化）
     pos = db.query(ServiceLog).filter(ServiceLog.emotion == 'positive').count()
     neu = db.query(ServiceLog).filter(ServiceLog.emotion == 'neutral').count()
     neg = db.query(ServiceLog).filter(ServiceLog.emotion == 'negative').count()
+    total_emo = pos + neu + neg or 1
+
+    # 满意度趋势：按天聚合最近7天的积极率
+    dialect = db.bind.dialect.name if db.bind else 'sqlite'
+    period_expr = _date_trunc_expr(ServiceLog.created_at, 'day', dialect)
+    trend_rows = db.query(
+        period_expr.label('period'),
+        func.count().label('total'),
+        func.sum(case((ServiceLog.emotion == 'positive', 1), else_=0)).label('pos_count')
+    ).filter(
+        ServiceLog.created_at >= week_ago
+    ).group_by(period_expr).order_by(period_expr).all()
+    satisfaction_trend = []
+    for r in trend_rows:
+        rate = round(r[2] / r[1], 4) if r[1] > 0 else 0
+        satisfaction_trend.append({'date': str(r[0]), 'score': rate})
 
     return {
         'code': 0, 'success': True, 'message': 'OK',
@@ -78,9 +95,9 @@ async def dashboard(period: str = Query('today'), admin: User = Depends(get_admi
                 'total': total, 'today': today_count, 'week': week_count, 'trend': trend
             },
             'active_users': {'current': current_active, 'peak_today': peak_today},
-            'satisfaction_trend': [],
+            'satisfaction_trend': satisfaction_trend,
             'hot_questions_top10': hot_questions_top10,
-            'emotion_distribution': {'positive': pos, 'neutral': neu, 'negative': neg}
+            'emotion_distribution': {'positive': round(pos / total_emo, 2), 'neutral': round(neu / total_emo, 2), 'negative': round(neg / total_emo, 2)}
         }
     }
 
@@ -92,7 +109,7 @@ async def hot_questions(period: str = Query('today'), top_n: int = Query(10), ad
     ).group_by(ServiceLog.question).order_by(
         desc(func.count())
     ).limit(top_n).all()
-    data = [{'question': r[0], 'count': r[1]} for r in rows]
+    data = [{'rank': i + 1, 'question': r[0], 'count': r[1]} for i, r in enumerate(rows)]
     return {'code': 0, 'success': True, 'message': 'OK', 'data': data}
 
 @router.get('/sentiment-trend')
@@ -114,10 +131,19 @@ async def sentiment_trend(start_date: Optional[str] = None, end_date: Optional[s
     ).order_by(
         period_expr
     ).all()
-    data = [
-        {'period': str(r[0]), 'emotion': r[1], 'count': r[2]}
-        for r in rows
-    ]
+    # 按时间聚合为 { time, positive, neutral, negative } 比率格式
+    aggregated = defaultdict(dict)
+    for r in rows:
+        aggregated[str(r[0])][r[1]] = r[2]
+    data = []
+    for period, emotions in sorted(aggregated.items()):
+        total = sum(emotions.values()) or 1
+        data.append({
+            'time': period,
+            'positive': round(emotions.get('positive', 0) / total, 2),
+            'neutral': round(emotions.get('neutral', 0) / total, 2),
+            'negative': round(emotions.get('negative', 0) / total, 2)
+        })
     return {'code': 0, 'success': True, 'message': 'OK', 'data': {'data': data}}
 
 @router.get('/service-count')
@@ -168,7 +194,7 @@ async def list_reports(page: int = Query(1), size: int = Query(20), type: Option
 
 @router.get('/reports/{report_id}')
 async def get_report(report_id: str, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
-    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == report_id).first()
+    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == uuid.UUID(report_id)).first()
     if not report:
         return {'code': 404, 'success': False, 'message': '报告不存在', 'data': {}}
     return {
@@ -184,7 +210,7 @@ async def get_report(report_id: str, admin: User = Depends(get_admin_user), db: 
 
 @router.get('/reports/{report_id}/export')
 async def export_report(report_id: str, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
-    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == report_id).first()
+    report = db.query(AnalyticsReport).filter(AnalyticsReport.id == uuid.UUID(report_id)).first()
     if not report:
         return JSONResponse(status_code=404, content={'code': 40405, 'success': False, 'message': '报告不存在'})
     from app.services.pdf_service import generate_report_pdf

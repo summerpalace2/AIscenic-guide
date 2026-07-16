@@ -1,7 +1,6 @@
 """
 健康检查接口测试
 """
-from fastapi.testclient import TestClient
 
 
 class TestHealth:

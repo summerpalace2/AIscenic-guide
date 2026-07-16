@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from typing import Optional
 from sqlalchemy.orm import Session
 from app.db.session import get_db
@@ -29,3 +29,18 @@ async def get_messages(session_id: str, before_id: Optional[str] = None, limit: 
 async def delete_session(session_id: str, db: Session = Depends(get_db)):
     dialog_service.delete_session(db, session_id)
     return {'code': 0, 'success': True, 'message': 'Deleted', 'data': None}
+
+@router.post('/voice')
+async def send_voice(
+    audio: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    user: Optional[User] = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _=Depends(check_sensitive_words),
+):
+    """发送语音消息（Mock：固定文本模拟 ASR 识别结果）"""
+    mock_text = '用户语音消息的模拟转写文本'
+    data = await dialog_service.send_message(
+        db=db, content=mock_text, session_id=session_id, user_id=str(user.id) if user else None
+    )
+    return {'code': 0, 'success': True, 'message': 'OK', 'data': data}

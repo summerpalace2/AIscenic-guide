@@ -10,7 +10,9 @@ from app.services.dh_config_service import dh_config_service
 router = APIRouter(prefix='/admin/digital-human', tags=['DigitalHuman'])
 
 class DHUpdate(BaseModel):
-    appearance: Optional[dict] = None; voice: Optional[dict] = None; emotion_style: Optional[str] = None
+    appearance: Optional[dict] = None
+    voice: Optional[dict] = None
+    emotion_style: Optional[str] = None
 
 @router.get('')
 async def get_config(admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):

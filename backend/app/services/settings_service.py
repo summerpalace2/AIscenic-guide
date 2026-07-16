@@ -3,7 +3,6 @@
 从 SystemSettings 表读写系统配置（景区名称、营业时间等）
 """
 import uuid
-from typing import Any
 from sqlalchemy.orm import Session
 from app.models.system import SystemSettings
 

@@ -13,8 +13,9 @@
 >   - `403` 已认证但无权限（角色不符、频率限制）
 >   - `404` 请求的资源不存在
 >   - `500` 服务端内部错误
-> - **统一响应体**: `{ "code": int, "message": string, "data": any }`
+> - **统一响应体**: `{ "code": int, "success": bool, "message": string, "data": any }`
 >   - `code` 字段用于业务错误细分（如区分"手机号格式错误"与"手机号已注册"），前端可据此做精细化提示
+>   - `success` 字段标识业务是否成功（`true` 为成功，`false` 为业务错误），前端可据此快速判断
 
 ---
 
@@ -261,6 +262,7 @@ GET /knowledge
             "category": "history",
             "content_snippet": "故宫始建于公元1406年...",
             "status": "published",
+            "chunk_count": 0,
             "created_at": "2026-05-01T10:00:00Z",
             "updated_at": "2026-05-07T10:00:00Z"
         }
@@ -287,6 +289,7 @@ GET /knowledge/{doc_id}
     "file_url": "http://minio/.../original.pdf",
     "status": "published",
     "vector_status": "synced",
+    "chunk_count": 15,
     "tags": ["故宫", "明朝", "历史"],
     "created_at": "2026-05-01T10:00:00Z",
     "updated_at": "2026-05-07T10:00:00Z"
@@ -431,6 +434,8 @@ POST /dialog/voice
 | session_id | string | 否 | 会话ID |
 
 **处理流程:** 上传 → 后端转发给AI端ASR → 转写文本 → 进入问答流程。
+
+> 当前为 Mock 实现，暂用固定文本模拟 ASR 识别结果。
 
 **Response `data`:** 同文本消息。
 

@@ -3,13 +3,13 @@
 使用 APScheduler 实现后台每日巡检和热点数据预计算
 启动时自动注册到 FastAPI 应用生命周期中
 """
-import asyncio
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.analytics import ServiceLog, AnalyticsReport
 from app.models.dialog import DialogMessage
+from app.models.knowledge import KnowledgeDocument
 import uuid
 
 settings = get_settings()
@@ -44,6 +44,18 @@ async def daily_inspection():
             ServiceLog.created_at >= day_start,
             ServiceLog.created_at < day_end
         ).count()
+
+        # 清理无效知识文档：vector_status=pending 且 file_url 为空，且创建超过 24 小时
+        stale_cutoff = day_end
+        stale_docs = db.query(KnowledgeDocument).filter(
+            KnowledgeDocument.vector_status == 'pending',
+            KnowledgeDocument.file_url == '',
+            KnowledgeDocument.created_at < stale_cutoff
+        ).all()
+        for doc in stale_docs:
+            db.delete(doc)
+        if stale_docs:
+            print(f'[Scheduler] 清理无效知识文档 {len(stale_docs)} 条')
 
         data = {
             'date': day_start.date().isoformat(),

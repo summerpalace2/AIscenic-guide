@@ -1,7 +1,6 @@
 """
 对话模块测试
 """
-import uuid
 
 class TestDialog:
     def test_send_message_no_auth(self, client):

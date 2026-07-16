@@ -40,16 +40,26 @@ class DigitalHumanConfigService:
                 config_data=DEFAULT_CONFIG.copy()
             )
             db.add(config)
-        else:
-            current = config.config_data.copy()
-            for k, v in updates.items():
-                if v is not None:
-                    current[k] = v
-            config.config_data = current
+        current = config.config_data.copy()
+        for k, v in updates.items():
+            if v is not None:
+                current[k] = v
+        config.config_data = current
         config.updated_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(config)
         return config.config_data
+
+    def delete_config(self, db: Session) -> bool:
+        """删除数字人配置，恢复到默认"""
+        config = db.query(DigitalHumanConfig).filter(
+            DigitalHumanConfig.config_type == 'main'
+        ).first()
+        if not config:
+            return False
+        db.delete(config)
+        db.commit()
+        return True
 
     def _init_default(self, db: Session) -> dict:
         """初始化默认配置到数据库"""

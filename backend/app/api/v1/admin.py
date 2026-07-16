@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.db.session import get_db
 from app.models.user import User
 from app.models.system import AdminLog
+
 from app.api.deps import get_admin_user
 from app.core.security import get_password_hash
 from app.services.settings_service import settings_service
@@ -20,14 +21,19 @@ def _log(db, admin_id, action, target='', detail='', ip=''):
     db.commit()
 
 class CreateAdminReq(BaseModel):
-    username: str; password: str; role: str = 'admin'
+    username: str
+    password: str
+    role: str = 'admin'
 
 class UpdateRoleReq(BaseModel):
     role: str
 
 class SettingsUpdate(BaseModel):
-    scenic_name: Optional[str] = None; business_hours: Optional[str] = None
-    welcome_message: Optional[str] = None; maintenance_mode: Optional[bool] = None; language: Optional[str] = None
+    scenic_name: Optional[str] = None
+    business_hours: Optional[str] = None
+    welcome_message: Optional[str] = None
+    maintenance_mode: Optional[bool] = None
+    language: Optional[str] = None
 
 @router.get('/users')
 async def list_admins(page: int = Query(1), size: int = Query(20), admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
@@ -40,7 +46,8 @@ async def create_admin(req: CreateAdminReq, request: Request, admin: User = Depe
     if db.query(User).filter(User.nickname == req.username).first():
         raise HTTPException(status_code=400, detail={'code': 40003, 'success': False, 'message': 'Username exists'})
     user = User(id=uuid.uuid4(), nickname=req.username, password_hash=get_password_hash(req.password), role=req.role)
-    db.add(user); db.commit()
+    db.add(user)
+    db.commit()
     # 记录创建管理员操作
     ip = request.headers.get('x-forwarded-for', request.client.host if request.client else '')
     _log(db, str(admin.id), 'admin.create', target=req.username, detail=f'创建管理员: {req.username}', ip=ip)
@@ -48,9 +55,11 @@ async def create_admin(req: CreateAdminReq, request: Request, admin: User = Depe
 
 @router.put('/users/{user_id}/role')
 async def update_role(user_id: str, req: UpdateRoleReq, request: Request, admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user: raise HTTPException(status_code=404, detail={'code': 40401, 'success': False, 'message': 'User not found'})
-    user.role = req.role; db.commit()
+    user = db.query(User).filter(User.id == uuid.UUID(user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail={'code': 40401, 'success': False, 'message': 'User not found'})
+    user.role = req.role
+    db.commit()
     ip = request.headers.get('x-forwarded-for', request.client.host if request.client else '')
     _log(db, str(admin.id), 'admin.update_role', target=user_id, detail=f'角色变更为: {req.role}', ip=ip)
     return {'code': 0, 'success': True, 'message': 'Updated'}
@@ -62,10 +71,12 @@ async def list_logs(page: int = Query(1), size: int = Query(20),
                     admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
     """查询操作日志，支持分页、日期范围、操作类型筛选"""
     q = db.query(AdminLog)
-    if start_date: q = q.filter(AdminLog.created_at >= start_date)
-    if end_date: q = q.filter(AdminLog.created_at <= end_date)
-    if action_type: q = q.filter(AdminLog.action == action_type)
-    total = q.count()
+    if start_date:
+        q = q.filter(AdminLog.created_at >= start_date)
+    if end_date:
+        q = q.filter(AdminLog.created_at <= end_date)
+    if action_type:
+        q = q.filter(AdminLog.action == action_type)
     items = q.order_by(AdminLog.created_at.desc()).offset((page-1)*size).limit(size).all()
     return {
         'code': 0, 'success': True, 'message': 'OK',

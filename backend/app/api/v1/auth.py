@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.db.session import get_db
@@ -30,21 +30,25 @@ async def admin_login(req: AdminLoginRequest, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail={'code': 40001, 'success': False, 'message': str(e)})
 
+class WechatLoginRequest(BaseModel):
+    code: str
+
 @router.post('/wechat')
-async def wechat_login(code: str = Query(...)):
-    return {'code': 0, 'success': True, 'message': 'WeChat login stub', 'data': {'user_id': '', 'token': ''}}
+async def wechat_login(req: WechatLoginRequest):
+    return {'code': 0, 'success': True, 'message': 'WeChat login stub', 'data': {'user_id': '', 'token': '', 'expires_in': 3600}}
 
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
 @router.post('/refresh')
 async def refresh_token(req: TokenRefreshRequest):
-    from app.core.security import decode_token, create_access_token
+    from app.core.security import decode_token, create_access_token, create_refresh_token
     payload = decode_token(req.refresh_token)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={'code': 40102, 'success': False, 'message': 'Invalid refresh token'})
     token = create_access_token({'sub': payload.get('sub', ''), 'role': payload.get('role', 'tourist')})
-    return {'code': 0, 'success': True, 'message': 'Token refreshed', 'data': {'token': token, 'expires_in': 3600}}
+    new_refresh = create_refresh_token({'sub': payload.get('sub', '')})
+    return {'code': 0, 'success': True, 'message': 'Token refreshed', 'data': {'token': token, 'refresh_token': new_refresh, 'expires_in': 3600}}
 
 @router.get('/me')
 async def get_me(user: User = Depends(get_current_user)):

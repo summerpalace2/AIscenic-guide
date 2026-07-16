@@ -11,7 +11,9 @@ class AuthService:
         user = User(id=uuid.uuid4(), phone=req.phone,
                     password_hash=get_password_hash(req.password),
                     nickname=req.nickname or f'Tourist{req.phone[-4:]}', role='tourist')
-        db.add(user); db.commit(); db.refresh(user)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
         return {'user_id': str(user.id), 'token': create_access_token({'sub': str(user.id), 'role': user.role}), 'expires_in': 3600}
 
     def login(self, db: Session, req: LoginRequest) -> dict:

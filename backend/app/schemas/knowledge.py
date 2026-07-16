@@ -8,6 +8,7 @@ class KnowledgeCreate(BaseModel):
     content: Optional[str] = None
     tags: Optional[list[str]] = None
     file_url: Optional[str] = None
+    file_md5: Optional[str] = None
 
 class KnowledgeUpdate(BaseModel):
     title: Optional[str] = None

@@ -1,14 +1,15 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi import WebSocket, Query
+from fastapi import WebSocket
 from app.core.config import get_settings
 from app.db.session import engine
 from app.db.base import Base
 from app.api.v1 import auth, users, knowledge, dialog, digital_human, analytics, location, admin
 from app.middleware.rate_limiter import RateLimitMiddleware
-from app.ws import ws_manager, handle_websocket
+from app.middleware.request_logger import RequestLogMiddleware
+from app.ws import handle_websocket
 from app.db.session import get_db
 from app.core.security import decode_token
 from fastapi.staticfiles import StaticFiles
@@ -64,7 +65,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.APP_NAME, version='1.0.0', lifespan=lifespan, docs_url='/docs', redoc_url='/redoc')
 
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+app.add_middleware(RequestLogMiddleware)
 app.add_middleware(RateLimitMiddleware, calls=60, period=60)
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content=exc.detail)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -75,8 +81,13 @@ async def health_check():
     return {'code': 0, 'success': True, 'message': 'OK', 'data': 'ok'}
 
 @app.websocket('/ws/{user_id}')
-async def websocket_endpoint(ws: WebSocket, user_id: str, token: str = Query(...)):
-    """WebSocket 端点，通过 query param token 认证"""
+async def websocket_endpoint(ws: WebSocket, user_id: str):
+    """WebSocket 端点，通过 Authorization: Bearer <token> 请求头认证"""
+    auth_header = ws.headers.get('authorization', '')
+    if not auth_header.startswith('Bearer '):
+        await ws.close(code=4001)
+        return
+    token = auth_header[7:]
     payload = decode_token(token)
     if not payload:
         await ws.close(code=4001)

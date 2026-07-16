@@ -39,7 +39,7 @@ class LocalFileStorage:
         # 读取文件内容
         content = await file.read()
         if len(content) > MAX_FILE_SIZE:
-            raise ValueError(f'文件大小超过限制（最大50MB）')
+            raise ValueError('文件大小超过限制（最大50MB）')
 
         # 生成存储路径
         target_dir = self.base_dir / sub_dir
