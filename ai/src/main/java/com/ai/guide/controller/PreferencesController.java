@@ -1,6 +1,7 @@
 package com.ai.guide.controller;
 
 import com.ai.guide.model.Result;
+import com.ai.guide.service.SlotTrackingService;
 import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +20,12 @@ public class PreferencesController {
     private static final String PREFS_KEY = "user:preferences";
 
     private final RedisTemplate<String, String> redisTemplate;
+    private final SlotTrackingService slotTrackingService;
 
-    public PreferencesController(RedisTemplate<String, String> redisTemplate) {
+    public PreferencesController(RedisTemplate<String, String> redisTemplate,
+                                  SlotTrackingService slotTrackingService) {
         this.redisTemplate = redisTemplate;
+        this.slotTrackingService = slotTrackingService;
     }
 
     @PostMapping("/preferences")
@@ -46,6 +50,19 @@ public class PreferencesController {
             return Result.success("查询成功", result);
         } catch (Exception e) {
             return Result.success("查询成功", Map.of());
+        }
+    }
+
+    @DeleteMapping("/preferences")
+    public Result<Void> clearPreferences() {
+        try {
+            redisTemplate.delete(PREFS_KEY);
+            slotTrackingService.clearSlots("default");
+            redisTemplate.opsForHash().put(PREFS_KEY, "prefs_initialized", "1");
+            System.out.println("[PREF] clear: manual+auto reset, flag preserved");
+            return Result.success("?????", null);
+        } catch (Exception e) {
+            return Result.error(500, "????: " + e.getMessage());
         }
     }
 }

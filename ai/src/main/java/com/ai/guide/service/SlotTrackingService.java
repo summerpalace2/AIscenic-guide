@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
 public class SlotTrackingService {
 
     private static final String SLOTS_KEY_SUFFIX = ":slots";
-    private static final String USER_PREFS_KEY = "user:prefs";
+    private static final String USER_PREFS_KEY = "user:preferences";
     /** interest 槽位滑动窗口上限 */
     private static final int MAX_INTEREST_ITEMS = 3;
 
@@ -152,6 +152,7 @@ public class SlotTrackingService {
         Map<String, List<String>> slots = getSlots(userId);
         if (slots.isEmpty()) {
             Map<String, String> fallback = getManualPreferences();
+        fallback.remove("prefs_initialized");
             if (fallback.isEmpty()) return "";
             StringBuilder sb = new StringBuilder("【用户画像】\n");
             fallback.forEach((k, v) -> sb.append(k).append("：").append(v).append("\n"));
@@ -206,9 +207,20 @@ public class SlotTrackingService {
         Map<Object, Object> prefs = redisTemplate.opsForHash().entries(USER_PREFS_KEY);
         Map<String, String> result = new HashMap<>();
         prefs.forEach((k, v) -> result.put(k.toString(), v.toString()));
-        if (!result.containsKey("interest")) result.put("interest", "景点");
-        if (!result.containsKey("duration")) result.put("duration", "全天");
-        if (!result.containsKey("crowd")) result.put("crowd", "家庭");
+        System.out.println("[PREF] getManualPreferences: key=" + USER_PREFS_KEY + ", raw=" + result);
+        // Only fill defaults on first access (no flag yet)
+        if (result.isEmpty() && !prefs.containsKey("prefs_initialized")) {
+            result.put("prefs_initialized", "1");
+            result.put("interest", "景点");
+            result.put("duration", "全天");
+            result.put("crowd", "家庭");
+            redisTemplate.opsForHash().putAll(USER_PREFS_KEY, result);
+            System.out.println("[PREF] first access, filled defaults: " + result);
+        } else if (result.isEmpty()) {
+            System.out.println("[PREF] cleared (flag=1), no defaults");
+        } else {
+            System.out.println("[PREF] existing prefs: " + result);
+        }
         return result;
     }
 
