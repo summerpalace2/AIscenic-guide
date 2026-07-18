@@ -9,10 +9,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 阿里云 DashScope Embedding 配置类
@@ -23,6 +28,8 @@ import java.util.*;
  */
 @Component
 public class AlibabaEmbeddingConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(AlibabaEmbeddingConfig.class);
 
     @Value("${alibabacloud.dashscope.api-key:}")
     private String apiKey;
@@ -96,7 +103,7 @@ public class AlibabaEmbeddingConfig {
                 if (response == null) return new float[1536];
                 return parseResponse(response);
             } catch (Exception e) {
-                System.err.println("[Embedding] 调用失败: " + e.getMessage());
+                log.error("[Embedding] 调用失败: " + e.getMessage());
                 return new float[1536];
             }
         }
@@ -114,7 +121,7 @@ public class AlibabaEmbeddingConfig {
                     return vector;
                 }
             } catch (Exception e) {
-                System.err.println("[Embedding] 解析响应失败: " + e.getMessage());
+                log.error("[Embedding] 解析响应失败: " + e.getMessage());
             }
             return new float[1536];
         }

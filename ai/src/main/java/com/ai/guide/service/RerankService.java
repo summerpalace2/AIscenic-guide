@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
@@ -37,7 +38,7 @@ public class RerankService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final ExecutorService executor;
 
     // === 三级缓存 ===
     private final ConcurrentHashMap<String, CacheEntry> l1Cache = new ConcurrentHashMap<>();
@@ -54,9 +55,10 @@ public class RerankService {
     private final AtomicLong misses = new AtomicLong(0);
     private final AtomicLong apiCalls = new AtomicLong(0);
 
-    public RerankService() {
+    public RerankService(@Qualifier("rerankExecutor") ExecutorService executor) {
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
+        this.executor = executor;
     }
 
     // ==================== 核心入口 ====================

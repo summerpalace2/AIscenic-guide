@@ -22,6 +22,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -969,6 +970,53 @@ public class ScenicDataImportService {
         } catch (Exception e) {
             log.error("deleteAllDocuments failed: {}", e.getMessage(), e);
             throw new RuntimeException("知识库清空失败", e);
+        }
+    }
+
+
+    /**
+     * 从已保存的文件路径重新向量化（供知识库管理 sync 接口调用）
+     * 由 summerpalace2 添加，用于 KnowledgeDocumentService.triggerSync()
+     * 避免依赖 spring-test 的 MockMultipartFile，直接使用 CommonsMultipartFile
+     */
+    public void reindexDocument(File file) {
+        if (file == null || !file.exists()) {
+            throw new IllegalArgumentException("文件不存在: " + (file == null ? "null" : file.getPath()));
+        }
+        try {
+            byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
+            // 构造一个简易 MultipartFile 实现
+            MultipartFile multipartFile = new ByteArrayMultipartFile(file.getName(), fileBytes);
+            importUniversalDocument(multipartFile);
+            log.info("[Knowledge] 重新向量化文件: {}", file.getName());
+        } catch (Exception e) {
+            log.error("[Knowledge] 重新向量化失败: {}", e.getMessage());
+            throw new RuntimeException("重新向量化失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 简易字节数组 MultipartFile 实现
+     * 由 summerpalace2 实现，避免引入 spring-test 依赖
+     */
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final byte[] content;
+
+        ByteArrayMultipartFile(String name, byte[] content) {
+            this.name = name;
+            this.content = content;
+        }
+
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return name; }
+        @Override public String getContentType() { return "application/octet-stream"; }
+        @Override public boolean isEmpty() { return content == null || content.length == 0; }
+        @Override public long getSize() { return content != null ? content.length : 0; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public java.io.InputStream getInputStream() { return new java.io.ByteArrayInputStream(content); }
+        @Override public void transferTo(File dest) throws java.io.IOException {
+            java.nio.file.Files.write(dest.toPath(), content);
         }
     }
 
