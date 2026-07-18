@@ -4,6 +4,8 @@ import com.ai.guide.model.ChatHistoryVO;
 import com.ai.guide.model.ConversationVO;
 import com.ai.guide.model.Result;
 import com.ai.guide.service.ChatHistoryService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -16,6 +18,8 @@ import java.util.List;
 @RequestMapping("/ai")
 public class HistoryController {
 
+    private static final Logger log = LoggerFactory.getLogger(HistoryController.class);
+
     private final ChatHistoryService chatHistoryService;
 
     public HistoryController(ChatHistoryService chatHistoryService) {
@@ -24,9 +28,9 @@ public class HistoryController {
 
     @GetMapping({"/history", "/history/sessions"})
     public Result<List<ConversationVO>> listSessions() {
-        System.out.println("[历史API] 收到请求：查询所有会话");
+        log.info("[历史API] 收到请求：查询所有会话");
         List<ConversationVO> sessions = chatHistoryService.getAllSessions();
-        System.out.println("会话数: " + sessions.size());
+        log.info("会话数: " + sessions.size());
         return Result.success("查询成功", sessions);
     }
 
@@ -37,15 +41,15 @@ public class HistoryController {
         if (sessionId == null || sessionId.isEmpty()) {
             sessionId = querySessionId;
         }
-        System.out.println("获取会话消息: " + sessionId);
+        log.info("获取会话消息: " + sessionId);
         List<ChatHistoryVO> messages = chatHistoryService.getMessages(sessionId);
-        System.out.println("消息数: " + messages.size());
+        log.info("消息数: " + messages.size());
         return Result.success("查询成功", messages);
     }
 
     @DeleteMapping("/history/{sessionId}")
     public Result<Void> deleteSession(@PathVariable String sessionId) {
-        System.out.println("删除会话: " + sessionId);
+        log.info("删除会话: " + sessionId);
         chatHistoryService.deleteSession(sessionId);
         return Result.success("删除成功", null);
     }

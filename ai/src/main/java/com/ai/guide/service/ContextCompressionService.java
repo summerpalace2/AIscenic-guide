@@ -34,20 +34,21 @@ public class ContextCompressionService {
         this.lazyCompressMin = keepRecent;
     }
 
-    public List<Message> getContext(String sessionId, List<Message> allHistory) {
+    /**
+     * 获取上下文（多账户：基于 userId 读取偏好）
+     * @param sessionId 会话 ID
+     * @param allHistory 历史消息列表
+     * @param userId 用户 ID（用于读取槽位偏好）
+     */
+    public List<Message> getContext(String sessionId, List<Message> allHistory, String userId) {
         String summary = getSummary(sessionId);
         int compressedCount = getCompressedCount(sessionId);
-        return getContextWithData(sessionId, allHistory, summary, compressedCount, null);
-    }
-
-    public List<Message> getContextWithData(String sessionId, List<Message> allHistory,
-                                             String summary, int compressedCount) {
-        return getContextWithData(sessionId, allHistory, summary, compressedCount, null);
+        return getContextWithData(sessionId, allHistory, summary, compressedCount, userId);
     }
 
     public List<Message> getContextWithData(String sessionId, List<Message> allHistory,
                                              String summary, int compressedCount,
-                                             String slotContext) {
+                                             String userId) {
         List<Message> result = new ArrayList<>();
         if (allHistory.size() <= keepRecent) {
             result.addAll(allHistory);
@@ -68,7 +69,7 @@ public class ContextCompressionService {
                 List<Message> allToCompress = new ArrayList<>(allHistory.size() + 1);
                 allToCompress.add(new SystemMessage("旧摘要: " + summary));
                 allToCompress.addAll(allHistory.subList(compressedCount, allHistory.size()));
-                String resetSummary = compress(allToCompress, null, sessionId);
+                String resetSummary = compress(allToCompress, null, userId);
                 if (resetSummary == null) {
                     toCompress = allHistory.subList(compressedCount, allHistory.size() - keepRecent);
                     recent = allHistory.subList(allHistory.size() - keepRecent, allHistory.size());
@@ -76,7 +77,7 @@ public class ContextCompressionService {
                     saveSummary(sessionId, resetSummary, allHistory.size() - keepRecent);
                     resetCompressCount(sessionId);
                     summaryMsg(result, resetSummary);
-                    String ss = slotContext != null ? slotContext : slotTrackingService.toPromptContext(sessionId);
+                    String ss = slotTrackingService.toPromptContext(userId);
                     if (!ss.isEmpty()) result.add(new SystemMessage(ss));
                     result.addAll(allHistory.subList(Math.max(0, allHistory.size() - keepRecent), allHistory.size()));
                     return result;
@@ -94,7 +95,7 @@ public class ContextCompressionService {
             result.addAll(allHistory.subList(Math.max(0, allHistory.size() - keepRecent), allHistory.size()));
             return result;
         }
-        String newSummary = compress(toCompress, summary, sessionId);
+        String newSummary = compress(toCompress, summary, userId);
         if (newSummary == null) {
             summaryMsg(result, summary != null ? summary : "对话已发生");
             result.addAll(allHistory.subList(Math.max(0, allHistory.size() - keepRecent), allHistory.size()));
@@ -103,24 +104,21 @@ public class ContextCompressionService {
         saveSummary(sessionId, newSummary, allHistory.size() - keepRecent);
         incrementCompressCount(sessionId, false);
         summaryMsg(result, newSummary);
-        String ss = slotContext != null ? slotContext : slotTrackingService.toPromptContext(sessionId);
+        String ss = slotTrackingService.toPromptContext(userId);
         if (ss != null && !ss.isEmpty()) result.add(new SystemMessage(ss));
         result.addAll(recent);
         return result;
     }
 
-    private String compress(List<Message> messages, String existingSummary, String sessionId) {
+    private String compress(List<Message> messages, String existingSummary, String userId) {
         StringBuilder sb = new StringBuilder();
         if (existingSummary != null && !existingSummary.isEmpty()) {
             sb.append("已有的对话摘要：\n").append(existingSummary).append("\n\n");
         }
         sb.append("新增对话内容：\n");
-        String slots = slotTrackingService.toPromptContext(sessionId);
+        String slots = slotTrackingService.toPromptContext(userId);
         if (slots != null && !slots.isEmpty()) {
-            sb.append("\n用户偏好快照：\n");
-            for (String line : slots.split("\n")) {
-                if (line.startsWith("- **")) sb.append(line).append("\n");
-            }
+            sb.append("\n用户偏好快照：\n").append(slots);
         }
         for (Message msg : messages) {
             String role = msg.getMessageType() == MessageType.USER ? "用户" : "助手";
@@ -141,27 +139,27 @@ public class ContextCompressionService {
     }
 
     private String getSummary(String sessionId) {
-        try { return redisTemplate.opsForValue().get("chat:session:" + sessionId + SUMMARY_KEY_SUFFIX); }
+        try { return redisTemplate.opsForValue().get(sessionId + SUMMARY_KEY_SUFFIX); }
         catch (Exception e) { return null; }
     }
 
     private void saveSummary(String sessionId, String summary, int compressedCount) {
         try {
-            redisTemplate.opsForValue().set("chat:session:" + sessionId + SUMMARY_KEY_SUFFIX, summary);
-            redisTemplate.opsForValue().set("chat:session:" + sessionId + ":compressed_count", String.valueOf(compressedCount));
+            redisTemplate.opsForValue().set(sessionId + SUMMARY_KEY_SUFFIX, summary);
+            redisTemplate.opsForValue().set(sessionId + ":compressed_count", String.valueOf(compressedCount));
         } catch (Exception e) {}
     }
 
     private int getCompressedCount(String sessionId) {
         try {
-            String v = redisTemplate.opsForValue().get("chat:session:" + sessionId + ":compressed_count");
+            String v = redisTemplate.opsForValue().get(sessionId + ":compressed_count");
             return v != null ? Integer.parseInt(v) : 0;
         } catch (Exception e) { return 0; }
     }
 
     private int getCompressCount(String sessionId) {
         try {
-            String v = redisTemplate.opsForValue().get("chat:session:" + sessionId + COMPRESS_COUNT_SUFFIX);
+            String v = redisTemplate.opsForValue().get(sessionId + COMPRESS_COUNT_SUFFIX);
             return v != null ? Integer.parseInt(v) : 0;
         } catch (Exception e) { return 0; }
     }
@@ -169,9 +167,9 @@ public class ContextCompressionService {
     private void incrementCompressCount(String sessionId, boolean reset) {
         try {
             if (reset) {
-                redisTemplate.opsForValue().set("chat:session:" + sessionId + COMPRESS_COUNT_SUFFIX, "0");
+                redisTemplate.opsForValue().set(sessionId + COMPRESS_COUNT_SUFFIX, "0");
             } else {
-                redisTemplate.opsForValue().increment("chat:session:" + sessionId + COMPRESS_COUNT_SUFFIX, 1);
+                redisTemplate.opsForValue().increment(sessionId + COMPRESS_COUNT_SUFFIX, 1);
             }
         } catch (Exception ignored) {}
     }
@@ -180,9 +178,9 @@ public class ContextCompressionService {
 
     public void clearSummary(String sessionId) {
         try {
-            redisTemplate.delete("chat:session:" + sessionId + SUMMARY_KEY_SUFFIX);
-            redisTemplate.delete("chat:session:" + sessionId + ":compressed_count");
-            redisTemplate.delete("chat:session:" + sessionId + COMPRESS_COUNT_SUFFIX);
+            redisTemplate.delete(sessionId + SUMMARY_KEY_SUFFIX);
+            redisTemplate.delete(sessionId + ":compressed_count");
+            redisTemplate.delete(sessionId + COMPRESS_COUNT_SUFFIX);
         } catch (Exception ignored) {}
     }
 }

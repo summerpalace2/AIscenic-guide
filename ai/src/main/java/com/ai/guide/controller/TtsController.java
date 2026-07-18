@@ -5,6 +5,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -22,6 +24,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/ai")
 public class TtsController {
+
+    private static final Logger log = LoggerFactory.getLogger(TtsController.class);
 
     private static final String TTS_URL = "https://tsn.baidu.com/text2audio";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
@@ -67,14 +71,14 @@ public class TtsController {
                     + "&vol=5"
                     + "&per=" + per
                     + "&aue=3";
-            System.out.println("[TTS] voice=" + per + ", text_len=" + text.length());
+            log.info("[TTS] voice=" + per + ", text_len=" + text.length());
             ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
             headers.set("Content-Disposition", "attachment; filename=tts.mp3");
             return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
         } catch (Exception e) {
-            System.err.println("[TTS] Error: " + e.getMessage());
+            log.error("[TTS] Error: " + e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
     }

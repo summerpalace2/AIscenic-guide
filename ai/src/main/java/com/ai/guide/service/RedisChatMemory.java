@@ -1,47 +1,50 @@
 package com.ai.guide.service;
 
+import com.ai.guide.config.UserContext;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.*;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 /**
  * 基于 Redis 的 Spring AI ChatMemory 实现
  * 消息以 JSON 形式存入 Redis List，会话记录在 ZSet
  * 支持异步写入
- * （由 javap -p -c 反编译 bytecode 恢复）
+ *
+ * 多账户改造：
+ * - 会话 ZSet key 使用 chat:sessions:{userId} 实现用户隔离
+ * - 摘要存储同样按 userId:sessionId 隔离
+ * - 异步写入时提前捕获 userId，避免 ThreadLocal 丢失
+ *
+ * 性能优化：
+ * - 线程池改为 Spring 托管 Bean（优雅关闭）
  */
 @Component
 public class RedisChatMemory implements ChatMemory {
 
+    private static final Logger log = LoggerFactory.getLogger(RedisChatMemory.class);
+
     /** Redis key 前缀 */
     private static final String MESSAGE_KEY_PREFIX = "chat:history:";
 
-    /** Redis key 后缀 */
-    private static final String MESSAGE_KEY_SUFFIX = "";
-
-    /** 会话列表 ZSet key */
-    private static final String SESSIONS_KEY = "chat:sessions";
-
-    /** 异步写入线程池（单线程守护线程） */
-    private static final ExecutorService ASYNC_EXECUTOR =
-            Executors.newSingleThreadExecutor(r -> {
-                Thread thread = new Thread(r, "redis-async-writer");
-                thread.setDaemon(true);
-                return thread;
-            });
+    /** 会话列表 ZSet key 前缀（多账户：按 userId 隔离） */
+    private static final String SESSIONS_KEY_PREFIX = "chat:sessions:";
 
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ExecutorService asyncExecutor;
 
     /**
      * 消息记录（用于 JSON 序列化）
@@ -64,23 +67,29 @@ public class RedisChatMemory implements ChatMemory {
     }
 
     public RedisChatMemory(RedisTemplate<String, String> redisTemplate,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            @Qualifier("redisAsyncExecutor") ExecutorService asyncExecutor) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.asyncExecutor = asyncExecutor;
     }
 
     /**
      * 构造消息存储 key
      */
     private String messageKey(String conversationId) {
-        return MESSAGE_KEY_PREFIX + conversationId + MESSAGE_KEY_SUFFIX;
+        return MESSAGE_KEY_PREFIX + conversationId;
+    }
+
+    /**
+     * 获取当前用户的会话 ZSet key
+     */
+    private String sessionsKey() {
+        return SESSIONS_KEY_PREFIX + UserContext.getUserId();
     }
 
     /**
      * 同步写入消息
-     *
-     * @param conversationId 会话 ID
-     * @param messages       消息列表
      */
     @Override
     public void add(String conversationId, List<Message> messages) {
@@ -94,32 +103,45 @@ public class RedisChatMemory implements ChatMemory {
                 String json = serializeMessage(message);
                 redisTemplate.opsForList().rightPush(key, json);
             }
-            // 更新会话活跃时间
             redisTemplate.opsForZSet().add(
-                    SESSIONS_KEY,
+                    sessionsKey(),
                     conversationId,
                     Instant.now().toEpochMilli());
         } catch (Exception e) {
-            System.err.println("[RedisChatMemory] 写入失败: " + e.getMessage());
+            log.error("[RedisChatMemory] 写入失败: {}", e.getMessage());
         }
     }
 
     /**
-     * 异步写入消息
+     * 异步写入消息（多账户安全：提前捕获 userId）
      */
     public void addAsync(String conversationId, List<Message> messages) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
-        ASYNC_EXECUTOR.submit(() -> add(conversationId, messages));
+        String userId = UserContext.getUserId();
+        asyncExecutor.submit(() -> addWithUserId(conversationId, messages, userId));
+    }
+
+    /**
+     * 带 userId 的写入方法（供异步线程使用）
+     */
+    private void addWithUserId(String conversationId, List<Message> messages, String userId) {
+        String key = MESSAGE_KEY_PREFIX + conversationId;
+        String sessionsKey = SESSIONS_KEY_PREFIX + userId;
+        try {
+            for (Message message : messages) {
+                String json = serializeMessage(message);
+                redisTemplate.opsForList().rightPush(key, json);
+            }
+            redisTemplate.opsForZSet().add(sessionsKey, conversationId, Instant.now().toEpochMilli());
+        } catch (Exception e) {
+            log.error("[RedisChatMemory] 异步写入失败: {}", e.getMessage());
+        }
     }
 
     /**
      * 获取会话最近 lastN 条消息
-     *
-     * @param conversationId 会话 ID
-     * @param lastN          取最近 N 条
-     * @return 消息列表
      */
     @Override
     public List<Message> get(String conversationId, int lastN) {
@@ -130,18 +152,17 @@ public class RedisChatMemory implements ChatMemory {
                 return List.of();
             }
 
-            // 只返回最后 lastN 条
             int fromIndex = Math.max(0, allMessages.size() - lastN);
             List<String> recentMessages = allMessages.subList(fromIndex, allMessages.size());
 
-            List<Message> result = new java.util.ArrayList<>();
+            List<Message> result = new ArrayList<>();
             for (String json : recentMessages) {
                 Message message = deserializeMessage(json);
                 result.add(message);
             }
             return result;
         } catch (Exception e) {
-            System.err.println("[RedisChatMemory] 读取失败: " + e.getMessage());
+            log.error("[RedisChatMemory] 读取失败: {}", e.getMessage());
             return List.of();
         }
     }
@@ -153,7 +174,48 @@ public class RedisChatMemory implements ChatMemory {
     public void clear(String conversationId) {
         String key = messageKey(conversationId);
         redisTemplate.delete(key);
-        redisTemplate.opsForZSet().remove(SESSIONS_KEY, conversationId);
+        redisTemplate.opsForZSet().remove(sessionsKey(), conversationId);
+    }
+
+    /**
+     * 保存摘要
+     */
+    public void saveSummary(String sessionKey, String summary) {
+        try {
+            redisTemplate.opsForValue().set(sessionKey + ":summary", summary);
+        } catch (Exception e) {
+            log.error("[RedisChatMemory] 保存摘要失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 获取摘要
+     */
+    public String getSummary(String sessionKey) {
+        try {
+            return redisTemplate.opsForValue().get(sessionKey + ":summary");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 获取压缩计数
+     */
+    public int getCompressedCount(String sessionKey) {
+        try {
+            String v = redisTemplate.opsForValue().get(sessionKey + ":compressed_count");
+            return v != null ? Integer.parseInt(v) : 0;
+        } catch (Exception e) { return 0; }
+    }
+
+    /**
+     * 保存压缩计数
+     */
+    public void saveCompressedCount(String sessionKey, int count) {
+        try {
+            redisTemplate.opsForValue().set(sessionKey + ":compressed_count", String.valueOf(count));
+        } catch (Exception ignored) {}
     }
 
     /**
