@@ -58,6 +58,10 @@ public class KnowledgeDbConfig {
     @Value("${POSTGRES_JDBC_URL:}")
     private String postgresJdbcUrl;
 
+    /** Zeabur PostgreSQL 服务常见的连接串变量名。 */
+    @Value("${POSTGRES_URI:}")
+    private String postgresUri;
+
     @Value("${POSTGRES_HOST:}")
     private String postgresHost;
 
@@ -262,7 +266,7 @@ public class KnowledgeDbConfig {
 
     /** 解析显式 JDBC URL、DATABASE_URL 或 Zeabur PostgreSQL 主机变量。 */
     private DatabaseSettings resolveSettings() {
-        String url = firstNonBlank(configuredUrl, databaseUrl, postgresUrl, postgresConnectionString, postgresJdbcUrl);
+        String url = firstNonBlank(configuredUrl, databaseUrl, postgresUrl, postgresConnectionString, postgresJdbcUrl, postgresUri);
         String type = configuredType == null ? "sqlite" : configuredType.trim().toLowerCase(Locale.ROOT);
         String username = configuredUsername;
         String password = configuredPassword;
