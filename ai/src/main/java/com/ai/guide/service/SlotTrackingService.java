@@ -121,15 +121,13 @@ public class SlotTrackingService {
     /**
      * 向指定槽位追加一条值（带滑动窗口限制，仅 interest）
      */
-    private void pushSlotItemLimited(String redisKey, String slotName, String value, int maxItems) {
+    private synchronized void pushSlotItemLimited(String redisKey, String slotName, String value, int maxItems) {
         try {
             String raw = (String) redisTemplate.opsForHash().get(redisKey, slotName);
             List<String> items = parseList(raw);
             if (items.contains(value)) return;
             items.add(value);
-            if (items.size() > maxItems) {
-                items.remove(0);
-            }
+            if (items.size() > maxItems) items.remove(0);
             redisTemplate.opsForHash().put(redisKey, slotName, objectMapper.writeValueAsString(items));
         } catch (Exception e) {
             redisTemplate.opsForHash().put(redisKey, slotName, value);
@@ -179,6 +177,18 @@ public class SlotTrackingService {
             };
             sb.append(label).append("：").append(v).append("\n");
         });
+
+        // 语言要求显式化：偏好中的 language 直接转成指令，避免依赖 LLM 自行判断
+        String lang = manualPrefs.getOrDefault("language", "").trim().toLowerCase();
+        if (!lang.isEmpty() && !lang.equals("zh") && !lang.equals("chinese")) {
+            String langName = switch (lang) {
+                case "en", "english" -> "英文";
+                case "ja", "japanese" -> "日语";
+                case "ko", "korean" -> "韩语";
+                default -> lang;
+            };
+            sb.append("\n【语言要求】请始终使用").append(langName).append("回复用户。");
+        }
         return sb.toString().trim();
     }
 

@@ -20,6 +20,7 @@ public class JwtUtil {
     @Value("${jwt.secret:scenic-guide-default-secret-key-change-in-production}")
     private String secret;
 
+
     @Value("${jwt.expires-days:7}")
     private int expiresDays;
 

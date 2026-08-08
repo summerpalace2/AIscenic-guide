@@ -78,7 +78,13 @@ public class ChatHistoryService {
                 return List.of();
             }
             List<String> sidList = new ArrayList<>(sessionIds);
-            List<String> queryList = sidList.size() > limit ? sidList.subList(0, limit) : sidList;
+            int safeLimit = Math.max(0, limit);
+            if (safeLimit == 0) {
+                return List.of();
+            }
+            List<String> queryList = sidList.size() > safeLimit
+                    ? new ArrayList<>(sidList.subList(0, safeLimit))
+                    : sidList;
 
             // Pipeline：单次往返发送所有命令
             List<Object> pipeResult = redisTemplate.executePipelined(new SessionCallback<Object>() {
@@ -97,7 +103,8 @@ public class ChatHistoryService {
 
             // 组装结果
             List<ConversationVO> result = new ArrayList<>();
-            for (int i = 0; i < sidList.size(); i++) {
+            // Pipeline 只为 queryList 中的会话生成结果，不能再按完整 sidList 遍历。
+            for (int i = 0; i < queryList.size(); i++) {
                 int base = i * 3;
                 List<String> firstMsgJson = (List<String>) pipeResult.get(base);
                 Long msgCount = (Long) pipeResult.get(base + 1);
@@ -114,7 +121,7 @@ public class ChatHistoryService {
                 }
 
                 ConversationVO vo = new ConversationVO();
-                vo.setSessionId(sidList.get(i));
+                vo.setSessionId(queryList.get(i));
                 vo.setTitle(title);
                 vo.setMessageCount(msgCount != null ? msgCount.intValue() : 0);
                 if (score != null) {

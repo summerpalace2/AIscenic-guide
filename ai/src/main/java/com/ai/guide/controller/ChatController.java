@@ -172,6 +172,7 @@ public class ChatController {
             var decomposed = queryDecompositionService.decompose(message);
             if (decomposed != null && decomposed.needSearch() && !decomposed.isEmpty()) {
                 context = parallelRagService.search(decomposed.subQueries());
+                if (context == null) context = "";
                 log.info("[Deep] Agentic RAG: {} sub-queries, context_len={}", decomposed.subQueries().size(), context.length());
             } else {
                 context = scenicDataImportService.queryKnowledge(message, 1500);
@@ -228,7 +229,13 @@ public class ChatController {
                         }
                     }
                 })
-                .doOnError(e -> log.error("[流式] 异常: {}", e.getMessage()));
+                .onErrorResume(e -> {
+                        log.error("[流式] 异常: {}", e.getMessage());
+                        return Flux.just(ServerSentEvent.<String>builder()
+                                .event("error")
+                                .data("AI 服务暂时不可用，请稍后重试")
+                                .build());
+                    });
 
         return sentimentFlux.concatWith(stream);
     }

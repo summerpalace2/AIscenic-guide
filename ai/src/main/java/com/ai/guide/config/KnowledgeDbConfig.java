@@ -116,6 +116,16 @@ public class KnowledgeDbConfig {
         );
         log.info("[KnowledgeDB] analytics_report 表已就绪");
 
+        // 系统配置表（数字人配置 / 系统设置等键值对）
+        jdbcTemplate.update(
+            "CREATE TABLE IF NOT EXISTS app_config (" +
+            "key TEXT PRIMARY KEY," +
+            "value TEXT DEFAULT ''," +
+            "updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))" +
+            ")"
+        );
+        log.info("[KnowledgeDB] app_config 表已就绪");
+
         return jdbcTemplate;
     }
 }

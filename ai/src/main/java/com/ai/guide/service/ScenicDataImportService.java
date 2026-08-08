@@ -77,23 +77,13 @@ public class ScenicDataImportService {
     private String currentFileName;
 
     /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Qdrant 入库 */
-    public void importUniversalDocument(MultipartFile file) throws Exception {
+    public synchronized void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
                 new String(originalName.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
 
         this.currentFileName = fileName;
         log.info("【RAG系统】开始解析文件: {}", fileName);
-
-        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
-        try {
-            qdrantClient.deleteAsync(COLLECTION_NAME,
-                    Points.Filter.newBuilder()
-                            .addMust(ConditionFactory.matchKeyword("source", fileName))
-                            .build()).get();
-        } catch (Exception e) {
-            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
-        }
 
         List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
@@ -148,6 +138,16 @@ public class ScenicDataImportService {
                 Map<String, Object> meta = new HashMap<>(rawDoc.getMetadata());
                 finalDocs.add(new Document(finalContent, meta));
             }
+        }
+
+        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", fileName))
+                            .build()).get();
+        } catch (Exception e) {
+            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
         }
 
         // [步骤4] 向量化 + Qdrant 入库
