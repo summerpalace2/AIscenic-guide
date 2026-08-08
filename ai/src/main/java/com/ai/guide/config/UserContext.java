@@ -8,10 +8,16 @@ package com.ai.guide.config;
 public class UserContext {
 
     private static final ThreadLocal<String> USER_ID = new ThreadLocal<>();
+    private static final ThreadLocal<String> USERNAME = new ThreadLocal<>();
     private static final ThreadLocal<String> USER_ROLE = new ThreadLocal<>();
 
     public static void set(String userId, String role) {
+        set(userId, null, role);
+    }
+
+    public static void set(String userId, String username, String role) {
         USER_ID.set(userId);
+        USERNAME.set(username);
         USER_ROLE.set(role);
     }
 
@@ -32,12 +38,18 @@ public class UserContext {
         return r != null ? r : "TOURIST";
     }
 
+    public static String getUsername() {
+        String username = USERNAME.get();
+        return username != null ? username : getUserId();
+    }
+
     public static boolean isAdmin() {
         return "ADMIN".equals(getRole()) || "SUPER_ADMIN".equals(getRole());
     }
 
     public static void clear() {
         USER_ID.remove();
+        USERNAME.remove();
         USER_ROLE.remove();
     }
 }

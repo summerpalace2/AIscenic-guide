@@ -57,4 +57,9 @@ public class JwtUtil {
         Claims c = parse(token);
         return c != null ? c.get("role", String.class) : null;
     }
+
+    public String getUsername(String token) {
+        Claims c = parse(token);
+        return c != null ? c.get("username", String.class) : null;
+    }
 }
