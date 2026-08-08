@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -31,6 +32,9 @@ public class KnowledgeDocumentService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ScenicDataImportService scenicDataImportService;
+
+    @Value("${knowledge.upload-dir:uploads/knowledge}")
+    private String uploadDirectory;
 
     public KnowledgeDocumentService(@org.springframework.beans.factory.annotation.Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbcTemplate,
                                     ScenicDataImportService scenicDataImportService) {
@@ -278,7 +282,9 @@ public class KnowledgeDocumentService {
     // ───────── 工具方法 ─────────
 
     private String saveFile(MultipartFile file) throws IOException {
-        String uploadDir = "uploads/knowledge/";
+        String uploadDir = uploadDirectory.endsWith(File.separator)
+                ? uploadDirectory
+                : uploadDirectory + File.separator;
         File dir = new File(uploadDir);
         if (!dir.exists()) dir.mkdirs();
 
@@ -287,7 +293,7 @@ public class KnowledgeDocumentService {
         String filename = UUID.randomUUID().toString() + ext;
         File dest = new File(uploadDir + filename);
         file.transferTo(dest);
-        return uploadDir + filename;
+        return new File(uploadDir, filename).getPath();
     }
 
     private String md5(byte[] data) {

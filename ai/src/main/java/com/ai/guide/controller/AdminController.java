@@ -223,9 +223,16 @@ public class AdminController {
     private void writeConfig(String prefix, Map<String, Object> values) {
         values.forEach((k, v) -> {
             String key = k.startsWith(prefix) ? k : prefix + k;
-            jdbcTemplate.update(
-                    "INSERT OR REPLACE INTO app_config (key, value, updated_at) VALUES (?, ?, datetime('now','localtime'))",
-                    key, v == null ? "" : String.valueOf(v));
+            String now = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+            String value = v == null ? "" : String.valueOf(v);
+            int updated = jdbcTemplate.update(
+                    "UPDATE app_config SET value = ?, updated_at = ? WHERE key = ?", value, now, key);
+            if (updated == 0) {
+                jdbcTemplate.update(
+                        "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?)",
+                        key, value, now);
+            }
         });
     }
 }
