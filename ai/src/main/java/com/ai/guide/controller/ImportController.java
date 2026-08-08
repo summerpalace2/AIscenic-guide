@@ -1,8 +1,9 @@
 package com.ai.guide.controller;
 
+import com.ai.guide.config.UserContext;
 import com.ai.guide.model.Result;
+import com.ai.guide.service.KnowledgeDocumentService;
 import com.ai.guide.service.RerankService;
-import com.ai.guide.service.ScenicDataImportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,22 +32,34 @@ import java.util.Map;
 public class ImportController {
 
     @Autowired
-    private ScenicDataImportService scenicDataImportService;
-
-    @Autowired
     private RerankService rerankService;
 
+    @Autowired
+    private KnowledgeDocumentService knowledgeDocumentService;
+
     /**
-     * 导入知识库文件（Excel/Word）
+     * 导入知识库文件，并同步创建文档元数据。
+     * 这样 /ai/knowledge 列表与 Qdrant 中的向量碎片保持同源，上传后不会出现
+     * “Qdrant 有碎片、文档管理却 Total 0”的断层。
      */
     @PostMapping("/import")
     public Result<String> uploadFile(@RequestParam("file") MultipartFile file) {
+        if (!UserContext.isAdmin()) {
+            return Result.error(403, "需要管理员权限");
+        }
         try {
             if (file.isEmpty()) {
                 return Result.error(400, "上传失败：文件为空");
             }
-            scenicDataImportService.importUniversalDocument(file);
             String filename = file.getOriginalFilename();
+            String title = filename == null || filename.isBlank() ? "未命名文档" : filename;
+            knowledgeDocumentService.createDocument(
+                    title,
+                    "other",
+                    null,
+                    "[]",
+                    file,
+                    UserContext.getUserId());
             return Result.success("文件导入成功: " + filename, filename);
         } catch (Exception e) {
             e.printStackTrace();
@@ -74,6 +87,9 @@ public class ImportController {
      */
     @PostMapping("/cache/clear")
     public Result<Void> clearCache() {
+        if (!UserContext.isAdmin()) {
+            return Result.error(403, "需要管理员权限");
+        }
         try {
             rerankService.clearCache();
             return Result.success("Rerank 三级缓存已清空（L1/L2/L3 全部重置）", null);

@@ -75,6 +75,7 @@ public class RagController {
 
     @DeleteMapping("/rag/document/all")
     public Result<String> deleteAllDocuments() {
+        if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
             scenicDataImportService.deleteAllDocuments();
             return Result.success("知识库已清空", "所有碎片已删除");
