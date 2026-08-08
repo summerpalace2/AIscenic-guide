@@ -1,5 +1,6 @@
 package com.ai.guide.controller;
 
+import com.ai.guide.config.UserContext;
 import com.ai.guide.model.KnowledgeDocument;
 import com.ai.guide.model.Result;
 import com.ai.guide.service.KnowledgeDocumentService;
@@ -39,6 +40,16 @@ public class KnowledgeController {
 
     public KnowledgeController(KnowledgeDocumentService knowledgeService) {
         this.knowledgeService = knowledgeService;
+    }
+
+    /**
+     * 写操作统一校验管理员权限（新增/修改/删除/向量同步均需 ADMIN）
+     */
+    private String checkAdmin() {
+        if (!UserContext.isAdmin()) {
+            return "需要管理员权限";
+        }
+        return null;
     }
 
     /**
@@ -116,6 +127,8 @@ public class KnowledgeController {
             @RequestParam(value = "content", required = false) String content,
             @RequestParam(value = "tags", required = false) String tags,
             @RequestParam(value = "file", required = false) MultipartFile file) {
+        String err = checkAdmin();
+        if (err != null) return Result.error(403, err);
         try {
             KnowledgeDocument doc = knowledgeService.createDocument(title, category, content, tags, file, "admin");
             Map<String, Object> data = new LinkedHashMap<>();
@@ -145,6 +158,8 @@ public class KnowledgeController {
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "content", required = false) String content,
             @RequestParam(value = "tags", required = false) String tags) {
+        String err = checkAdmin();
+        if (err != null) return Result.error(403, err);
         try {
             knowledgeService.updateDocument(docId, title, category, content, tags);
             return Result.success("更新成功", null);
@@ -162,6 +177,8 @@ public class KnowledgeController {
      */
     @DeleteMapping("/{docId}")
     public Result<Void> deleteDocument(@PathVariable String docId) {
+        String err = checkAdmin();
+        if (err != null) return Result.error(403, err);
         try {
             knowledgeService.deleteDocument(docId);
             return Result.success("删除成功", null);
@@ -177,6 +194,8 @@ public class KnowledgeController {
      */
     @PostMapping("/{docId}/sync")
     public Result<Map<String, Object>> triggerSync(@PathVariable String docId) {
+        String err = checkAdmin();
+        if (err != null) return Result.error(403, err);
         try {
             Map<String, Object> data = knowledgeService.triggerSync(docId);
             return Result.success("同步完成", data);

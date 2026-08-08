@@ -20,6 +20,7 @@ public class JwtUtil {
     @Value("${jwt.secret:scenic-guide-default-secret-key-change-in-production}")
     private String secret;
 
+
     @Value("${jwt.expires-days:7}")
     private int expiresDays;
 
@@ -55,5 +56,10 @@ public class JwtUtil {
     public String getRole(String token) {
         Claims c = parse(token);
         return c != null ? c.get("role", String.class) : null;
+    }
+
+    public String getUsername(String token) {
+        Claims c = parse(token);
+        return c != null ? c.get("username", String.class) : null;
     }
 }

@@ -77,23 +77,13 @@ public class ScenicDataImportService {
     private String currentFileName;
 
     /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Qdrant 入库 */
-    public void importUniversalDocument(MultipartFile file) throws Exception {
+    public synchronized void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
                 new String(originalName.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
 
         this.currentFileName = fileName;
         log.info("【RAG系统】开始解析文件: {}", fileName);
-
-        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
-        try {
-            qdrantClient.deleteAsync(COLLECTION_NAME,
-                    Points.Filter.newBuilder()
-                            .addMust(ConditionFactory.matchKeyword("source", fileName))
-                            .build()).get();
-        } catch (Exception e) {
-            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
-        }
 
         List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
@@ -148,6 +138,16 @@ public class ScenicDataImportService {
                 Map<String, Object> meta = new HashMap<>(rawDoc.getMetadata());
                 finalDocs.add(new Document(finalContent, meta));
             }
+        }
+
+        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", fileName))
+                            .build()).get();
+        } catch (Exception e) {
+            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
         }
 
         // [步骤4] 向量化 + Qdrant 入库
@@ -992,6 +992,102 @@ public class ScenicDataImportService {
         } catch (Exception e) {
             log.error("[Knowledge] 重新向量化失败: {}", e.getMessage());
             throw new RuntimeException("重新向量化失败: " + e.getMessage(), e);
+        }
+    }
+
+    /** 分页读取 Qdrant 中的知识碎片，供知识运维页面查看。 */
+    public Map<String, Object> listFragments(int page, int size, String keyword) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        int start = (safePage - 1) * safeSize;
+        List<Map<String, Object>> all = new ArrayList<>();
+        try {
+            Points.ScrollPoints.Builder sb = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) sb.setOffset(offset);
+                Points.ScrollResponse resp = qdrantClient.scrollAsync(sb.build()).get();
+                if (resp.getResultList().isEmpty()) break;
+                for (Points.RetrievedPoint pt : resp.getResultList()) {
+                    String content = payloadString(pt, "content");
+                    String source = payloadString(pt, "source");
+                    if (keyword != null && !keyword.isBlank()
+                            && !(content + " " + source).toLowerCase(Locale.ROOT)
+                            .contains(keyword.toLowerCase(Locale.ROOT))) continue;
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", pointIdText(pt.getId()));
+                    item.put("document_id", source);
+                    item.put("document_title", source);
+                    item.put("content", content);
+                    item.put("metadata", new LinkedHashMap<>());
+                    all.add(item);
+                }
+                offset = resp.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            int from = Math.min(start, all.size());
+            int to = Math.min(from + safeSize, all.size());
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("items", all.subList(from, to));
+            result.put("total", all.size());
+            result.put("page", safePage);
+            result.put("size", safeSize);
+            return result;
+        } catch (Exception e) {
+            log.error("listFragments failed: {}", e.getMessage(), e);
+            throw new RuntimeException("读取知识碎片失败", e);
+        }
+    }
+
+    /** 更新单个碎片的文本载荷；向量本身不变，重大改动建议重新同步文档。 */
+    public void updateFragment(String id, String content) {
+        if (id == null || id.isBlank() || content == null || content.isBlank()) {
+            throw new IllegalArgumentException("碎片 ID 和内容不能为空");
+        }
+        try {
+            Points.PointId pointId = parsePointId(id);
+            Map<String, JsonWithInt.Value> payload = Map.of("content", ValueFactory.value(content));
+            qdrantClient.setPayloadAsync(COLLECTION_NAME, payload, pointId, false, null,
+                    java.time.Duration.ofSeconds(30)).get();
+        } catch (Exception e) {
+            log.error("updateFragment failed, id={}: {}", id, e.getMessage(), e);
+            throw new RuntimeException("更新知识碎片失败", e);
+        }
+    }
+
+    public void deleteFragment(String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("碎片 ID 不能为空");
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME, List.of(parsePointId(id)),
+                    java.time.Duration.ofSeconds(30)).get();
+        } catch (Exception e) {
+            log.error("deleteFragment failed, id={}: {}", id, e.getMessage(), e);
+            throw new RuntimeException("删除知识碎片失败", e);
+        }
+    }
+
+    private static String payloadString(Points.RetrievedPoint point, String key) {
+        JsonWithInt.Value value = point.getPayloadMap().get(key);
+        return value == null ? "" : value.getStringValue();
+    }
+
+    private static String pointIdText(Points.PointId id) {
+        if (id.hasUuid()) return id.getUuid();
+        return id.hasNum() ? String.valueOf(id.getNum()) : "";
+    }
+
+    private static Points.PointId parsePointId(String id) {
+        try {
+            return PointIdFactory.id(Long.parseLong(id));
+        } catch (NumberFormatException ignored) {
+            try {
+                return PointIdFactory.id(UUID.fromString(id));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("无效的碎片 ID");
+            }
         }
     }
 

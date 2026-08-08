@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 语音识别控制器 - 百度短语音识别 (http://vop.baidu.com/server_api)
+ * 语音识别控制器 - 百度短语音识别 (https://vop.baidu.com/server_api)
  *
  * 鉴权复用百度 TTS 同一套 API_KEY / SECRET_KEY
  * 前端 encodeWAV 后发送 WAV 格式 → 百度 ASR
@@ -39,7 +39,7 @@ public class AsrController {
     @Value("${baidu.secret-key:}")
     private String secretKey;
 
-    /** 1537 = 中文普通话 */
+    /** 默认语种 1537 = 中文普通话；前端可通过 dev_pid 指定：1737=英语 / 1637=粤语 / 1837=四川话 */
     private static final int DEV_PID = 1537;
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -66,12 +66,13 @@ public class AsrController {
             // 构造请求体 — format=wav（前端 encodeWAV 生成）
             byte[] audioBytes = java.util.Base64.getDecoder().decode(base64Audio);
             String cuid = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+            int devPid = parseDevPid(body.getOrDefault("dev_pid", "1537"));
 
             String requestBody = String.format(
                     "{\"format\":\"wav\",\"rate\":16000,\"channel\":1,\"token\":\"%s\",\"cuid\":\"%s\",\"dev_pid\":%d,\"len\":%d,\"speech\":\"%s\"}",
-                    token, cuid, DEV_PID, audioBytes.length, base64Audio);
+                    token, cuid, devPid, audioBytes.length, base64Audio);
 
-            log.info("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + DEV_PID);
+            log.info("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + devPid);
 
             // POST
             HttpHeaders headers = new HttpHeaders();
@@ -112,6 +113,21 @@ public class AsrController {
             log.error("[ASR] Error: " + e.getMessage());
             return Result.error(500, "转写失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 解析并校验 dev_pid（白名单：1537 中文普通话 / 1737 英语 / 1637 粤语 / 1837 四川话）
+     */
+    private int parseDevPid(String raw) {
+        int devPid = DEV_PID;
+        try {
+            int parsed = Integer.parseInt(raw.trim());
+            if (parsed == 1537 || parsed == 1737 || parsed == 1637 || parsed == 1837) {
+                devPid = parsed;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return devPid;
     }
 
     /**
