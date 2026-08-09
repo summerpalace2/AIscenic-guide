@@ -683,8 +683,14 @@ public class ScenicDataImportService {
         return docs;
     }
 
-    /** 批量向量化并写入 Qdrant（一条文档 → 一个 1536 维向量） */
-    private void insertToQdrant(List<Document> docs, String sourceName) {
+    /**
+     * 批量向量化并写入 Qdrant。
+     *
+     * @param docs 待入库的文本碎片
+     * @param sourceName 文档在 Qdrant payload 中的稳定来源标识
+     * @return 实际写入的向量碎片数量
+     */
+    private int insertToQdrant(List<Document> docs, String sourceName) {
         List<Points.PointStruct> points = new ArrayList<>();
 
         for (Document doc : docs) {
@@ -720,8 +726,10 @@ public class ScenicDataImportService {
                 qdrantClient.upsertAsync(COLLECTION_NAME, points).get();
             } catch (Exception e) {
                 log.error("【Qdrant 入库失败】{}", e.getMessage());
+                throw new RuntimeException("Qdrant 写入失败", e);
             }
         }
+        return points.size();
     }
 
     /** 从 Excel 单元格安全取值 */
@@ -992,6 +1000,123 @@ public class ScenicDataImportService {
         } catch (Exception e) {
             log.error("[Knowledge] 重新向量化失败: {}", e.getMessage());
             throw new RuntimeException("重新向量化失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 删除一个来源文档在 Qdrant 中的全部碎片。
+     *
+     * @param sourceName 写入 payload 的 source 字段；为空时不执行删除
+     */
+    public void deleteDocumentVectors(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) return;
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", sourceName))
+                            .build()).get();
+            log.info("[Knowledge] 已删除来源 {} 的向量碎片", sourceName);
+        } catch (Exception e) {
+            log.error("[Knowledge] 删除来源 {} 的向量失败: {}", sourceName, e.getMessage(), e);
+            throw new RuntimeException("删除文档向量失败", e);
+        }
+    }
+
+    /**
+     * 将管理员编辑后的纯文本重新切片、向量化并写入 Qdrant。
+     * 编辑内容以同一个 source 覆盖原碎片，避免产生重复向量。
+     *
+     * @param sourceName 文档的稳定来源标识
+     * @param content 管理员确认后的完整文本
+     * @return 新写入的碎片数
+     */
+    public synchronized int reindexTextDocument(String sourceName, String content) {
+        if (sourceName == null || sourceName.isBlank()) {
+            throw new IllegalArgumentException("文档来源不能为空");
+        }
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("文档内容不能为空");
+        }
+
+        deleteDocumentVectors(sourceName);
+        List<Document> docs = nlpSplitter.apply(List.of(new Document(content.trim())));
+        int chunks = insertToQdrant(docs, sourceName);
+        log.info("[Knowledge] 文本重新向量化完成 source={}, chunks={}", sourceName, chunks);
+        return chunks;
+    }
+
+    /**
+     * 查询单个来源当前保留的向量碎片数。
+     * 用于将知识库管理页的“文档条目”与 Qdrant 的真实状态保持一致。
+     */
+    public int countChunksBySource(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) return 0;
+        int count = 0;
+        try {
+            Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setFilter(Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", sourceName))
+                            .build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) builder.setOffset(offset);
+                Points.ScrollResponse response = qdrantClient.scrollAsync(builder.build()).get();
+                count += response.getResultList().size();
+                offset = response.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            return count;
+        } catch (Exception e) {
+            log.warn("[Knowledge] 统计来源 {} 的碎片失败: {}", sourceName, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 从现有 Qdrant 载荷聚合来源信息，供旧知识库一键回填文档元数据。
+     * 每个 source 返回一条摘要，避免将整个向量库正文复制到业务数据库。
+     */
+    public List<Map<String, Object>> listSourceSummaries() {
+        final int contentLimit = 6000;
+        Map<String, Map<String, Object>> sources = new LinkedHashMap<>();
+        try {
+            Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) builder.setOffset(offset);
+                Points.ScrollResponse response = qdrantClient.scrollAsync(builder.build()).get();
+                if (response.getResultList().isEmpty()) break;
+                for (Points.RetrievedPoint point : response.getResultList()) {
+                    String source = payloadString(point, "source");
+                    if (source.isBlank()) continue;
+                    Map<String, Object> summary = sources.computeIfAbsent(source, key -> {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("sourceName", key);
+                        item.put("chunkCount", 0);
+                        item.put("content", "");
+                        return item;
+                    });
+                    summary.put("chunkCount", ((Integer) summary.get("chunkCount")) + 1);
+                    String existing = (String) summary.get("content");
+                    String content = payloadString(point, "content");
+                    if (!content.isBlank() && existing.length() < contentLimit) {
+                        String separator = existing.isBlank() ? "" : "\n\n";
+                        summary.put("content", (existing + separator + content)
+                                .substring(0, Math.min(contentLimit, existing.length() + separator.length() + content.length())));
+                    }
+                }
+                offset = response.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            return new ArrayList<>(sources.values());
+        } catch (Exception e) {
+            log.error("[Knowledge] 读取向量来源摘要失败: {}", e.getMessage(), e);
+            throw new RuntimeException("读取向量来源失败", e);
         }
     }
 

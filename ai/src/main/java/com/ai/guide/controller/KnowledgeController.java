@@ -9,7 +9,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -97,19 +96,7 @@ public class KnowledgeController {
             if (doc == null) {
                 return Result.error(404, "文档不存在");
             }
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", doc.getId());
-            data.put("title", doc.getTitle());
-            data.put("category", doc.getCategory());
-            data.put("content", doc.getContent());
-            data.put("fileUrl", doc.getFileUrl());
-            data.put("status", doc.getStatus());
-            data.put("vectorStatus", doc.getVectorStatus());
-            data.put("tags", doc.getTags() != null ? doc.getTags() : "[]");
-            data.put("chunkCount", doc.getChunkCount());
-            data.put("createdAt", doc.getCreatedAt() != null ? doc.getCreatedAt().toString() : "");
-            data.put("updatedAt", doc.getUpdatedAt() != null ? doc.getUpdatedAt().toString() : "");
-            return Result.success("查询成功", data);
+            return Result.success("查询成功", knowledgeService.toResponse(doc, true));
         } catch (Exception e) {
             log.error("[Knowledge] 详情查询失败: {}", e.getMessage());
             return Result.error(500, "查询失败: " + e.getMessage());
@@ -131,14 +118,7 @@ public class KnowledgeController {
         if (err != null) return Result.error(403, err);
         try {
             KnowledgeDocument doc = knowledgeService.createDocument(title, category, content, tags, file, "admin");
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("id", doc.getId());
-            data.put("title", doc.getTitle());
-            data.put("category", doc.getCategory());
-            data.put("status", doc.getStatus());
-            data.put("vectorStatus", doc.getVectorStatus());
-            data.put("createdAt", doc.getCreatedAt() != null ? doc.getCreatedAt().toString() : "");
-            return Result.success("创建成功", data);
+            return Result.success("创建成功", knowledgeService.toResponse(doc, true));
         } catch (IllegalArgumentException e) {
             return Result.error(400, e.getMessage());
         } catch (Exception e) {
@@ -152,7 +132,7 @@ public class KnowledgeController {
      * 对应 Python: PUT /knowledge/{doc_id}
      */
     @PutMapping("/{docId}")
-    public Result<String> updateDocument(
+    public Result<Map<String, Object>> updateDocument(
             @PathVariable String docId,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "category", required = false) String category,
@@ -161,8 +141,8 @@ public class KnowledgeController {
         String err = checkAdmin();
         if (err != null) return Result.error(403, err);
         try {
-            knowledgeService.updateDocument(docId, title, category, content, tags);
-            return Result.success("更新成功", null);
+            KnowledgeDocument doc = knowledgeService.updateDocument(docId, title, category, content, tags);
+            return Result.success("更新成功", knowledgeService.toResponse(doc, true));
         } catch (IllegalArgumentException e) {
             return Result.error(404, e.getMessage());
         } catch (Exception e) {
@@ -204,6 +184,22 @@ public class KnowledgeController {
         } catch (Exception e) {
             log.error("[Knowledge] 同步失败: {}", e.getMessage());
             return Result.error(500, "同步失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 将早期仅写入 Qdrant 的碎片按 source 回填为文档元数据。
+     * 仅管理员可调用，重复执行只会刷新既有文档的碎片数。
+     */
+    @PostMapping("/backfill")
+    public Result<Map<String, Object>> backfillDocuments() {
+        String err = checkAdmin();
+        if (err != null) return Result.error(403, err);
+        try {
+            return Result.success("向量文档回填完成", knowledgeService.backfillDocumentsFromVectors());
+        } catch (Exception e) {
+            log.error("[Knowledge] 向量文档回填失败: {}", e.getMessage());
+            return Result.error(500, "回填失败: " + e.getMessage());
         }
     }
 }

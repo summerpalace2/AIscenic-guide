@@ -51,6 +51,7 @@ public class KnowledgeDocumentService {
         d.setTags(rs.getString("tags"));
         d.setFileUrl(rs.getString("file_url"));
         d.setFileMd5(rs.getString("file_md5"));
+        d.setSourceName(rs.getString("source_name"));
         d.setStatus(rs.getString("status"));
         d.setVectorStatus(rs.getString("vector_status"));
         d.setChunkCount(rs.getInt("chunk_count"));
@@ -66,7 +67,8 @@ public class KnowledgeDocumentService {
      * 分页查询文档列表
      */
     public Map<String, Object> listDocuments(String category, String keyword, int page, int size) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM kb_document WHERE status != 'archived'");
+        // 兼容早期数据 status 为空的情况；SQL 中 NULL != 'archived' 不会返回 true。
+        StringBuilder sql = new StringBuilder("SELECT * FROM kb_document WHERE (status IS NULL OR status <> 'archived')");
         List<Object> params = new ArrayList<>();
         if (category != null && !category.isBlank()) {
             sql.append(" AND category = ?");
@@ -100,6 +102,10 @@ public class KnowledgeDocumentService {
             m.put("status", d.getStatus());
             m.put("vectorStatus", d.getVectorStatus());
             m.put("chunkCount", d.getChunkCount());
+            m.put("tags", parseTags(d.getTags()));
+            m.put("sourceName", resolveSourceName(d));
+            m.put("fileUrl", d.getFileUrl());
+            m.put("canRefresh", isRefreshable(d));
             m.put("createdAt", d.getCreatedAt() != null ? d.getCreatedAt().format(DT_FMT) : "");
             m.put("updatedAt", d.getUpdatedAt() != null ? d.getUpdatedAt().format(DT_FMT) : "");
             records.add(m);
@@ -117,7 +123,7 @@ public class KnowledgeDocumentService {
      * 获取所有分类及其文档数
      */
     public List<Map<String, Object>> getCategories() {
-        String sql = "SELECT category, COUNT(*) as cnt FROM kb_document WHERE status != 'archived' GROUP BY category";
+        String sql = "SELECT category, COUNT(*) as cnt FROM kb_document WHERE (status IS NULL OR status <> 'archived') GROUP BY category";
         return jdbcTemplate.query(sql, (rs, rowNum) -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("key", rs.getString("category"));
@@ -133,6 +139,7 @@ public class KnowledgeDocumentService {
             case "culture" -> "人文艺术";
             case "faq" -> "常见问题";
             case "notice" -> "游览须知";
+            case "other" -> "其它资料";
             default -> category;
         };
     }
@@ -153,7 +160,7 @@ public class KnowledgeDocumentService {
                                              String tags, MultipartFile file, String userId) throws IOException {
         // 检查同名
         Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM kb_document WHERE title = ? AND status != 'archived'",
+                "SELECT COUNT(*) FROM kb_document WHERE title = ? AND (status IS NULL OR status <> 'archived')",
                 Integer.class, title);
         if (count != null && count > 0) {
             throw new IllegalArgumentException("已存在同名文档: " + title);
@@ -168,7 +175,7 @@ public class KnowledgeDocumentService {
             fileMd5 = md5(file.getBytes());
             // MD5 去重
             Integer dupCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM kb_document WHERE file_md5 = ? AND status != 'archived'",
+                    "SELECT COUNT(*) FROM kb_document WHERE file_md5 = ? AND (status IS NULL OR status <> 'archived')",
                     Integer.class, fileMd5);
             if (dupCount != null && dupCount > 0) {
                 throw new IllegalArgumentException("文件已存在（相同 MD5）");
@@ -176,27 +183,35 @@ public class KnowledgeDocumentService {
             fileUrl = saveFile(file);
         }
 
+        // 文件文档使用保存后的唯一文件名，纯文本使用稳定的文档 ID，二者都可作为 Qdrant source。
+        String sourceName = fileUrl.isEmpty() ? "text-" + id : new File(fileUrl).getName();
+
         String now = LocalDateTime.now().format(DT_FMT);
-        String sql = "INSERT INTO kb_document (id, title, category, content, tags, file_url, file_md5, status, vector_status, chunk_count, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'pending', 0, ?, ?, ?)";
-        jdbcTemplate.update(sql, id, title, category, content != null ? content : "", tags != null ? tags : "[]", fileUrl, fileMd5, userId != null ? userId : "", now, now);
+        String sql = "INSERT INTO kb_document (id, title, category, content, tags, file_url, file_md5, source_name, status, vector_status, chunk_count, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending', 0, ?, ?, ?)";
+        jdbcTemplate.update(sql, id, title, category, content != null ? content : "", tags != null ? tags : "[]", fileUrl, fileMd5, sourceName, userId != null ? userId : "", now, now);
 
         log.info("[Knowledge] 创建文档 id={} title={}", id, title);
 
-        // 异步触发向量化
+        // 异步触发向量化；纯文本直接用编辑内容生成碎片，文件则按原文件解析。
         if (!fileUrl.isEmpty()) {
             triggerSyncAsync(id, fileUrl);
+        } else if (content != null && !content.isBlank()) {
+            triggerTextSyncAsync(id, sourceName, content);
         }
 
         return getDocument(id);
     }
 
     /**
-     * 更新文档元数据
+     * 更新文档元数据，并在正文变更时以管理员保存的内容重新生成向量。
+     * 文件文档的“刷新”由 triggerSync 单独处理，始终以原文件为准。
      */
     public KnowledgeDocument updateDocument(String docId, String title, String category,
                                              String content, String tags) {
         KnowledgeDocument existing = getDocument(docId);
         if (existing == null) throw new IllegalArgumentException("Document not found: " + docId);
+        boolean contentChanged = content != null && !Objects.equals(content, existing.getContent());
+        String sourceName = resolveSourceName(existing);
 
         List<Object> params = new ArrayList<>();
         StringBuilder sql = new StringBuilder("UPDATE kb_document SET updated_at = ?");
@@ -206,27 +221,38 @@ public class KnowledgeDocumentService {
         if (category != null) { sql.append(", category = ?"); params.add(category); }
         if (content != null) { sql.append(", content = ?"); params.add(content); }
         if (tags != null) { sql.append(", tags = ?"); params.add(tags); }
-
-        sql.append(", vector_status = 'pending' WHERE id = ?");
+        if (contentChanged) {
+            sql.append(", source_name = ?, vector_status = 'pending'");
+            params.add(sourceName);
+        }
+        sql.append(" WHERE id = ?");
         params.add(docId);
 
         jdbcTemplate.update(sql.toString(), params.toArray());
         log.info("[Knowledge] 更新文档 id={}", docId);
 
-        // 异步触发重新向量化
-        if (existing.getFileUrl() != null && !existing.getFileUrl().isEmpty()) {
-            triggerSyncAsync(docId, existing.getFileUrl());
+        // 只有正文实际改变时才覆盖 Qdrant。标题、分类、标签变化无需重复调用 embedding。
+        if (contentChanged && content != null && !content.isBlank()) {
+            triggerTextSyncAsync(docId, sourceName, content);
+        } else if (contentChanged) {
+            // 管理员明确清空正文时，向量也必须同步清空，不能让待同步状态永久卡住。
+            scenicDataImportService.deleteDocumentVectors(sourceName);
+            jdbcTemplate.update("UPDATE kb_document SET source_name = ?, vector_status = 'synced', chunk_count = 0 WHERE id = ?", sourceName, docId);
         }
 
         return getDocument(docId);
     }
 
     /**
-     * 软删除文档
+     * 删除文档：先删除 Qdrant 中同 source 的碎片，再归档元数据并清理受控上传目录中的源文件。
      */
     public void deleteDocument(String docId) {
+        KnowledgeDocument existing = getDocument(docId);
+        if (existing == null) throw new IllegalArgumentException("Document not found: " + docId);
+        scenicDataImportService.deleteDocumentVectors(resolveSourceName(existing));
         String sql = "UPDATE kb_document SET status = 'archived', updated_at = ? WHERE id = ?";
         jdbcTemplate.update(sql, LocalDateTime.now().format(DT_FMT), docId);
+        deleteStoredFile(existing.getFileUrl());
         log.info("[Knowledge] 软删除文档 id={}", docId);
     }
 
@@ -237,17 +263,22 @@ public class KnowledgeDocumentService {
         KnowledgeDocument doc = getDocument(docId);
         if (doc == null) throw new IllegalArgumentException("Document not found: " + docId);
 
-        if (doc.getFileUrl() == null || doc.getFileUrl().isEmpty()) {
-            throw new IllegalArgumentException("无可同步的文件");
-        }
-
         // 更新状态为 syncing
         jdbcTemplate.update("UPDATE kb_document SET vector_status = 'syncing' WHERE id = ?", docId);
 
         try {
-            // 调用 Java 端已有的导入服务
-            scenicDataImportService.reindexDocument(new File(doc.getFileUrl()));
-            jdbcTemplate.update("UPDATE kb_document SET vector_status = 'synced' WHERE id = ?", docId);
+            String sourceName = resolveSourceName(doc);
+            int chunks;
+            if (doc.getFileUrl() != null && !doc.getFileUrl().isEmpty()) {
+                scenicDataImportService.reindexDocument(new File(doc.getFileUrl()));
+                chunks = scenicDataImportService.countChunksBySource(sourceName);
+            } else {
+                if (!isRefreshable(doc)) {
+                    throw new IllegalArgumentException("该历史文档没有原始文件，不能刷新；可编辑正文后重新向量化");
+                }
+                chunks = scenicDataImportService.reindexTextDocument(sourceName, doc.getContent());
+            }
+            jdbcTemplate.update("UPDATE kb_document SET source_name = ?, vector_status = 'synced', chunk_count = ? WHERE id = ?", sourceName, chunks, docId);
             log.info("[Knowledge] 向量化成功 id={}", docId);
         } catch (Exception e) {
             jdbcTemplate.update("UPDATE kb_document SET vector_status = 'failed' WHERE id = ?", docId);
@@ -263,15 +294,15 @@ public class KnowledgeDocumentService {
         return result;
     }
 
-    /**
-     * 异步触发向量化
-     */
+    /** 异步按原始文件刷新向量。 */
     private void triggerSyncAsync(String docId, String fileUrl) {
         new Thread(() -> {
             try {
                 Thread.sleep(500); // 延迟确保事务已提交
                 scenicDataImportService.reindexDocument(new File(fileUrl));
-                jdbcTemplate.update("UPDATE kb_document SET vector_status = 'synced' WHERE id = ?", docId);
+                String sourceName = new File(fileUrl).getName();
+                int chunks = scenicDataImportService.countChunksBySource(sourceName);
+                jdbcTemplate.update("UPDATE kb_document SET source_name = ?, vector_status = 'synced', chunk_count = ? WHERE id = ?", sourceName, chunks, docId);
             } catch (Exception e) {
                 jdbcTemplate.update("UPDATE kb_document SET vector_status = 'failed' WHERE id = ?", docId);
                 log.error("[Knowledge] 异步向量化失败 id={}: {}", docId, e.getMessage());
@@ -279,7 +310,124 @@ public class KnowledgeDocumentService {
         }).start();
     }
 
+    /** 异步按管理员编辑后的正文刷新向量。 */
+    private void triggerTextSyncAsync(String docId, String sourceName, String content) {
+        new Thread(() -> {
+            try {
+                int chunks = scenicDataImportService.reindexTextDocument(sourceName, content);
+                jdbcTemplate.update("UPDATE kb_document SET source_name = ?, vector_status = 'synced', chunk_count = ? WHERE id = ?", sourceName, chunks, docId);
+            } catch (Exception e) {
+                jdbcTemplate.update("UPDATE kb_document SET vector_status = 'failed' WHERE id = ?", docId);
+                log.error("[Knowledge] 文本异步向量化失败 id={}: {}", docId, e.getMessage());
+            }
+        }).start();
+    }
+
+    /**
+     * 将已有 Qdrant source 回填为 kb_document，解决旧版本“碎片存在、文档列表为空”的断层。
+     * 回填不伪造原始文件，后续编辑会以回填的文本摘要重建向量。
+     */
+    public Map<String, Object> backfillDocumentsFromVectors() {
+        int created = 0;
+        int updated = 0;
+        List<Map<String, Object>> summaries = scenicDataImportService.listSourceSummaries();
+        String now = LocalDateTime.now().format(DT_FMT);
+        for (Map<String, Object> summary : summaries) {
+            String sourceName = String.valueOf(summary.getOrDefault("sourceName", ""));
+            if (sourceName.isBlank()) continue;
+            int chunkCount = ((Number) summary.getOrDefault("chunkCount", 0)).intValue();
+            String content = String.valueOf(summary.getOrDefault("content", ""));
+            Integer existing = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM kb_document WHERE (source_name = ? OR ((source_name IS NULL OR source_name = '') AND title = ?)) AND (status IS NULL OR status <> 'archived')",
+                    Integer.class, sourceName, sourceName);
+            if (existing != null && existing > 0) {
+                jdbcTemplate.update("UPDATE kb_document SET source_name = ?, vector_status = 'synced', chunk_count = ?, updated_at = ? WHERE (source_name = ? OR ((source_name IS NULL OR source_name = '') AND title = ?)) AND (status IS NULL OR status <> 'archived')",
+                        sourceName, chunkCount, now, sourceName, sourceName);
+                updated++;
+                continue;
+            }
+
+            jdbcTemplate.update("INSERT INTO kb_document (id, title, category, content, tags, file_url, file_md5, source_name, status, vector_status, chunk_count, created_by, created_at, updated_at) VALUES (?, ?, 'other', ?, '[]', '', '', ?, 'active', 'synced', ?, 'system-backfill', ?, ?)",
+                    UUID.randomUUID().toString(), sourceName, content, sourceName, chunkCount, now, now);
+            created++;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("sources", summaries.size());
+        result.put("created", created);
+        result.put("updated", updated);
+        return result;
+    }
+
+    /** 将实体转换为前端可直接使用的 camelCase 响应。 */
+    public Map<String, Object> toResponse(KnowledgeDocument document, boolean includeContent) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("id", document.getId());
+        data.put("title", document.getTitle());
+        data.put("category", document.getCategory());
+        data.put("contentSnippet", document.getContent() != null && document.getContent().length() > 100
+                ? document.getContent().substring(0, 100) : document.getContent());
+        if (includeContent) data.put("content", document.getContent());
+        data.put("fileUrl", document.getFileUrl());
+        data.put("sourceName", resolveSourceName(document));
+        data.put("canRefresh", isRefreshable(document));
+        data.put("status", document.getStatus());
+        data.put("vectorStatus", document.getVectorStatus());
+        data.put("tags", parseTags(document.getTags()));
+        data.put("chunkCount", document.getChunkCount());
+        data.put("createdAt", document.getCreatedAt() != null ? document.getCreatedAt().format(DT_FMT) : "");
+        data.put("updatedAt", document.getUpdatedAt() != null ? document.getUpdatedAt().format(DT_FMT) : "");
+        return data;
+    }
+
     // ───────── 工具方法 ─────────
+
+    /** 兼容历史库中损坏或为空的标签 JSON，始终向前端返回字符串数组。 */
+    private List<String> parseTags(String rawTags) {
+        if (rawTags == null || rawTags.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(rawTags, objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, String.class));
+        } catch (Exception ignored) {
+            return List.of();
+        }
+    }
+
+    /** 为新旧文档解析可稳定定位 Qdrant 碎片的 source。 */
+    private String resolveSourceName(KnowledgeDocument document) {
+        if (document.getSourceName() != null && !document.getSourceName().isBlank()) {
+            return document.getSourceName();
+        }
+        if (document.getFileUrl() != null && !document.getFileUrl().isBlank()) {
+            return new File(document.getFileUrl()).getName();
+        }
+        return document.getTitle() != null && !document.getTitle().isBlank()
+                ? document.getTitle() : "text-" + document.getId();
+    }
+
+    /** 回填文档没有可追溯原文件，禁止“刷新”覆盖其现有向量。 */
+    private boolean isRefreshable(KnowledgeDocument document) {
+        return document.getFileUrl() != null && !document.getFileUrl().isBlank()
+                || !"system-backfill".equals(document.getCreatedBy());
+    }
+
+    /** 仅删除应用上传目录中的文件，避免错误处理数据库中任意路径。 */
+    private void deleteStoredFile(String fileUrl) {
+        if (fileUrl == null || fileUrl.isBlank()) return;
+        try {
+            File uploadRoot = new File(uploadDirectory).getCanonicalFile();
+            File storedFile = new File(fileUrl).getCanonicalFile();
+            String rootPath = uploadRoot.getPath() + File.separator;
+            if (!storedFile.getPath().startsWith(rootPath)) {
+                log.warn("[Knowledge] 跳过非上传目录文件删除: {}", storedFile);
+                return;
+            }
+            if (storedFile.exists() && !storedFile.delete()) {
+                log.warn("[Knowledge] 源文件删除失败: {}", storedFile);
+            }
+        } catch (Exception e) {
+            log.warn("[Knowledge] 清理源文件失败: {}", e.getMessage());
+        }
+    }
 
     private String saveFile(MultipartFile file) throws IOException {
         String uploadDir = uploadDirectory.endsWith(File.separator)

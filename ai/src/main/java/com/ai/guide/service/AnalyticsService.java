@@ -31,9 +31,15 @@ public class AnalyticsService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     private final JdbcTemplate jdbcTemplate;
+    private final SentimentService sentimentService;
+    private final EmotionAnalysisService emotionAnalysisService;
 
-    public AnalyticsService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbcTemplate) {
+    public AnalyticsService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbcTemplate,
+                            SentimentService sentimentService,
+                            EmotionAnalysisService emotionAnalysisService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.sentimentService = sentimentService;
+        this.emotionAnalysisService = emotionAnalysisService;
     }
 
     // ───────── 1. 日志记录（由 ChatController 调用）─────────
@@ -42,9 +48,9 @@ public class AnalyticsService {
      * 记录一次 AI 服务调用
      * 由 summerpalace2 添加到 ChatController 的流完成后回调
      */
-    public void logService(String sessionId, String question, String emotion, String intent, long responseTimeMs) {
+    public String logService(String sessionId, String question, String emotion, String intent, long responseTimeMs) {
+        String id = UUID.randomUUID().toString();
         try {
-            String id = UUID.randomUUID().toString();
             String now = LocalDateTime.now().format(DT_FMT);
             jdbcTemplate.update(
                 "INSERT INTO service_log (id, session_id, question, emotion, intent, response_time_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -52,8 +58,23 @@ public class AnalyticsService {
                 emotion != null ? emotion : "", intent != null ? intent : "",
                 responseTimeMs, now
             );
+            // AI 复核是旁路任务；先写入规则结果，随后异步更新同一条统计记录。
+            emotionAnalysisService.classifyAsync(question)
+                    .thenAccept(classified -> updateEmotion(id, classified));
         } catch (Exception e) {
             log.warn("[Analytics] 日志记录失败: {}", e.getMessage());
+        }
+        return id;
+    }
+
+    /** 异步情绪分类完成后更新统计记录。 */
+    private void updateEmotion(String serviceLogId, SentimentService.Sentiment sentiment) {
+        if (sentiment == null) return;
+        try {
+            jdbcTemplate.update("UPDATE service_log SET emotion = ? WHERE id = ?",
+                    sentiment.name(), serviceLogId);
+        } catch (Exception e) {
+            log.debug("[Analytics] 异步情绪写回失败: {}", e.getMessage());
         }
     }
 
@@ -65,6 +86,9 @@ public class AnalyticsService {
      */
     public Map<String, Object> dashboard(String period) {
         Map<String, Object> result = new LinkedHashMap<>();
+
+        // 关键词规则升级后，重新计算历史中仍为 NEUTRAL 的问题，避免旧统计永久停留在 0%。
+        refreshDerivedEmotions();
 
         // 时间范围
         LocalDateTime now = LocalDateTime.now();
@@ -120,6 +144,28 @@ public class AnalyticsService {
         result.put("satisfactionTrend", querySatisfactionTrend(weekAgo.format(DT_FMT)));
 
         return result;
+    }
+
+    /**
+     * 用当前情感规则回填历史中尚未明确归类的服务日志。
+     * 仅更新空值或旧的中性结果，不覆盖已确认的正面/负面记录。
+     */
+    private void refreshDerivedEmotions() {
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id, question FROM service_log WHERE question IS NOT NULL AND question <> '' " +
+                            "AND (emotion IS NULL OR emotion = '' OR emotion = 'NEUTRAL')");
+            for (Map<String, Object> row : rows) {
+                String question = Objects.toString(row.get("question"), "");
+                SentimentService.Sentiment detected = sentimentService.analyze(question);
+                if (detected != SentimentService.Sentiment.NEUTRAL) {
+                    jdbcTemplate.update("UPDATE service_log SET emotion = ? WHERE id = ?",
+                            detected.name(), row.get("id"));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[Analytics] 历史情感回填跳过: {}", e.getMessage());
+        }
     }
 
     // ───────── 3. 热门问题排行 ─────────
