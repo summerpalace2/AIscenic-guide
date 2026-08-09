@@ -125,6 +125,7 @@ public class KnowledgeDbConfig {
                 "tags TEXT DEFAULT '[]'," +
                 "file_url TEXT DEFAULT ''," +
                 "file_md5 VARCHAR(64) DEFAULT ''," +
+                "source_name " + varchar + " DEFAULT ''," +
                 "status " + varchar + " NOT NULL DEFAULT 'active'," +
                 "vector_status " + varchar + " NOT NULL DEFAULT 'pending'," +
                 "chunk_count INTEGER DEFAULT 0," +
@@ -132,6 +133,7 @@ public class KnowledgeDbConfig {
                 "created_at " + timeType + " NOT NULL" + timeDefault + "," +
                 "updated_at " + timeType + " NOT NULL" + timeDefault +
                 ")");
+        ensureColumn(jdbcTemplate, "kb_document", "source_name " + varchar + " DEFAULT ''");
         log.info("[KnowledgeDB] kb_document 表已就绪");
 
         jdbcTemplate.update("CREATE TABLE IF NOT EXISTS users (" +
@@ -179,6 +181,19 @@ public class KnowledgeDbConfig {
                 "updated_at " + timeType + " NOT NULL" + timeDefault +
                 ")");
         log.info("[KnowledgeDB] app_config 表已就绪");
+    }
+
+    /**
+     * 为已存在的 SQLite/PostgreSQL 表补齐新增字段。
+     * 新部署会由 CREATE TABLE 创建字段；旧部署会在这里平滑升级。
+     */
+    private void ensureColumn(JdbcTemplate jdbcTemplate, String tableName, String columnDefinition) {
+        try {
+            jdbcTemplate.update("ALTER TABLE " + tableName + " ADD COLUMN " + columnDefinition);
+            log.info("[KnowledgeDB] 已补齐字段: {}.{}", tableName, columnDefinition.split(" ")[0]);
+        } catch (Exception ignored) {
+            // SQLite/PostgreSQL 在字段已存在时错误信息不同，已存在即可安全忽略。
+        }
     }
 
     /** 将本地 SQLite 的全量业务表复制到 PostgreSQL；按主键跳过已存在记录。 */

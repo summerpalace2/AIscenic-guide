@@ -58,4 +58,18 @@ public class ThreadPoolConfig {
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
     }
+
+    /**
+     * 情绪分类线程池；情绪统计属于旁路任务，不能占用对话主链路线程。
+     * 使用拒绝策略而不是 CallerRunsPolicy，避免队列满时反向阻塞 SSE 请求。
+     */
+    @Bean(name = "emotionExecutor")
+    public ExecutorService emotionExecutor() {
+        return new ThreadPoolExecutor(
+                2, 4, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                r -> { Thread t = new Thread(r, "emotion-ai"); t.setDaemon(true); return t; },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
 }

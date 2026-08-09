@@ -16,6 +16,7 @@ public class KnowledgeDocument {
     private String tags;           // JSON array string
     private String fileUrl;
     private String fileMd5;
+    private String sourceName;     // Qdrant payload 中用于关联该文档碎片的 source
     private String status;         // active / archived
     private String vectorStatus;   // pending / syncing / synced / failed
     private Integer chunkCount;
