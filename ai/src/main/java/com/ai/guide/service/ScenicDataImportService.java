@@ -22,6 +22,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -76,23 +77,13 @@ public class ScenicDataImportService {
     private String currentFileName;
 
     /** RAG 入库主方法：解析上传文件 → 去重 → 切割 → 向量化 → Qdrant 入库 */
-    public void importUniversalDocument(MultipartFile file) throws Exception {
+    public synchronized void importUniversalDocument(MultipartFile file) throws Exception {
         String originalName = file.getOriginalFilename();
         String fileName = (originalName == null) ? "unknown" :
                 new String(originalName.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
 
         this.currentFileName = fileName;
         log.info("【RAG系统】开始解析文件: {}", fileName);
-
-        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
-        try {
-            qdrantClient.deleteAsync(COLLECTION_NAME,
-                    Points.Filter.newBuilder()
-                            .addMust(ConditionFactory.matchKeyword("source", fileName))
-                            .build()).get();
-        } catch (Exception e) {
-            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
-        }
 
         List<Document> rawDocs;
         String extension = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
@@ -147,6 +138,16 @@ public class ScenicDataImportService {
                 Map<String, Object> meta = new HashMap<>(rawDoc.getMetadata());
                 finalDocs.add(new Document(finalContent, meta));
             }
+        }
+
+        // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", fileName))
+                            .build()).get();
+        } catch (Exception e) {
+            log.warn("【Qdrant 去重失败（可忽略，首次导入无旧数据）】{}", e.getMessage());
         }
 
         // [步骤4] 向量化 + Qdrant 入库
@@ -682,8 +683,14 @@ public class ScenicDataImportService {
         return docs;
     }
 
-    /** 批量向量化并写入 Qdrant（一条文档 → 一个 1536 维向量） */
-    private void insertToQdrant(List<Document> docs, String sourceName) {
+    /**
+     * 批量向量化并写入 Qdrant。
+     *
+     * @param docs 待入库的文本碎片
+     * @param sourceName 文档在 Qdrant payload 中的稳定来源标识
+     * @return 实际写入的向量碎片数量
+     */
+    private int insertToQdrant(List<Document> docs, String sourceName) {
         List<Points.PointStruct> points = new ArrayList<>();
 
         for (Document doc : docs) {
@@ -719,8 +726,10 @@ public class ScenicDataImportService {
                 qdrantClient.upsertAsync(COLLECTION_NAME, points).get();
             } catch (Exception e) {
                 log.error("【Qdrant 入库失败】{}", e.getMessage());
+                throw new RuntimeException("Qdrant 写入失败", e);
             }
         }
+        return points.size();
     }
 
     /** 从 Excel 单元格安全取值 */
@@ -969,6 +978,266 @@ public class ScenicDataImportService {
         } catch (Exception e) {
             log.error("deleteAllDocuments failed: {}", e.getMessage(), e);
             throw new RuntimeException("知识库清空失败", e);
+        }
+    }
+
+
+    /**
+     * 从已保存的文件路径重新向量化（供知识库管理 sync 接口调用）
+     * 由 summerpalace2 添加，用于 KnowledgeDocumentService.triggerSync()
+     * 避免依赖 spring-test 的 MockMultipartFile，直接使用 CommonsMultipartFile
+     */
+    public void reindexDocument(File file) {
+        if (file == null || !file.exists()) {
+            throw new IllegalArgumentException("文件不存在: " + (file == null ? "null" : file.getPath()));
+        }
+        try {
+            byte[] fileBytes = java.nio.file.Files.readAllBytes(file.toPath());
+            // 构造一个简易 MultipartFile 实现
+            MultipartFile multipartFile = new ByteArrayMultipartFile(file.getName(), fileBytes);
+            importUniversalDocument(multipartFile);
+            log.info("[Knowledge] 重新向量化文件: {}", file.getName());
+        } catch (Exception e) {
+            log.error("[Knowledge] 重新向量化失败: {}", e.getMessage());
+            throw new RuntimeException("重新向量化失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 删除一个来源文档在 Qdrant 中的全部碎片。
+     *
+     * @param sourceName 写入 payload 的 source 字段；为空时不执行删除
+     */
+    public void deleteDocumentVectors(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) return;
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME,
+                    Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", sourceName))
+                            .build()).get();
+            log.info("[Knowledge] 已删除来源 {} 的向量碎片", sourceName);
+        } catch (Exception e) {
+            log.error("[Knowledge] 删除来源 {} 的向量失败: {}", sourceName, e.getMessage(), e);
+            throw new RuntimeException("删除文档向量失败", e);
+        }
+    }
+
+    /**
+     * 将管理员编辑后的纯文本重新切片、向量化并写入 Qdrant。
+     * 编辑内容以同一个 source 覆盖原碎片，避免产生重复向量。
+     *
+     * @param sourceName 文档的稳定来源标识
+     * @param content 管理员确认后的完整文本
+     * @return 新写入的碎片数
+     */
+    public synchronized int reindexTextDocument(String sourceName, String content) {
+        if (sourceName == null || sourceName.isBlank()) {
+            throw new IllegalArgumentException("文档来源不能为空");
+        }
+        if (content == null || content.isBlank()) {
+            throw new IllegalArgumentException("文档内容不能为空");
+        }
+
+        deleteDocumentVectors(sourceName);
+        List<Document> docs = nlpSplitter.apply(List.of(new Document(content.trim())));
+        int chunks = insertToQdrant(docs, sourceName);
+        log.info("[Knowledge] 文本重新向量化完成 source={}, chunks={}", sourceName, chunks);
+        return chunks;
+    }
+
+    /**
+     * 查询单个来源当前保留的向量碎片数。
+     * 用于将知识库管理页的“文档条目”与 Qdrant 的真实状态保持一致。
+     */
+    public int countChunksBySource(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) return 0;
+        int count = 0;
+        try {
+            Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setFilter(Points.Filter.newBuilder()
+                            .addMust(ConditionFactory.matchKeyword("source", sourceName))
+                            .build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) builder.setOffset(offset);
+                Points.ScrollResponse response = qdrantClient.scrollAsync(builder.build()).get();
+                count += response.getResultList().size();
+                offset = response.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            return count;
+        } catch (Exception e) {
+            log.warn("[Knowledge] 统计来源 {} 的碎片失败: {}", sourceName, e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 从现有 Qdrant 载荷聚合来源信息，供旧知识库一键回填文档元数据。
+     * 每个 source 返回一条摘要，避免将整个向量库正文复制到业务数据库。
+     */
+    public List<Map<String, Object>> listSourceSummaries() {
+        final int contentLimit = 6000;
+        Map<String, Map<String, Object>> sources = new LinkedHashMap<>();
+        try {
+            Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) builder.setOffset(offset);
+                Points.ScrollResponse response = qdrantClient.scrollAsync(builder.build()).get();
+                if (response.getResultList().isEmpty()) break;
+                for (Points.RetrievedPoint point : response.getResultList()) {
+                    String source = payloadString(point, "source");
+                    if (source.isBlank()) continue;
+                    Map<String, Object> summary = sources.computeIfAbsent(source, key -> {
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("sourceName", key);
+                        item.put("chunkCount", 0);
+                        item.put("content", "");
+                        return item;
+                    });
+                    summary.put("chunkCount", ((Integer) summary.get("chunkCount")) + 1);
+                    String existing = (String) summary.get("content");
+                    String content = payloadString(point, "content");
+                    if (!content.isBlank() && existing.length() < contentLimit) {
+                        String separator = existing.isBlank() ? "" : "\n\n";
+                        summary.put("content", (existing + separator + content)
+                                .substring(0, Math.min(contentLimit, existing.length() + separator.length() + content.length())));
+                    }
+                }
+                offset = response.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            return new ArrayList<>(sources.values());
+        } catch (Exception e) {
+            log.error("[Knowledge] 读取向量来源摘要失败: {}", e.getMessage(), e);
+            throw new RuntimeException("读取向量来源失败", e);
+        }
+    }
+
+    /** 分页读取 Qdrant 中的知识碎片，供知识运维页面查看。 */
+    public Map<String, Object> listFragments(int page, int size, String keyword) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        int start = (safePage - 1) * safeSize;
+        List<Map<String, Object>> all = new ArrayList<>();
+        try {
+            Points.ScrollPoints.Builder sb = Points.ScrollPoints.newBuilder()
+                    .setCollectionName(COLLECTION_NAME)
+                    .setLimit(1000)
+                    .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
+            Points.PointId offset = null;
+            while (true) {
+                if (offset != null) sb.setOffset(offset);
+                Points.ScrollResponse resp = qdrantClient.scrollAsync(sb.build()).get();
+                if (resp.getResultList().isEmpty()) break;
+                for (Points.RetrievedPoint pt : resp.getResultList()) {
+                    String content = payloadString(pt, "content");
+                    String source = payloadString(pt, "source");
+                    if (keyword != null && !keyword.isBlank()
+                            && !(content + " " + source).toLowerCase(Locale.ROOT)
+                            .contains(keyword.toLowerCase(Locale.ROOT))) continue;
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("id", pointIdText(pt.getId()));
+                    item.put("document_id", source);
+                    item.put("document_title", source);
+                    item.put("content", content);
+                    item.put("metadata", new LinkedHashMap<>());
+                    all.add(item);
+                }
+                offset = resp.getNextPageOffset();
+                if (offset == null || (!offset.hasNum() && !offset.hasUuid())) break;
+            }
+            int from = Math.min(start, all.size());
+            int to = Math.min(from + safeSize, all.size());
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("items", all.subList(from, to));
+            result.put("total", all.size());
+            result.put("page", safePage);
+            result.put("size", safeSize);
+            return result;
+        } catch (Exception e) {
+            log.error("listFragments failed: {}", e.getMessage(), e);
+            throw new RuntimeException("读取知识碎片失败", e);
+        }
+    }
+
+    /** 更新单个碎片的文本载荷；向量本身不变，重大改动建议重新同步文档。 */
+    public void updateFragment(String id, String content) {
+        if (id == null || id.isBlank() || content == null || content.isBlank()) {
+            throw new IllegalArgumentException("碎片 ID 和内容不能为空");
+        }
+        try {
+            Points.PointId pointId = parsePointId(id);
+            Map<String, JsonWithInt.Value> payload = Map.of("content", ValueFactory.value(content));
+            qdrantClient.setPayloadAsync(COLLECTION_NAME, payload, pointId, false, null,
+                    java.time.Duration.ofSeconds(30)).get();
+        } catch (Exception e) {
+            log.error("updateFragment failed, id={}: {}", id, e.getMessage(), e);
+            throw new RuntimeException("更新知识碎片失败", e);
+        }
+    }
+
+    public void deleteFragment(String id) {
+        if (id == null || id.isBlank()) throw new IllegalArgumentException("碎片 ID 不能为空");
+        try {
+            qdrantClient.deleteAsync(COLLECTION_NAME, List.of(parsePointId(id)),
+                    java.time.Duration.ofSeconds(30)).get();
+        } catch (Exception e) {
+            log.error("deleteFragment failed, id={}: {}", id, e.getMessage(), e);
+            throw new RuntimeException("删除知识碎片失败", e);
+        }
+    }
+
+    private static String payloadString(Points.RetrievedPoint point, String key) {
+        JsonWithInt.Value value = point.getPayloadMap().get(key);
+        return value == null ? "" : value.getStringValue();
+    }
+
+    private static String pointIdText(Points.PointId id) {
+        if (id.hasUuid()) return id.getUuid();
+        return id.hasNum() ? String.valueOf(id.getNum()) : "";
+    }
+
+    private static Points.PointId parsePointId(String id) {
+        try {
+            return PointIdFactory.id(Long.parseLong(id));
+        } catch (NumberFormatException ignored) {
+            try {
+                return PointIdFactory.id(UUID.fromString(id));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("无效的碎片 ID");
+            }
+        }
+    }
+
+    /**
+     * 简易字节数组 MultipartFile 实现
+     * 由 summerpalace2 实现，避免引入 spring-test 依赖
+     */
+    private static class ByteArrayMultipartFile implements MultipartFile {
+        private final String name;
+        private final byte[] content;
+
+        ByteArrayMultipartFile(String name, byte[] content) {
+            this.name = name;
+            this.content = content;
+        }
+
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return name; }
+        @Override public String getContentType() { return "application/octet-stream"; }
+        @Override public boolean isEmpty() { return content == null || content.length == 0; }
+        @Override public long getSize() { return content != null ? content.length : 0; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public java.io.InputStream getInputStream() { return new java.io.ByteArrayInputStream(content); }
+        @Override public void transferTo(File dest) throws java.io.IOException {
+            java.nio.file.Files.write(dest.toPath(), content);
         }
     }
 

@@ -40,5 +40,17 @@ qdrant:
 baidu:
   api-key: "${BAIDU_API_KEY:}"
   secret-key: "${BAIDU_SECRET_KEY:}"
+jwt:
+  secret: "${JWT_SECRET:scenic-guide-secret-key-change-me}"
+  expires-days: 7
 context:
   keep-recent: 12
+# 业务元数据数据库。生产环境在 Zeabur 配置 KNOWLEDGE_DB_TYPE=postgresql、
+# KNOWLEDGE_DB_URL、KNOWLEDGE_DB_USERNAME、KNOWLEDGE_DB_PASSWORD；本地默认 SQLite。
+knowledge:
+  database:
+    type: "${KNOWLEDGE_DB_TYPE:sqlite}"
+    url: "${KNOWLEDGE_DB_URL:}"
+    username: "${KNOWLEDGE_DB_USERNAME:}"
+    password: "${KNOWLEDGE_DB_PASSWORD:}"
+  upload-dir: "${KNOWLEDGE_UPLOAD_DIR:uploads/knowledge}"

@@ -8,6 +8,8 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
@@ -16,7 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 语音识别控制器 - 百度短语音识别 (http://vop.baidu.com/server_api)
+ * 语音识别控制器 - 百度短语音识别 (https://vop.baidu.com/server_api)
  *
  * 鉴权复用百度 TTS 同一套 API_KEY / SECRET_KEY
  * 前端 encodeWAV 后发送 WAV 格式 → 百度 ASR
@@ -27,6 +29,8 @@ import java.util.UUID;
 @RequestMapping("/ai")
 public class AsrController {
 
+    private static final Logger log = LoggerFactory.getLogger(AsrController.class);
+
     private static final String ASR_URL = "http://vop.baidu.com/server_api";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
     @Value("${baidu.api-key:}")
@@ -35,7 +39,7 @@ public class AsrController {
     @Value("${baidu.secret-key:}")
     private String secretKey;
 
-    /** 1537 = 中文普通话 */
+    /** 默认语种 1537 = 中文普通话；前端可通过 dev_pid 指定：1737=英语 / 1637=粤语 / 1837=四川话 */
     private static final int DEV_PID = 1537;
 
     private final RestTemplate restTemplate = new RestTemplate();
@@ -62,12 +66,13 @@ public class AsrController {
             // 构造请求体 — format=wav（前端 encodeWAV 生成）
             byte[] audioBytes = java.util.Base64.getDecoder().decode(base64Audio);
             String cuid = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+            int devPid = parseDevPid(body.getOrDefault("dev_pid", "1537"));
 
             String requestBody = String.format(
                     "{\"format\":\"wav\",\"rate\":16000,\"channel\":1,\"token\":\"%s\",\"cuid\":\"%s\",\"dev_pid\":%d,\"len\":%d,\"speech\":\"%s\"}",
-                    token, cuid, DEV_PID, audioBytes.length, base64Audio);
+                    token, cuid, devPid, audioBytes.length, base64Audio);
 
-            System.out.println("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + DEV_PID);
+            log.info("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + devPid);
 
             // POST
             HttpHeaders headers = new HttpHeaders();
@@ -76,7 +81,7 @@ public class AsrController {
             ResponseEntity<String> response = restTemplate.postForEntity(ASR_URL, entity, String.class);
             String responseBody = response.getBody();
 
-            System.out.println("[ASR] Response: " + (responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null"));
+            log.info("[ASR] Response: " + (responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null"));
 
             // 解析
             if (responseBody == null || responseBody.isEmpty()) {
@@ -88,7 +93,7 @@ public class AsrController {
 
             if (errNo != 0) {
                 String errMsg = json.path("err_msg").asText("unknown");
-                System.err.println("[ASR] Baidu error: " + errNo + " - " + errMsg);
+                log.error("[ASR] Baidu error: " + errNo + " - " + errMsg);
                 return handleBaiduError(errNo, errMsg);
             }
 
@@ -102,12 +107,27 @@ public class AsrController {
             return Result.error(500, "未识别到内容，请重新录制");
 
         } catch (HttpClientErrorException e) {
-            System.err.println("[ASR] HTTP Error: " + e.getStatusCode() + " " + e.getResponseBodyAsString());
+            log.error("[ASR] HTTP Error: " + e.getStatusCode() + " " + e.getResponseBodyAsString());
             return Result.error(e.getStatusCode().value(), "语音识别服务异常（HTTP " + e.getStatusCode().value() + "）");
         } catch (Exception e) {
-            System.err.println("[ASR] Error: " + e.getMessage());
+            log.error("[ASR] Error: " + e.getMessage());
             return Result.error(500, "转写失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 解析并校验 dev_pid（白名单：1537 中文普通话 / 1737 英语 / 1637 粤语 / 1837 四川话）
+     */
+    private int parseDevPid(String raw) {
+        int devPid = DEV_PID;
+        try {
+            int parsed = Integer.parseInt(raw.trim());
+            if (parsed == 1537 || parsed == 1737 || parsed == 1637 || parsed == 1837) {
+                devPid = parsed;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        return devPid;
     }
 
     /**

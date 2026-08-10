@@ -11,4 +11,5 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/ai/target/scenic-guide-ai-0.0.1-SNAPSHOT.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-Xmx1024m", "-jar", "app.jar"]
+# 按容器实际内存动态限制堆，避免固定 1G 在 Zeabur 小规格实例上触发 MemoryPressure。
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=65.0", "-XX:InitialRAMPercentage=20.0", "-jar", "app.jar"]
