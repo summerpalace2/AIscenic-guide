@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -21,6 +24,8 @@ import java.util.concurrent.TimeUnit;
  */
 @Service
 public class EmotionAnalysisService {
+
+    private static final Logger log = LoggerFactory.getLogger(EmotionAnalysisService.class);
 
     private static final String CLASSIFIER_PROMPT = """
             你是景区服务满意度分类器。只判断用户这句话表达的情绪态度，不判断问题是否有答案。
@@ -49,6 +54,40 @@ public class EmotionAnalysisService {
         this.timeoutMs = Math.max(500L, timeoutMs);
     }
 
+    /** 熔断器：连续失败次数 */
+    private volatile int consecutiveFailures = 0;
+
+    /** 熔断器：熔断恢复时间戳（毫秒），0 表示未熔断 */
+    private volatile long circuitOpenUntil = 0;
+
+    private synchronized void recordSuccess() {
+        if (consecutiveFailures > 0) {
+            log.info("[Emotion] AI 情感复核恢复，重置熔断计数器");
+        }
+        consecutiveFailures = 0;
+        circuitOpenUntil = 0;
+    }
+
+    private synchronized void recordFailure() {
+        consecutiveFailures++;
+        if (consecutiveFailures >= 3 && circuitOpenUntil == 0) {
+            circuitOpenUntil = System.currentTimeMillis() + 60_000;
+            log.warn("[Emotion] AI 情感复核连续 {} 次失败，熔断 60 秒", consecutiveFailures);
+        }
+    }
+
+    private boolean isCircuitOpen() {
+        if (circuitOpenUntil > 0 && System.currentTimeMillis() < circuitOpenUntil) {
+            return true;
+        }
+        if (circuitOpenUntil > 0 && System.currentTimeMillis() >= circuitOpenUntil) {
+            circuitOpenUntil = 0;
+            consecutiveFailures = 0;
+            log.info("[Emotion] AI 情感复核熔断期结束，恢复尝试");
+        }
+        return false;
+    }
+
     /**
      * 异步判断用户情绪；调用方不会等待 AI 返回。
      *
@@ -61,6 +100,11 @@ public class EmotionAnalysisService {
             return CompletableFuture.completedFuture(fallback);
         }
 
+        // 熔断检查：连续 3 次 AI 失败后暂停 60 秒
+        if (isCircuitOpen()) {
+            return CompletableFuture.completedFuture(fallback);
+        }
+
         String normalizedText = text.trim().length() > 300
                 ? text.trim().substring(0, 300)
                 : text.trim();
@@ -69,7 +113,10 @@ public class EmotionAnalysisService {
             return CompletableFuture
                     .supplyAsync(() -> classify(normalizedText, fallback), executor)
                     .completeOnTimeout(fallback, timeoutMs, TimeUnit.MILLISECONDS)
-                    .exceptionally(error -> fallback);
+                    .exceptionally(error -> {
+                        recordFailure();
+                        return fallback;
+                    });
         } catch (RejectedExecutionException rejected) {
             return CompletableFuture.completedFuture(fallback);
         }
@@ -86,8 +133,11 @@ public class EmotionAnalysisService {
                     .call()
                     .content();
             SentimentService.Sentiment parsed = parseLabel(response);
-            return parsed != null ? parsed : fallback;
+            SentimentService.Sentiment result = parsed != null ? parsed : fallback;
+            recordSuccess();
+            return result;
         } catch (Exception ignored) {
+            recordFailure();
             return fallback;
         }
     }

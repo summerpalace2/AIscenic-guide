@@ -34,7 +34,7 @@ public class SlotTrackingService {
 
     /** 区域名称正则 */
     private static final Pattern AREA_PATTERN =
-            Pattern.compile("灵山大佛|梵宫|五印坛城|拈花湾|祥符禅寺|曼飞龙塔|降魔堂|佛手广场|胜境广场|香水海|南门|九龙灌浴");
+            Pattern.compile("洪崖洞|解放碑|李子坝|鹅岭二厂|山城巷|湖广会馆|长江索道|三峡博物馆|磁器口|南山一棵树");
 
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();

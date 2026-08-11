@@ -37,6 +37,10 @@ qdrant:
   host: "${QDRANT_HOST:localhost}"
   port: "${QDRANT_PORT:6334}"
   api-key: "${QDRANT_API_KEY:}"
+  # Chat/RAG must target the isolated Production V2 collection; legacy scenic_guide is rejected in code.
+  production-v2:
+    collection: "${QDRANT_PRODUCTION_V2_COLLECTION:scenic_guide_production_v2}"
+    auto-create-indexes: "${QDRANT_PRODUCTION_V2_AUTO_CREATE_INDEXES:false}"
 baidu:
   api-key: "${BAIDU_API_KEY:}"
   secret-key: "${BAIDU_SECRET_KEY:}"

@@ -181,6 +181,17 @@ public class KnowledgeDbConfig {
                 "updated_at " + timeType + " NOT NULL" + timeDefault +
                 ")");
         log.info("[KnowledgeDB] app_config 表已就绪");
+
+        // TripPlan 只保存用户提交的结构化 JSON，不读取或重建旧知识库事实。
+        // payload 保留 dataStatus/FactStatus/Citation 等字段，便于后续 Data Pipeline/API Binding 替换。
+        jdbcTemplate.update("CREATE TABLE IF NOT EXISTS trip_plan (" +
+                "id " + idType + " PRIMARY KEY," +
+                "user_id " + varchar + " NOT NULL," +
+                "payload TEXT NOT NULL DEFAULT '{}'," +
+                "created_at BIGINT NOT NULL," +
+                "updated_at BIGINT NOT NULL" +
+                ")");
+        log.info("[KnowledgeDB] trip_plan 表已就绪");
     }
 
     /**

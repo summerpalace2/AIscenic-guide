@@ -64,7 +64,7 @@ public class ParallelRagService {
 
         long t0 = System.currentTimeMillis();
 
-        // Step 1: 并行检索每个子问题
+        // 步骤 1：并行检索每个子问题
         List<Future<List<String>>> futures = new ArrayList<>();
         for (String subQuery : subQueries) {
             if (subQuery == null || subQuery.isBlank()) continue;
@@ -73,7 +73,7 @@ public class ParallelRagService {
             ));
         }
 
-        // Step 2: 收集所有子问题的检索结果，统计每个碎片的出现频次
+        // 步骤 2：收集所有子问题的检索结果，统计每个碎片的出现频次
         Map<String, Integer> fragmentCount = new HashMap<>();      // 频次
         Map<String, String> fragmentOriginal = new HashMap<>();    // 原始文本
 
@@ -94,7 +94,7 @@ public class ParallelRagService {
             return "";
         }
 
-        // Step 3: 交叉验证重排 -> 出现频次越高 = 置信度越高 = 排越前
+        // 步骤 3：交叉验证重排 -> 出现频次越高 = 置信度越高 = 排名越前
         List<Map.Entry<String, Integer>> sorted = fragmentCount.entrySet().stream()
                 .filter(e -> !isStructuralOnly(fragmentOriginal.get(e.getKey())))
                 .sorted((a, b) -> {
@@ -109,7 +109,7 @@ public class ParallelRagService {
         log.info("[ParallelRag] 子问题数={}, 合并碎片数={}, 最终返回={}, 耗时={}ms",
                 futures.size(), fragmentCount.size(), sorted.size(), elapsed);
 
-        // Step 4: 返回原始文本（按置信度排序）
+        // 步骤 4：返回原始文本（按置信度排序）
         return sorted.stream()
                 .map(e -> fragmentOriginal.get(e.getKey()))
                 .collect(Collectors.joining("\n---\n"));

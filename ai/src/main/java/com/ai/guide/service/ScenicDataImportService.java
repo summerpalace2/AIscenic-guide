@@ -18,6 +18,7 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.reader.tika.TikaDocumentReader;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -27,6 +28,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -61,7 +64,11 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class ScenicDataImportService {
 
-    private static final String COLLECTION_NAME = "scenic_guide";
+    private static final String LEGACY_COLLECTION_NAME = "scenic_guide";
+    private static final String DEFAULT_COLLECTION_NAME = "scenic_guide_production_v2";
+
+    @Value("${qdrant.production-v2.collection:scenic_guide_production_v2}")
+    private String configuredCollectionName = DEFAULT_COLLECTION_NAME;
 
     private final QdrantClient qdrantClient;
     private final EmbeddingModel embeddingModel;
@@ -69,6 +76,16 @@ public class ScenicDataImportService {
 
     private final TokenTextSplitter nlpSplitter = new TokenTextSplitter(800, 200, 5, 10000, true);
     private final Pattern idPattern = Pattern.compile("[A-Z0-9]+-[0-9]+");
+
+    /** Chat/RAG 链路不得静默指向旧集合。 */
+    public String collectionName() {
+        String value = configuredCollectionName == null || configuredCollectionName.isBlank()
+                ? DEFAULT_COLLECTION_NAME : configuredCollectionName.trim();
+        if (LEGACY_COLLECTION_NAME.equals(value)) {
+            throw new IllegalStateException("Production V2 Chat/RAG cannot target legacy collection " + LEGACY_COLLECTION_NAME);
+        }
+        return value;
+    }
 
     /** Word 文档类型枚举 */
     private enum DocType { TABLE_DOMINANT, TEXT_DOMINANT }
@@ -113,7 +130,7 @@ public class ScenicDataImportService {
         // 【防遗漏：二次切分与前缀继承逻辑】
         // ==========================================
         // 原因：原始文档可能包含超长段落，必须二次切割。
-        // 但切割会导致碎片丢失【身份前缀】（如"景点名称:灵山大佛"），
+    // 但切割会导致碎片丢失【身份前缀】（如"景点名称:洪崖洞"），
         // 因此对每个非首段碎片强制补上前缀，确保检索时不会因为缺前缀而漏掉。
         List<Document> finalDocs = new ArrayList<>();
         for (Document rawDoc : rawDocs) {
@@ -142,7 +159,7 @@ public class ScenicDataImportService {
 
         // [步骤1] 自动去重旧数据：删除 Qdrant 中同一文件来源的旧向量
         try {
-            qdrantClient.deleteAsync(COLLECTION_NAME,
+            qdrantClient.deleteAsync(collectionName(),
                     Points.Filter.newBuilder()
                             .addMust(ConditionFactory.matchKeyword("source", fileName))
                             .build()).get();
@@ -273,7 +290,7 @@ public class ScenicDataImportService {
     private List<Document> parseWordStructured(InputStream inputStream) throws Exception {
         List<Document> docs = new ArrayList<>();
         try (XWPFDocument doc = new XWPFDocument(inputStream)) {
-            // Step 1: 文档类型检测
+            // 步骤 1：文档类型检测
             DocType docType = detectDocType(doc);
             log.info("【Word】文档类型检测: {}", docType);
 
@@ -311,7 +328,7 @@ public class ScenicDataImportService {
                         }
                     }
                 } else if (element instanceof XWPFTable table) {
-                    // Step 2: 表格处理（根据类型选择策略）
+            // 步骤 2：表格处理（根据类型选择策略）
                     if (docType == DocType.TABLE_DOMINANT) {
                         processTableGrouped(table, docs, allIds);
                     } else {
@@ -325,7 +342,7 @@ public class ScenicDataImportService {
                 addDocWithExtractedMeta(docs, "【正文片段】\n" + textBuffer.toString());
             }
 
-            // Step 3: 表格主导时生成索引碎片
+            // 步骤 3：表格主导时生成索引碎片
             if (docType == DocType.TABLE_DOMINANT && !allIds.isEmpty()) {
                 String indexContent = "【文档索引】\n本文档包含以下景点/条目（共 " + allIds.size() + " 个）：\n"
                         + "- " + String.join("\n- ", allIds);
@@ -723,7 +740,7 @@ public class ScenicDataImportService {
 
         if (!points.isEmpty()) {
             try {
-                qdrantClient.upsertAsync(COLLECTION_NAME, points).get();
+                qdrantClient.upsertAsync(collectionName(), points).get();
             } catch (Exception e) {
                 log.error("【Qdrant 入库失败】{}", e.getMessage());
                 throw new RuntimeException("Qdrant 写入失败", e);
@@ -761,6 +778,15 @@ public class ScenicDataImportService {
      */
     public String queryKnowledge(String queryText, long timeoutMs) {
         log.info("【检索阶段】提问: {}，超时: {}ms", queryText, timeoutMs);
+        try {
+            return doQueryKnowledge(queryText, timeoutMs);
+        } catch (Exception e) {
+            log.error("【检索异常】queryKnowledge 整体失败: {}", e.getMessage(), e);
+            return "";
+        }
+    }
+
+    private String doQueryKnowledge(String queryText, long timeoutMs) {
         // [步骤1] 向量化查询文本
         float[] queryVector = embeddingModel.embed(queryText);
         List<Float> vectorAsList = toFloatList(queryVector);
@@ -778,7 +804,7 @@ public class ScenicDataImportService {
 
         // [步骤3] Qdrant 向量检索：COSINE 相似度，TOP30
         Points.SearchPoints.Builder searchBuilder = Points.SearchPoints.newBuilder()
-                .setCollectionName(COLLECTION_NAME)
+                .setCollectionName(collectionName())
                 .addAllVector(vectorAsList)
                 .setLimit(30)
                 .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
@@ -786,7 +812,8 @@ public class ScenicDataImportService {
 
         List<Points.ScoredPoint> results;
         try {
-            results = qdrantClient.searchAsync(searchBuilder.build()).get();
+            results = qdrantClient.searchAsync(searchBuilder.build())
+                    .get(Math.max(timeoutMs, 1500), TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             log.error("【检索异常】{}", e.getMessage());
             return "";
@@ -807,7 +834,7 @@ public class ScenicDataImportService {
 
         // [步骤4] 重排序：TOP30 候选 → gte-rerank-v2 → 精选 TOP10
         List<String> finalDocs = rerankService.rerank(queryText, candidateDocs, 10, timeoutMs);
-        return String.join("\n---\n", finalDocs);
+        return ChatDomainPolicy.protectRetrievedContext(String.join("\n---\n", finalDocs));
     }
 
     /**
@@ -834,7 +861,7 @@ public class ScenicDataImportService {
 
         // [步骤3] Qdrant 向量检索
         Points.SearchPoints.Builder searchBuilder = Points.SearchPoints.newBuilder()
-                .setCollectionName(COLLECTION_NAME)
+                .setCollectionName(collectionName())
                 .addAllVector(vectorAsList)
                 .setLimit(qdrantLimit)
                 .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
@@ -842,7 +869,7 @@ public class ScenicDataImportService {
 
         List<Points.ScoredPoint> results;
         try {
-            results = qdrantClient.searchAsync(searchBuilder.build()).get();
+            results = qdrantClient.searchAsync(searchBuilder.build()).get(3, TimeUnit.SECONDS);
         } catch (Exception e) {
             return Collections.emptyList();
         }
@@ -863,7 +890,8 @@ public class ScenicDataImportService {
         if (candidateDocs.isEmpty()) {
             return Collections.emptyList();
         }
-        return rerankService.rerank(queryText, candidateDocs, rerankTopN);
+        return ChatDomainPolicy.protectRetrievedFragments(
+                rerankService.rerank(queryText, candidateDocs, rerankTopN));
     }
 
 
@@ -892,7 +920,7 @@ public class ScenicDataImportService {
 
         // [步骤3] Qdrant 向量检索
         Points.SearchPoints.Builder searchBuilder = Points.SearchPoints.newBuilder()
-                .setCollectionName(COLLECTION_NAME)
+                .setCollectionName(collectionName())
                 .addAllVector(vectorAsList)
                 .setLimit(qdrantLimit)
                 .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
@@ -900,7 +928,7 @@ public class ScenicDataImportService {
 
         List<Points.ScoredPoint> results;
         try {
-            results = qdrantClient.searchAsync(searchBuilder.build()).get();
+            results = qdrantClient.searchAsync(searchBuilder.build()).get(3, TimeUnit.SECONDS);
         } catch (Exception e) {
             return Collections.emptyList();
         }
@@ -921,7 +949,8 @@ public class ScenicDataImportService {
         if (candidateDocs.isEmpty()) {
             return Collections.emptyList();
         }
-        return rerankService.rerankDeep(queryText, candidateDocs, rerankTopN, 1500);
+        return ChatDomainPolicy.protectRetrievedFragments(
+                rerankService.rerankDeep(queryText, candidateDocs, rerankTopN, 1500));
     }
 
 
@@ -930,7 +959,7 @@ public class ScenicDataImportService {
      */
     public long countDocuments() {
         try {
-            return qdrantClient.countAsync(COLLECTION_NAME).get();
+            return qdrantClient.countAsync(collectionName()).get();
         } catch (Exception e) {
             log.error("countDocuments failed: {}", e.getMessage(), e);
             return -1;
@@ -938,13 +967,13 @@ public class ScenicDataImportService {
     }
 
     /**
-     * Count distinct source documents via scroll API
+     * 通过 scroll API 统计不同来源文档的数量。
      */
     public int countDistinctSources() {
         try {
             Set<String> sources = ConcurrentHashMap.newKeySet();
             Points.ScrollPoints.Builder sb = Points.ScrollPoints.newBuilder()
-                    .setCollectionName(COLLECTION_NAME)
+                    .setCollectionName(collectionName())
                     .setLimit(1000)
                     .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
             Points.PointId offset = null;
@@ -973,7 +1002,7 @@ public class ScenicDataImportService {
      */
     public void deleteAllDocuments() {
         try {
-            qdrantClient.deleteAsync(COLLECTION_NAME, Points.Filter.newBuilder().build(), java.time.Duration.ofSeconds(30)).get();
+            qdrantClient.deleteAsync(collectionName(), Points.Filter.newBuilder().build(), java.time.Duration.ofSeconds(30)).get();
             log.info("【知识库清空】已删除全部数据");
         } catch (Exception e) {
             log.error("deleteAllDocuments failed: {}", e.getMessage(), e);
@@ -1011,7 +1040,7 @@ public class ScenicDataImportService {
     public void deleteDocumentVectors(String sourceName) {
         if (sourceName == null || sourceName.isBlank()) return;
         try {
-            qdrantClient.deleteAsync(COLLECTION_NAME,
+            qdrantClient.deleteAsync(collectionName(),
                     Points.Filter.newBuilder()
                             .addMust(ConditionFactory.matchKeyword("source", sourceName))
                             .build()).get();
@@ -1054,7 +1083,7 @@ public class ScenicDataImportService {
         int count = 0;
         try {
             Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
-                    .setCollectionName(COLLECTION_NAME)
+                    .setCollectionName(collectionName())
                     .setLimit(1000)
                     .setFilter(Points.Filter.newBuilder()
                             .addMust(ConditionFactory.matchKeyword("source", sourceName))
@@ -1083,7 +1112,7 @@ public class ScenicDataImportService {
         Map<String, Map<String, Object>> sources = new LinkedHashMap<>();
         try {
             Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
-                    .setCollectionName(COLLECTION_NAME)
+                    .setCollectionName(collectionName())
                     .setLimit(1000)
                     .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
             Points.PointId offset = null;
@@ -1128,7 +1157,7 @@ public class ScenicDataImportService {
         List<Map<String, Object>> all = new ArrayList<>();
         try {
             Points.ScrollPoints.Builder sb = Points.ScrollPoints.newBuilder()
-                    .setCollectionName(COLLECTION_NAME)
+                    .setCollectionName(collectionName())
                     .setLimit(1000)
                     .setWithPayload(Points.WithPayloadSelector.newBuilder().setEnable(true).build());
             Points.PointId offset = null;
@@ -1175,7 +1204,7 @@ public class ScenicDataImportService {
         try {
             Points.PointId pointId = parsePointId(id);
             Map<String, JsonWithInt.Value> payload = Map.of("content", ValueFactory.value(content));
-            qdrantClient.setPayloadAsync(COLLECTION_NAME, payload, pointId, false, null,
+            qdrantClient.setPayloadAsync(collectionName(), payload, pointId, false, null,
                     java.time.Duration.ofSeconds(30)).get();
         } catch (Exception e) {
             log.error("updateFragment failed, id={}: {}", id, e.getMessage(), e);
@@ -1186,7 +1215,7 @@ public class ScenicDataImportService {
     public void deleteFragment(String id) {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("碎片 ID 不能为空");
         try {
-            qdrantClient.deleteAsync(COLLECTION_NAME, List.of(parsePointId(id)),
+            qdrantClient.deleteAsync(collectionName(), List.of(parsePointId(id)),
                     java.time.Duration.ofSeconds(30)).get();
         } catch (Exception e) {
             log.error("deleteFragment failed, id={}: {}", id, e.getMessage(), e);
