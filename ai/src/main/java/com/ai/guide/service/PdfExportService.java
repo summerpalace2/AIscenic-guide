@@ -77,7 +77,7 @@ public class PdfExportService {
             Font bodyFont = new Font(bf, 11, Font.NORMAL, new Color(0x33, 0x33, 0x33));
             Font smallFont = new Font(bf, 10, Font.NORMAL, new Color(0x71, 0x80, 0x96));
 
-            Paragraph title = new Paragraph("灵山智慧导游 - 日服务报告", titleFont);
+            Paragraph title = new Paragraph("渝游智策 - 日服务报告", titleFont);
             title.setAlignment(Element.ALIGN_CENTER);
             title.setSpacingAfter(10);
             document.add(title);
@@ -126,7 +126,7 @@ public class PdfExportService {
             document.add(emoTable);
 
             document.add(Chunk.NEWLINE);
-            Paragraph footer = new Paragraph("本报告由灵山智慧导游系统自动生成", smallFont);
+            Paragraph footer = new Paragraph("本报告由渝游智策重庆智慧文旅 AI 决策助手自动生成", smallFont);
             footer.setAlignment(Element.ALIGN_CENTER);
             document.add(footer);
 
@@ -186,7 +186,7 @@ public class PdfExportService {
                 "C:/Windows/Fonts/simhei.ttf"
             };
             for (String path : fontPaths) {
-                try { return BaseFont.createFont(path, BaseFont.IDENTITY_H, BaseFont.EMBEDDED); } catch (Exception e) { /* try next */ }
+                try { return BaseFont.createFont(path, BaseFont.IDENTITY_H, BaseFont.EMBEDDED); } catch (Exception e) { /* 尝试下一个字体 */ }
             }
             return BaseFont.createFont("STSong-Light", "UniGB-UCS2-H", BaseFont.EMBEDDED);
         } catch (Exception e) {

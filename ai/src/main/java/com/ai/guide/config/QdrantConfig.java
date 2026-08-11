@@ -26,7 +26,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class QdrantConfig {
 
-    private static final String COLLECTION_NAME = "scenic_guide";
+    private static final String LEGACY_COLLECTION_NAME = "scenic_guide";
+    private static final String DEFAULT_COLLECTION_NAME = "scenic_guide_production_v2";
     /** 向量维度，与 text-embedding-v2 输出一致 */
     private static final long VECTOR_DIMENSION = 1536;
 
@@ -39,17 +40,34 @@ public class QdrantConfig {
     @Value("${qdrant.api-key:}")
     private String apiKey;
 
+    @Value("${qdrant.production-v2.collection:scenic_guide_production_v2}")
+    private String collectionName = DEFAULT_COLLECTION_NAME;
+
+    @Value("${qdrant.production-v2.auto-create-indexes:false}")
+    private boolean autoCreateIndexes;
+
     @Bean
     public QdrantClient qdrantClient() {
+        ensureProductionV2Collection();
         QdrantGrpcClient grpcClient = QdrantGrpcClient.newBuilder(host, port)
                 .withApiKey(apiKey)
                 .build();
         QdrantClient client = new QdrantClient(grpcClient);
         // 启动时检查集合维度
         checkCollection(client);
-        // 启动时自动创建 Payload 索引（幂等）
-        createIndexes(client);
+        // 索引创建采用显式开关；本次运行未授权执行远端 mutation。
+        if (autoCreateIndexes) {
+            createIndexes(client);
+        }
         return client;
+    }
+
+    private void ensureProductionV2Collection() {
+        if (collectionName == null || collectionName.isBlank()
+                || LEGACY_COLLECTION_NAME.equals(collectionName.trim())) {
+            throw new IllegalStateException("Qdrant Chat/RAG requires an isolated Production V2 collection");
+        }
+        collectionName = collectionName.trim();
     }
 
     /**
@@ -58,15 +76,15 @@ public class QdrantConfig {
      */
     private void checkCollection(QdrantClient client) {
         try {
-            var response = client.getCollectionInfoAsync(COLLECTION_NAME).get();
+            var response = client.getCollectionInfoAsync(collectionName).get();
             long existingDim = response.getConfig().getParams().getVectorsConfig().getParams().getSize();
             if (existingDim != VECTOR_DIMENSION) {
-                log.warn("[Qdrant] 集合维度不匹配！现有={} 期望={}。请删除集合后重新导入数据。", existingDim, VECTOR_DIMENSION);
+                log.warn("[Qdrant] 集合维度不匹配！现有={} 期望={}。请在授权后重新导入 Production V2 数据。", existingDim, VECTOR_DIMENSION);
             } else {
-                log.info("[Qdrant] 集合 {} 维度正确: {} 维", COLLECTION_NAME, existingDim);
+                log.info("[Qdrant] 集合 {} 维度正确: {} 维", collectionName, existingDim);
             }
         } catch (Exception e) {
-            log.warn("[Qdrant] 集合 {} 不存在，请在 Qdrant Cloud 控制台手动创建 {} 维集合", COLLECTION_NAME, VECTOR_DIMENSION);
+            log.warn("[Qdrant] 集合 {} 不存在；Production V2 激活仍需授权（期望 {} 维）", collectionName, VECTOR_DIMENSION);
         }
     }
 
@@ -92,7 +110,7 @@ public class QdrantConfig {
                                         Collections.PayloadSchemaType type) {
         try {
             client.createPayloadIndexAsync(
-                    COLLECTION_NAME,
+                    collectionName,
                     fieldName,
                     type,
                     null,   // params: 不指定，使用默认

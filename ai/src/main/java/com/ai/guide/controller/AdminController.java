@@ -131,10 +131,10 @@ public class AdminController {
         String err = checkAdmin();
         if (err != null) return Result.error(403, err);
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("name", "灵仙儿");
+        data.put("name", "渝游智策助手");
         data.put("voiceId", "106");
         data.put("language", "zh");
-        data.put("greeting", "你好，欢迎来到灵山胜境，我是您的AI导览员灵仙儿");
+        data.put("greeting", "你好，欢迎来到重庆，我是渝游智策的重庆智慧文旅 AI 决策助手");
         data.put("enabled", true);
         data.putAll(readConfig("digital_human_"));
         if (data.get("enabled") instanceof String s) {
@@ -169,7 +169,7 @@ public class AdminController {
         String err = checkAdmin();
         if (err != null) return Result.error(403, err);
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("siteName", "灵山胜境 · AI 智慧导览");
+        data.put("siteName", "渝游智策 · 重庆智慧文旅");
         data.put("defaultLanguage", "zh");
         data.put("ttsEnabled", true);
         data.put("asrEnabled", true);

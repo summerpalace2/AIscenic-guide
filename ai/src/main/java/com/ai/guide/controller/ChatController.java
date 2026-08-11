@@ -47,6 +47,9 @@ import java.util.regex.Pattern;
 @RequestMapping("/ai")
 public class ChatController {
 
+    // Chat pipeline 身份绑定：渝游智策 / 重庆智慧文旅 AI 决策助手。
+    // 统一提示词和旧领域防护集中在 ChatDomainPolicy 中。
+
     private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
     private final ChatClient chatClient;
@@ -65,26 +68,7 @@ public class ChatController {
     @Autowired
     private ParallelRagService parallelRagService;
 
-    private static final String SYSTEM_PROMPT = """
-        # 角色: 灵山智慧导游"小导"，有情感、懂历史的江南导游
-
-        # 行为准则
-        1. **承接上下文**：拥有对话记忆，像老朋友聊天，追问时结合之前的回答。
-        2. **关联性**：只在用户问景点/餐厅/政策时从背景知识提取信息。
-        3. **精准度优先**：紧扣用户需求，推荐类问题可适当展开多个维度，封闭性问题简洁精准。
-        4. **按需回答**：打招呼、纯感受表达（"好玩""不好玩"）时<b>不要推荐任何项目</b>——只共情回应。除非用户明确说"推荐""介绍"。
-        5. **回答自然**：承接用户问题顺势答复。结尾加猜你想问（必须空一行），格式：💡猜你想问：1. xxx 2. xxx
-
-        # 槽位感知
-        有【已知用户偏好】时<b>以此为第一优先级</b>。如用户偏好"美食+半天"，模糊请求也直接推美食。缺失关键信息时先追问再推荐
-
-        # 排版
-        每个项目名: ### 数字. 名称（单个不用数字），属性用 `- **属性**：值` 无序列表，严禁同行写两个属性
-        模板: ### 1. 名称 换行 - **价格**：内容 换行 - **特色**：内容
-
-        # 禁令
-        严禁"(空一行)""回车"等描述文字，严禁编造任何知识库中不存在的信息（酒店名称/价格/距离/时间/政策等），知识库未覆盖时必须明确说\"暂无相关信息\"，不得编造看似合理的内容，哪怕用户追问也要保持一致；严禁编造价格政策，严禁标题放列表符号后面，严禁把打招呼变成长篇介绍
-        """;
+    private static final String SYSTEM_PROMPT = ChatDomainPolicy.SYSTEM_PROMPT;
 
     /** 构造 ChatClient 和注入 Redis 记忆组件 */
     public ChatController(ChatClient.Builder builder, RedisChatMemory redisChatMemory,
@@ -103,6 +87,14 @@ public class ChatController {
 
     /** 将知识库上下文拼入用户消息（双模式：有知识=问答 / 无知识=闲聊） */
     private String buildUserPrompt(String context, String message) {
+        if (ChatDomainPolicy.isLegacyCorpusMarker(context)) {
+            return String.format("""
+                    【检索状态】：%s
+                    【用户发言】：%s
+
+                    请明确说明当前重庆知识库仍待激活，暂不引用检索结果或生成景区事实；可以继续帮助用户整理旅行约束。
+                    """, ChatDomainPolicy.LEGACY_CORPUS_MARKER, message);
+        }
         // 无知识上下文 → 闲聊模式（不引用知识库）
         if (context == null || context.isEmpty()) {
             return String.format("""
@@ -167,29 +159,35 @@ public class ChatController {
 
         // 2. 判断是否需要知识库检索
         String context;
-        if ("deep".equals(mode)) {
-            // 深度模式：使用 Agentic RAG（子问题拆解 + 并行检索）
-            var decomposed = queryDecompositionService.decompose(message);
-            if (decomposed != null && decomposed.needSearch() && !decomposed.isEmpty()) {
-                context = parallelRagService.search(decomposed.subQueries());
-                if (context == null) context = "";
-                log.info("[Deep] Agentic RAG: {} sub-queries, context_len={}", decomposed.subQueries().size(), context.length());
+        try {
+            if ("deep".equals(mode)) {
+                // 深度模式：使用 Agentic RAG（子问题拆解 + 并行检索）
+                var decomposed = queryDecompositionService.decompose(message);
+                if (decomposed != null && decomposed.needSearch() && !decomposed.isEmpty()) {
+                    context = parallelRagService.search(decomposed.subQueries());
+                    if (context == null) context = "";
+                    log.info("[Deep] Agentic RAG: {} sub-queries, context_len={}", decomposed.subQueries().size(), context.length());
+                } else {
+                    context = scenicDataImportService.queryKnowledge(message, 1500);
+                    log.info("[Deep] Simple query: context_len={}", context.length());
+                }
+            } else if ("你好".equals(message.trim()) || "您好".equals(message.trim())) {
+                context = "";
+            } else if (ctx.intent() == IntentService.Intent.CHITCHAT) {
+                context = "";
+            } else if (ctx.intent() == IntentService.Intent.COMPLAINT) {
+                log.info("[Chat] 负面情绪/投诉 detected, skipping knowledge");
+                context = "";
+            } else if (shouldSkipKnowledge(message)) {
+                context = "";
             } else {
-                context = scenicDataImportService.queryKnowledge(message, 1500);
-                log.info("[Deep] Simple query: context_len={}", context.length());
+                context = scenicDataImportService.queryKnowledge(message, 800);
             }
-        } else if ("你好".equals(message.trim()) || "您好".equals(message.trim())) {
+        } catch (Exception e) {
+            log.error("[Chat] 检索异常，降级为空上下文: {}", e.getMessage(), e);
             context = "";
-        } else if (ctx.intent() == IntentService.Intent.CHITCHAT) {
-            context = "";
-        } else if (ctx.intent() == IntentService.Intent.COMPLAINT) {
-            log.info("[Chat] 负面情绪/投诉 detected, skipping knowledge");
-            context = "";
-        } else if (shouldSkipKnowledge(message)) {
-            context = "";
-        } else {
-            context = scenicDataImportService.queryKnowledge(message, 800);
         }
+        context = ChatDomainPolicy.protectRetrievedContext(context);
         debugLogContext(message, context);
 
         // 3. 构建 messages（使用 sessionKey 存取历史）
@@ -254,11 +252,12 @@ public class ChatController {
 
         // 上下文压缩
         var compressed = getContextWithCompressedHistory(sessionKey, allHistory, userId);
-        messages.addAll(compressed);
+        messages.addAll(ChatDomainPolicy.filterLegacyMessages(compressed));
 
         // 用户偏好（使用 userId）
         String slotContext = slotTrackingService.toPromptContext(userId);
-        if (slotContext != null && !slotContext.isEmpty()) {
+        if (slotContext != null && !slotContext.isEmpty()
+                && !ChatDomainPolicy.containsLegacyDomain(slotContext)) {
             messages.add(new SystemMessage(slotContext));
         }
 
@@ -312,6 +311,7 @@ public class ChatController {
     private String compressMessages(List<Message> messages, String userId) {
         StringBuilder sb = new StringBuilder();
         for (Message msg : messages) {
+            if (ChatDomainPolicy.containsLegacyDomain(msg.getContent())) continue;
             String role = msg.getMessageType() == org.springframework.ai.chat.messages.MessageType.USER ? "用户" : "助手";
             sb.append(role).append(": ").append(msg.getContent()).append("\n");
         }
@@ -321,7 +321,10 @@ public class ChatController {
                     new SystemMessage("你是对话摘要生成器。生成150字内中文摘要。"),
                     new UserMessage(sb.toString()))
                 .call().content();
-            return (result != null && !result.isBlank()) ? result : "对话已发生";
+            if (result == null || result.isBlank() || ChatDomainPolicy.containsLegacyDomain(result)) {
+                return "对话已发生";
+            }
+            return result;
         } catch (Exception e) {
             return null;
         }
@@ -362,7 +365,8 @@ public class ChatController {
         // 槽位提取（使用 userId）
         slotTrackingService.extractAndSave(userId, message);
 
-        String context = scenicDataImportService.queryKnowledge(message, 800);
+        String context = ChatDomainPolicy.protectRetrievedContext(
+                scenicDataImportService.queryKnowledge(message, 800));
         Ctx ctx = analyze(message);
         List<Message> allMessages = buildMessages(context, message, sessionKey, ctx);
         redisChatMemory.addAsync(sessionKey, List.of(new UserMessage(message)));
