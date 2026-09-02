@@ -1,0 +1,18 @@
+{
+  "revision_id": "GOLDEN_DATASET_CANDIDATE_V2_1",
+  "parent_revision": "GOLDEN_DATASET_CANDIDATE_V2",
+  "created_at": "2026-08-12T17:40:00+08:00",
+  "entity_count": 17,
+  "priority_golden_entity_count": 9,
+  "source_count": 18,
+  "fact_count": 36,
+  "knowledge_document_count": 10,
+  "qa_issue_count": 6,
+  "p0_route_edges_count": 14,
+  "changes_summary": [
+    "MAP_API_REQUIRED_ALL_9: 确保 100% 覆盖全部 9 个 Golden Entity",
+    "GOLDEN_ROUTE_GRAPH_P0: 增加 three_gorges_museum <-> jiefangbei P0 双向路线（共14条P0边），消除孤立节点",
+    "VERIFIED_CANDIDATES_CORRECTED: 精准校正李子坝站门牌地址文案为‘嘉陵江畔的李子坝正街39号商住楼6-7层’，并替换主页URL为具体公文细节页面URL",
+    "ROUTE_HYPOTHESIS: 将未测算的公交车次与具体坡度度数剥离为路线假设，不作为确定官方事实"
+  ]
+}
