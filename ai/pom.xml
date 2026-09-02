@@ -19,8 +19,19 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 标准健康检查与服务信息端点，供 BFF、部署平台和运维探测使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
         <!-- Spring AI OpenAI -->
@@ -139,7 +150,11 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-jdbc</artifactId>
         </dependency>
-
+        <!-- PostgreSQL 使用连接池复用 TLS 会话；SQLite 仍保持轻量直连。 -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
         <!-- JWT 鉴权 (jjwt) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -165,10 +180,11 @@
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
 
-        <!-- Jackson JSR310 -->
+        <!-- Node v1 scrypt compatibility for controlled password migration -->
         <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
         </dependency>
     </dependencies>
 

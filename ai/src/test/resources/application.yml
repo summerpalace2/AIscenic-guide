@@ -1,0 +1,12 @@
+# Test-only configuration; production must supply JWT_SECRET externally.
+spring:
+  ai:
+    openai:
+      api-key: phase5a-test-only-placeholder
+jwt:
+  secret: "phase5a-test-jwt-secret-0123456789"
+  revocation:
+    redis-enabled: false
+admin:
+  bootstrap:
+    mode: disabled

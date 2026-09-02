@@ -7,13 +7,15 @@
       max-request-size: 50MB
   data:
     redis:
-      host: "${REDIS_HOST:localhost}"
-      port: "${REDIS_PORT:6379}"
-      password: "${REDIS_PASSWORD:}"
-      database: "${REDIS_DATABASE:0}"
-      timeout: 5000ms
+      # YUYOUZHICE_REDIS_* is canonical for local/runtime configuration;
+      # generic REDIS_* names remain compatibility fallbacks.
+      host: "${YUYOUZHICE_REDIS_HOST:${REDIS_HOST:localhost}}"
+      port: "${YUYOUZHICE_REDIS_PORT:${REDIS_PORT:6379}}"
+      password: "${YUYOUZHICE_REDIS_PASSWORD:${REDIS_PASSWORD:}}"
+      database: "${YUYOUZHICE_REDIS_DATABASE:${REDIS_DATABASE:0}}"
+      timeout: "${YUYOUZHICE_REDIS_TIMEOUT_MS:${REDIS_TIMEOUT_MS:5000}}ms"
       ssl:
-        enabled: "${REDIS_SSL:false}"
+        enabled: "${YUYOUZHICE_REDIS_SSL:${REDIS_SSL:false}}"
       lettuce:
         pool:
           max-active: 8
@@ -22,10 +24,10 @@
   ai:
     openai:
       api-key: "${DEEPSEEK_API_KEY:}"
-      base-url: https://api.deepseek.com
+      base-url: "${DEEPSEEK_BASE_URL:https://api.deepseek.com}"
       chat:
         options:
-          model: deepseek-v4-flash
+          model: "${DEEPSEEK_MODEL:deepseek-v4-flash}"
           max-tokens: 2000
           temperature: 0.3
 alibabacloud:
@@ -36,25 +38,90 @@ bailian:
 qdrant:
   host: "${QDRANT_HOST:localhost}"
   port: "${QDRANT_PORT:6334}"
+  use-tls: "${QDRANT_USE_TLS:}"
   api-key: "${QDRANT_API_KEY:}"
-  # Chat/RAG must target the isolated Production V2 collection; legacy scenic_guide is rejected in code.
+  # Chat/RAG must target the isolated Production V3 rebuild collection; legacy scenic_guide is rejected in code.
   production-v2:
-    collection: "${QDRANT_PRODUCTION_V2_COLLECTION:scenic_guide_production_v2}"
+    collection: "${QDRANT_PRODUCTION_V2_COLLECTION:scenic_guide_production_v3_rebuild}"
     auto-create-indexes: "${QDRANT_PRODUCTION_V2_AUTO_CREATE_INDEXES:false}"
 baidu:
   api-key: "${BAIDU_API_KEY:}"
   secret-key: "${BAIDU_SECRET_KEY:}"
 jwt:
-  secret: "${JWT_SECRET:scenic-guide-secret-key-change-me}"
+  # Persistent deployments must provide JWT_SECRET; tests supply a test-only value.
+  secret: "${JWT_SECRET:}"
   expires-days: 7
+  revocation:
+    # Enable only when the configured Redis instance is shared by all Java nodes.
+    redis-enabled: "${JWT_REVOCATION_REDIS_ENABLED:false}"
+admin:
+  bootstrap:
+    mode: "${ADMIN_BOOTSTRAP_MODE:disabled}"
+    username: "${ADMIN_BOOTSTRAP_USERNAME:}"
+    password: "${ADMIN_BOOTSTRAP_PASSWORD:}"
+planner:
+  v1:
+    enabled: "${PLANNER_V1_ENABLED:true}"
+  llm:
+    # 意图识别与行程叙事共用独立、有界的模型调用线程池，避免占用公共异步线程。
+    executor-core-size: "${PLANNER_LLM_EXECUTOR_CORE_SIZE:2}"
+    executor-max-size: "${PLANNER_LLM_EXECUTOR_MAX_SIZE:4}"
+    executor-queue-capacity: "${PLANNER_LLM_EXECUTOR_QUEUE_CAPACITY:16}"
+    intent:
+      enabled: "${PLANNER_LLM_INTENT_ENABLED:false}"
+      minimum-confidence: "${PLANNER_LLM_INTENT_MINIMUM_CONFIDENCE:0.75}"
+      timeout-ms: "${PLANNER_LLM_INTENT_TIMEOUT_MS:3500}"
+    narrative:
+      enabled: "${PLANNER_LLM_NARRATIVE_ENABLED:false}"
+      timeout-ms: "${PLANNER_LLM_NARRATIVE_TIMEOUT_MS:30000}"
 context:
   keep-recent: 12
 # 业务元数据数据库。生产环境在 Zeabur 配置 KNOWLEDGE_DB_TYPE=postgresql、
 # KNOWLEDGE_DB_URL、KNOWLEDGE_DB_USERNAME、KNOWLEDGE_DB_PASSWORD；本地默认 SQLite。
 knowledge:
+  index:
+    # 文档解析、Embedding、Qdrant 入库使用独立有界执行器。
+    executor-core-size: "${KNOWLEDGE_INDEX_EXECUTOR_CORE_SIZE:1}"
+    executor-max-size: "${KNOWLEDGE_INDEX_EXECUTOR_MAX_SIZE:2}"
+    executor-queue-capacity: "${KNOWLEDGE_INDEX_EXECUTOR_QUEUE_CAPACITY:8}"
   database:
     type: "${KNOWLEDGE_DB_TYPE:sqlite}"
     url: "${KNOWLEDGE_DB_URL:}"
     username: "${KNOWLEDGE_DB_USERNAME:}"
     password: "${KNOWLEDGE_DB_PASSWORD:}"
   upload-dir: "${KNOWLEDGE_UPLOAD_DIR:uploads/knowledge}"
+# 服务端高德 Web Service 配置；未配置 Key 时由 Planner 返回明确的静态回退状态。
+amap:
+  web-service:
+    base-url: "${AMAP_WEB_SERVICE_BASE_URL:https://restapi.amap.com}"
+    key: "${AMAP_WEB_SERVICE_KEY:${AMAP_KEY:}}"
+    timeout-ms: "${AMAP_WEB_SERVICE_TIMEOUT_MS:6000}"
+    route-timeout-ms: "${AMAP_WEB_SERVICE_ROUTE_TIMEOUT_MS:6500}"
+    max-concurrency: "${AMAP_WEB_SERVICE_MAX_CONCURRENCY:2}"
+    # 规划请求内的路线段批处理调度边界；不使用公共 ForkJoinPool。
+    hydration-concurrency: "${AMAP_WEB_SERVICE_HYDRATION_CONCURRENCY:2}"
+    hydration-queue-capacity: "${AMAP_WEB_SERVICE_HYDRATION_QUEUE_CAPACITY:16}"
+    qps-cooldown-ms: "${AMAP_WEB_SERVICE_QPS_COOLDOWN_MS:2000}"
+    poi-max-keywords: "${AMAP_WEB_SERVICE_POI_MAX_KEYWORDS:3}"
+    request-cache:
+      enabled: "${AMAP_WEB_SERVICE_REQUEST_CACHE_ENABLED:true}"
+      dedup-enabled: "${AMAP_WEB_SERVICE_REQUEST_DEDUP_ENABLED:true}"
+      max-entries: "${AMAP_WEB_SERVICE_REQUEST_CACHE_MAX_ENTRIES:256}"
+      poi-ttl-ms: "${AMAP_WEB_SERVICE_POI_CACHE_TTL_MS:60000}"
+      route-ttl-ms: "${AMAP_WEB_SERVICE_ROUTE_CACHE_TTL_MS:10000}"
+      weather-ttl-ms: "${AMAP_WEB_SERVICE_WEATHER_CACHE_TTL_MS:60000}"
+
+# 标准服务探针：BFF/部署平台统一读取 /actuator/health，避免把“接口不存在”误报为后端离线。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  info:
+    env:
+      enabled: false

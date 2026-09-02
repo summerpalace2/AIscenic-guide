@@ -1,0 +1,95 @@
+[
+  {
+    "entity_id": "hongyadong",
+    "canonical_name": "重庆洪崖洞民俗风貌区",
+    "required_fields": [
+      "coordinates_gps",
+      "entrance_1f_gps",
+      "entrance_11f_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集11F沧白路与1F滨江路双入口GPS坐标锚点。"
+  },
+  {
+    "entity_id": "liziba_viewpoint",
+    "canonical_name": "李子坝单轨穿楼观景平台",
+    "required_fields": [
+      "coordinates_gps",
+      "plaza_anchor_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集李子坝观景打卡广场GPS坐标锚点。"
+  },
+  {
+    "entity_id": "liziba_station",
+    "canonical_name": "重庆轨道交通2号线李子坝站",
+    "required_fields": [
+      "coordinates_gps",
+      "station_exit_1_gps",
+      "station_exit_2_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集轨道2号线1/2号出入口GPS坐标锚点。"
+  },
+  {
+    "entity_id": "eling_testbed2",
+    "canonical_name": "鹅岭贰厂文创公园",
+    "required_fields": [
+      "coordinates_gps",
+      "east_gate_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集鹅岭正街1号园区东门GPS坐标锚点。"
+  },
+  {
+    "entity_id": "shancheng_trail",
+    "canonical_name": "山城巷传统风貌区（山城步道）",
+    "required_fields": [
+      "coordinates_gps",
+      "entrance_top_zhongxing_rd_gps",
+      "entrance_bottom_nanqu_rd_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集山城步道中兴路（上口）与南区路（下口）高差物理节点GPS坐标。"
+  },
+  {
+    "entity_id": "huguang_guild_hall",
+    "canonical_name": "重庆湖广会馆",
+    "required_fields": [
+      "coordinates_gps",
+      "main_gate_changbin_rd_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集长滨路1号正门GPS坐标锚点。"
+  },
+  {
+    "entity_id": "jiefangbei",
+    "canonical_name": "抗战胜利纪功碑暨人民解放纪念碑",
+    "required_fields": [
+      "coordinates_gps",
+      "monument_center_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集解放碑纪念碑中心GPS坐标锚点。"
+  },
+  {
+    "entity_id": "yangtze_cableway",
+    "canonical_name": "长江索道",
+    "required_fields": [
+      "coordinates_north_station_gps",
+      "coordinates_south_station_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集北站（新华路151号）与南站（上新街4号）双端站房GPS坐标。"
+  },
+  {
+    "entity_id": "three_gorges_museum",
+    "canonical_name": "重庆中国三峡博物馆",
+    "required_fields": [
+      "coordinates_gps",
+      "museum_main_entrance_gps"
+    ],
+    "api_action": "AMAP_GEOCODING_AND_POI",
+    "reason_for_collection": "采集人民路236号博物馆正门GPS坐标锚点。"
+  }
+]

@@ -1,0 +1,152 @@
+[
+  {
+    "candidate_id": "CND-HYD-NAME",
+    "entity_id": "hongyadong",
+    "field": "official_name",
+    "value": "重庆洪崖洞民俗风貌区",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599455.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "重庆洪崖洞民俗风貌区",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-HYD-ADDR",
+    "entity_id": "hongyadong",
+    "field": "official_address",
+    "value": "重庆市渝中区嘉陵江滨江路88号",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599455.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "地址：重庆市渝中区嘉陵江滨江路88号",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-JFB-NAME",
+    "entity_id": "jiefangbei",
+    "field": "official_name",
+    "value": "抗战胜利纪功碑暨人民解放纪念碑（重庆人民解放纪念碑 / 解放碑）",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599634.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "抗战胜利纪功碑暨人民解放纪念碑",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-JFB-ADDR",
+    "entity_id": "jiefangbei",
+    "field": "official_address",
+    "value": "重庆市渝中区民族路177号",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599634.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "地址：重庆市渝中区民族路177号",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-LZB-VP-NAME",
+    "entity_id": "liziba_viewpoint",
+    "field": "official_name",
+    "value": "李子坝单轨穿楼观景平台",
+    "source_url": "http://cq.gov.cn/ywdt/bmts/201808/t20180822_8655009.html",
+    "organization": "重庆市人民政府",
+    "evidence_excerpt": "重庆李子坝轻轨穿楼观景平台",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-LZB-ST-NAME",
+    "entity_id": "liziba_station",
+    "field": "official_name",
+    "value": "重庆轨道交通2号线李子坝站",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599583.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "重庆轨道交通2号线李子坝车站",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-LZB-ST-ADDR",
+    "entity_id": "liziba_station",
+    "field": "official_address",
+    "value": "嘉陵江畔的李子坝正街39号商住楼6-7层",
+    "source_url": "https://www.cq.gov.cn/zjcq/cycq/jplyxl/dsy/dsjp/202409/t20240905_13599583.html",
+    "organization": "重庆市人民政府办公厅",
+    "evidence_excerpt": "位于嘉陵江畔的李子坝正街39号商住楼6-7层",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-EL2-NAME",
+    "entity_id": "eling_testbed2",
+    "field": "official_name",
+    "value": "鹅岭贰厂文创公园",
+    "source_url": "http://www.cqyz.gov.cn/zjyz/lyyz/rmdkd/202210/t20221011_11179145.html",
+    "organization": "重庆市渝中区人民政府",
+    "evidence_excerpt": "鹅岭贰厂文创公园",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-EL2-ADDR",
+    "entity_id": "eling_testbed2",
+    "field": "official_address",
+    "value": "重庆市渝中区鹅岭正街1号",
+    "source_url": "http://www.cqyz.gov.cn/zjyz/lyyz/rmdkd/202210/t20221011_11179145.html",
+    "organization": "重庆市渝中区人民政府",
+    "evidence_excerpt": "重庆市渝中区鹅岭正街1号",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-SCT-NAME",
+    "entity_id": "shancheng_trail",
+    "field": "official_name",
+    "value": "山城巷传统风貌区",
+    "source_url": "https://zfcxjw.cq.gov.cn/zjzj/tszj/scbd/202406/t20240606_13274075.html",
+    "organization": "重庆市住房和城乡建设委员会",
+    "evidence_excerpt": "山城巷传统风貌区（山城步道）",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-HGG-NAME",
+    "entity_id": "huguang_guild_hall",
+    "field": "official_name",
+    "value": "重庆湖广会馆",
+    "source_url": "https://www.cqyz.gov.cn/zjyz/lyyz/lswh/lsww/202210/t20221010_11175427.html",
+    "organization": "重庆市渝中区人民政府",
+    "evidence_excerpt": "重庆湖广会馆",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-HGG-PRICE",
+    "entity_id": "huguang_guild_hall",
+    "field": "ticket_price",
+    "value": 25,
+    "source_url": "https://fzggw.cq.gov.cn/zwgk/zfxxgkml/jgxx/jgzc/202003/t20200304_5574470_wap.html",
+    "organization": "重庆市发展和改革委员会",
+    "evidence_excerpt": "重庆湖广会馆门票价格：25 元/人次",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-YTC-PRICE",
+    "entity_id": "yangtze_cableway",
+    "field": "ticket_price",
+    "value": "单程票 30 元/人；往返票 50 元/人",
+    "source_url": "https://fzggw.cq.gov.cn/zwgk/zfxxgkml/jgxx/jgzc/202503/t20250324_14434363_wap.html",
+    "organization": "重庆市发展和改革委员会",
+    "evidence_excerpt": "单程票价 30 元/人、往返票价 50 元/人",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-TGM-HOURS",
+    "entity_id": "three_gorges_museum",
+    "field": "opening_hours",
+    "value": "每日 09:00 - 17:00（16:00 停止入馆），周一闭馆（法定节假日除外）",
+    "source_url": "https://whlyw.cq.gov.cn/zwxx_221/bmdt/tzgg/202511/t20251103_15136009.html",
+    "organization": "重庆市文化和旅游发展委员会",
+    "evidence_excerpt": "每日 09:00 - 17:00（16:00 停止入馆），周一闭馆（法定节假日除外）",
+    "audit_verdict": "VERIFIABLE"
+  },
+  {
+    "candidate_id": "CND-TGM-TICKET",
+    "entity_id": "three_gorges_museum",
+    "field": "ticket_price",
+    "value": 0,
+    "source_url": "https://whlyw.cq.gov.cn/zwxx_221/bmdt/tzgg/202511/t20251103_15136009.html",
+    "organization": "重庆市文化和旅游发展委员会",
+    "evidence_excerpt": "免预约免费进馆，观众凭有效身份证件直接入馆",
+    "audit_verdict": "VERIFIABLE"
+  }
+]
