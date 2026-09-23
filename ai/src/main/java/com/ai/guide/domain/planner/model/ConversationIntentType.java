@@ -16,5 +16,6 @@ public enum ConversationIntentType {
     REPLAN_DAY_FOR_CONDITION,
     REPLAN_DAY,
     CLARIFICATION,
+    PLAN,
     UNKNOWN
 }

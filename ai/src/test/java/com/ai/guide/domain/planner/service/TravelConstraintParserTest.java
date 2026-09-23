@@ -64,4 +64,77 @@ class TravelConstraintParserTest {
 
         assertEquals("素食", constraints.getDietPreference());
     }
+
+    @Test
+    void explicitUniversityStartAndHourBudgetTriggerSpatialPlanning() {
+        TravelConstraints constraints = parser.parse("我在重庆邮电大学 给我3小时的旅游规划");
+
+        assertEquals("重庆邮电大学", constraints.getStartPlace());
+        assertEquals(180, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+        assertEquals("prompt", ((Map<?, ?>) constraints.asMap().get("constraintProvenance")).get("startPlace"));
+    }
+
+    @Test
+    void explicitDistrictStartAndChineseHourBudgetAreNotTwoDays() {
+        TravelConstraints constraints = parser.parse("我在重庆江津 给我2小时的旅游规划");
+
+        assertEquals("重庆江津", constraints.getStartPlace());
+        assertEquals(120, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void locationExtractionDoesNotDependOnAnAttractionName() {
+        TravelConstraints constraints = parser.parse("目前位于一个未收录的地方，安排90分钟附近游玩");
+
+        assertEquals("一个未收录的地方", constraints.getStartPlace());
+        assertEquals(90, constraints.getTimeBudgetMinutes());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void timePrefixedLocationAndHoursBudgetTriggersSpatialPlanning() {
+        TravelConstraints constraints = parser.parse("下午在解放碑玩3个小时 想吃火锅");
+
+        assertEquals("解放碑", constraints.getStartPlace());
+        assertEquals(180, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertEquals("重庆火锅", constraints.getDietPreference());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void departureSuffixStartPlaceAndSixHoursBudgetTriggersSpatialPlanning() {
+        TravelConstraints constraints = parser.parse("重庆大学出发，玩6小时");
+
+        assertEquals("重庆大学", constraints.getStartPlace());
+        assertEquals(360, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+        assertEquals("prompt", ((Map<?, ?>) constraints.asMap().get("constraintProvenance")).get("startPlace"));
+    }
+
+    @Test
+    void departureWithTemporalWordDoesNotMisidentifyStartPlace() {
+        TravelConstraints constraints = parser.parse("明天上午出发，玩3天");
+
+        assertEquals("未提供", constraints.getStartPlace());
+        assertEquals(3, constraints.getDurationDays());
+        assertFalse(constraints.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void universityStartWithTimeRangeInterval() {
+        TravelConstraints constraints = parser.parse("我在重庆邮电大学 10点到17点 为我规划旅游路线");
+
+        assertEquals("重庆邮电大学", constraints.getStartPlace());
+        assertEquals(420, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertEquals("10:00", constraints.getArrivalAt());
+        assertEquals("17:00", constraints.getDepartureAt());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+    }
 }

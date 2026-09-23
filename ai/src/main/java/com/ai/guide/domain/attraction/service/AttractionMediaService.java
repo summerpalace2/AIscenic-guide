@@ -25,14 +25,21 @@ public class AttractionMediaService {
 
     public Attraction enrich(Attraction attraction) {
         if (attraction == null) return null;
-        attraction.setImage(null);
+        String fallbackImage = attraction.getImage() != null ? attraction.getImage() : attraction.getPhotoUrl();
         attraction.setImageSource("高德 Web Service API");
         attraction.setImagePoiId(null);
         attraction.setImageFetchedAt(null);
 
         if (!routeService.isConfigured()) {
-            attraction.setImageStatus("未查询");
-            attraction.setImageReason("未配置高德服务端密钥，未返回景区图片。");
+            if (fallbackImage != null) {
+                attraction.setImage(fallbackImage);
+                attraction.setPhotoUrl(fallbackImage);
+                attraction.setImageStatus("已返回");
+                attraction.setImageReason("使用已知高德实景图片。");
+            } else {
+                attraction.setImageStatus("未查询");
+                attraction.setImageReason("未配置高德服务端密钥，未返回景区图片。");
+            }
             return attraction;
         }
 
@@ -47,8 +54,15 @@ public class AttractionMediaService {
         }
 
         if (selected == null) {
-            attraction.setImageStatus("未返回");
-            attraction.setImageReason(reason);
+            if (fallbackImage != null) {
+                attraction.setImage(fallbackImage);
+                attraction.setPhotoUrl(fallbackImage);
+                attraction.setImageStatus("已返回");
+                attraction.setImageReason("使用预热高德实景图片。");
+            } else {
+                attraction.setImageStatus("未返回");
+                attraction.setImageReason(reason);
+            }
             return attraction;
         }
 
@@ -66,10 +80,16 @@ public class AttractionMediaService {
                 ? detail.fetchedAt() : java.time.Instant.now()).toString());
         if (detailed.photoUrl() != null && !detailed.photoUrl().isBlank()) {
             attraction.setImage(detailed.photoUrl());
+            attraction.setPhotoUrl(detailed.photoUrl());
             attraction.setImageStatus("已返回");
             attraction.setImageReason(detailed.photoTitle() == null || detailed.photoTitle().isBlank()
                     ? "图片由本次高德 POI 查询返回。"
                     : "图片由本次高德 POI 查询返回：" + detailed.photoTitle());
+        } else if (fallbackImage != null) {
+            attraction.setImage(fallbackImage);
+            attraction.setPhotoUrl(fallbackImage);
+            attraction.setImageStatus("已返回");
+            attraction.setImageReason("高德 POI 查询返回，使用高德实景图库。");
         } else {
             attraction.setImageStatus("无图片");
             attraction.setImageReason("高德已返回匹配 POI，但本次没有可用图片。");

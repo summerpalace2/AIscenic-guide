@@ -78,18 +78,33 @@ public class LocalPlanRepairer {
                 stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
                         && !isProtectedStop(s, constraints));
             }
-            // Strategy 5: Day schedule overflow / excessive travel time -> remove the offending stop or the last/lowest utility stop
+            // Strategy 5: Day schedule overflow / excessive travel time -> compress duration or remove redundant stop
             else if ("DAY_SCHEDULE_OVERFLOW".equals(v.type()) || "TRAVEL_TIME_EXCESSIVE".equals(v.type())) {
-                boolean removed = false;
-                if (v.stopId() != null && !v.stopId().isBlank()) {
-                    removed = stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
-                            && !isProtectedStop(s, constraints));
-                }
-                if (!removed) {
-                    for (int i = stops.size() - 1; i >= 0; i--) {
-                        if (!isProtectedStop(stops.get(i), constraints)) {
-                            stops.remove(i);
-                            break;
+                long scenicCount = stops.stream().filter(s -> !isDiningStop(s)).count();
+                if (scenicCount <= 2) {
+                    // Do not prune when only 1-2 scenic spots exist! Compress duration to keep day schedule within budget
+                    for (Map<String, Object> s : stops) {
+                        if (!isDiningStop(s)) {
+                            String dur = text(s.get("duration"));
+                            if (dur.contains("180") || dur.contains("3小时")) {
+                                s.put("duration", "约 100 分钟");
+                            } else if (dur.contains("120") || dur.contains("2小时")) {
+                                s.put("duration", "约 75 分钟");
+                            }
+                        }
+                    }
+                } else {
+                    boolean removed = false;
+                    if (v.stopId() != null && !v.stopId().isBlank()) {
+                        removed = stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
+                                && !isProtectedStop(s, constraints));
+                    }
+                    if (!removed) {
+                        for (int i = stops.size() - 1; i >= 0; i--) {
+                            if (!isProtectedStop(stops.get(i), constraints)) {
+                                stops.remove(i);
+                                break;
+                            }
                         }
                     }
                 }
@@ -99,7 +114,14 @@ public class LocalPlanRepairer {
         return repairedDays;
     }
 
+    private boolean isDiningStop(Map<String, Object> stop) {
+        return stop != null && ("DINING".equals(stop.get("type")) || "餐".equals(stop.get("icon")));
+    }
+
     private boolean isProtectedStop(Map<String, Object> stop, TravelConstraints constraints) {
+        if (stop != null && ("DINING".equals(stop.get("type")) || "餐".equals(stop.get("icon")))) {
+            return true;
+        }
         String stopId = text(stop.get("id"));
         String stableStopId = text(stop.get("stableStopId"));
         String venueId = text(stop.get("venueId"));

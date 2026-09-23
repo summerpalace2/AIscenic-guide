@@ -5,6 +5,8 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.model.ScoreBreakdown;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
+import com.ai.guide.domain.planner.service.TravelDateResolver;
+import com.ai.guide.domain.planner.service.ChongqingTopographyKnowledge;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
@@ -79,22 +81,26 @@ public class RouteAwarePlanner {
             boolean isMonday = dayDate != null && (dayDate.contains("一") || isDateMonday(dayDate));
             List<SlotSpecification> slots = buildDaySlots(day, dayCount, constraints);
             List<Map<String, Object>> stops = new ArrayList<>();
+            List<Attraction> currentDayAttractions = new ArrayList<>();
             Attraction previousAttraction = null;
 
             for (SlotSpecification slot : slots) {
                 CandidateEvaluation best = selectBestCandidate(
                         byId.values(),
                         usedAttractionIds,
+                        currentDayAttractions,
                         previousAttraction,
                         slot,
                         isMonday,
                         constraints,
-                        explicitIds
+                        explicitIds,
+                        day
                 );
 
                 if (best != null) {
                     Attraction selected = best.attraction();
                     usedAttractionIds.add(selected.getId());
+                    currentDayAttractions.add(selected);
                     String slug = selected.getId().replaceFirst("^cq-", "");
                     String stopId = "day" + day + "-" + slug;
 
@@ -113,6 +119,14 @@ public class RouteAwarePlanner {
                         stop.put("estimatedRouteCost", best.routeCostFromPrevious().asMap());
                         stop.put("resolvedRouteCost", best.routeCostFromPrevious().asMap());
                         stop.put("routeDataStatus", best.routeCostFromPrevious().status().name());
+                    }
+                    if (previousAttraction != null) {
+                        String topographyTransitHint = ChongqingTopographyKnowledge.generateTransitCharacteristicHint(
+                                previousAttraction, selected, constraints.getTransportPreference());
+                        if (topographyTransitHint != null && !topographyTransitHint.isBlank()) {
+                            stop.put("topographyTransitHint", topographyTransitHint);
+                            stop.put("trafficHint", topographyTransitHint);
+                        }
                     }
                     stops.add(stop);
                     previousAttraction = selected;
@@ -198,16 +212,30 @@ public class RouteAwarePlanner {
 
     private CandidateEvaluation selectBestCandidate(Collection<Attraction> catalog,
                                                     Set<String> used,
+                                                    List<Attraction> currentDayAttractions,
                                                     Attraction previous,
                                                     SlotSpecification slot,
                                                     boolean isMonday,
                                                     TravelConstraints constraints,
-                                                    List<String> explicitIds) {
+                                                    List<String> explicitIds,
+                                                    int day) {
         CandidateEvaluation best = null;
         double maxUtility = -Double.MAX_VALUE;
 
         for (Attraction candidate : catalog) {
             if (used.contains(candidate.getId())) continue;
+
+            // Hard constraint 0: Distant district requires explicit mention or matching start place
+            boolean isCandidateDistant = isDistantDistrict(candidate.getDistrict());
+            if (isCandidateDistant) {
+                boolean explicitlyRequested = (explicitIds != null && explicitIds.contains(candidate.getId()))
+                        || (constraints.getMustVisit() != null && constraints.getMustVisit().stream().anyMatch(m -> candidate.getName().contains(m) || candidate.getId().contains(m)));
+                String sp = constraints.getStartPlace() == null ? "" : constraints.getStartPlace();
+                boolean matchesStartPlace = isDistrictMatchingStartPlace(sp, candidate.getDistrict());
+                if (!explicitlyRequested && !matchesStartPlace) {
+                    continue;
+                }
+            }
 
             // Hard constraint 1: Avoid list
             if (constraints.getAvoid() != null && constraints.getAvoid().stream().anyMatch(av ->
@@ -225,6 +253,9 @@ public class RouteAwarePlanner {
             if (bestTime.contains("17:00") && isEveningSlot(slot.time())) {
                 continue; // Cannot schedule 17:00 closing venue at 18:30/19:30 evening
             }
+            if (isNightAttraction(candidate) && !isEveningSlot(slot.time())) {
+                continue; // Cannot schedule night attraction at morning/afternoon slot
+            }
 
             // Hard constraint 4: Cross-district half-day collision (GS-01)
             if (previous != null) {
@@ -236,7 +267,7 @@ public class RouteAwarePlanner {
             }
 
             // Soft score & Route calculation (Estimates only in candidate phase)
-            ScoreBreakdown breakdown = calculateAttractionScoreBreakdown(candidate, constraints, explicitIds);
+            ScoreBreakdown breakdown = calculateAttractionScoreBreakdown(candidate, constraints, explicitIds, previous, day);
             RouteCost routeCost = previous == null
                     ? RouteCost.estimated(0, 0, 0, "WALKING", "首站")
                     : routeCostProvider.calculate(previous, candidate, constraints.getTransportPreference());
@@ -245,7 +276,27 @@ public class RouteAwarePlanner {
             double walkingPenalty = "低".equals(constraints.getWalkingTolerance()) ? (routeCost.walkingMeters() * 0.03) : 0;
             double timePreferenceBonus = slot.preferredPredicate().test(candidate) ? 25.0 : 0.0;
 
-            double utility = breakdown.totalScore() - travelPenalty - walkingPenalty + timePreferenceBonus;
+            // 1. 折返惩罚（Zig-zag Penalty）：杜绝同一天在“山顶 ↔ 滨江”反复横跳或频繁来回跨江
+            double zigZagPenalty = ChongqingTopographyKnowledge.calculateZigZagPenalty(currentDayAttractions, candidate);
+
+            // 2. 顺势而下加分与爬坡减分（Downhill First for Low-Walking / Elder-Friendly）
+            double topographyBonus = 0.0;
+            if (previous != null) {
+                boolean isLowWalking = "低".equals(constraints.getWalkingTolerance())
+                        || (constraints.getCompanions() != null && constraints.getCompanions().contains("父母"))
+                        || (constraints.getRawPrompt() != null && (constraints.getRawPrompt().contains("少走")
+                                || constraints.getRawPrompt().contains("轻松") || constraints.getRawPrompt().contains("坡")));
+                ChongqingTopographyKnowledge.ElevationFlow flow = ChongqingTopographyKnowledge.detectElevationFlow(previous, candidate);
+                if (isLowWalking) {
+                    if (flow == ChongqingTopographyKnowledge.ElevationFlow.DOWNHILL) {
+                        topographyBonus += 25.0; // 顺山势下坡，长辈游极度舒适
+                    } else if (flow == ChongqingTopographyKnowledge.ElevationFlow.UPHILL) {
+                        topographyBonus -= 30.0; // 逆山势爬坡，长辈体力消耗过大
+                    }
+                }
+            }
+
+            double utility = breakdown.totalScore() - travelPenalty - walkingPenalty + timePreferenceBonus - zigZagPenalty + topographyBonus;
 
             if (utility > maxUtility) {
                 maxUtility = utility;
@@ -256,7 +307,7 @@ public class RouteAwarePlanner {
         return best;
     }
 
-    private ScoreBreakdown calculateAttractionScoreBreakdown(Attraction a, TravelConstraints c, List<String> explicitIds) {
+    private ScoreBreakdown calculateAttractionScoreBreakdown(Attraction a, TravelConstraints c, List<String> explicitIds, Attraction previous, int day) {
         List<String> reasonCodes = new ArrayList<>();
         int explicitBonus = explicitIds != null && explicitIds.contains(a.getId()) ? 200 : 0;
         int mustVisitScore = (c.getMustVisit() != null && c.getMustVisit().stream().anyMatch(m -> a.getName().contains(m) || a.getId().contains(m))) ? 300 : 0;
@@ -342,8 +393,50 @@ public class RouteAwarePlanner {
         } else if ("重庆火锅".equals(c.getDietPreference())) {
             if ("美食".equals(a.getCategory()) || a.matchesAnyTagOrFeature("火锅", "美食", "小吃")) diningScore += 40;
         }
+        int districtScore = 0;
+        // 起点邻近加分（START_PLACE_DISTRICT_PROXIMITY）仅在第1天起步阶段生效；
+        // 当后续已有行程且面临跨江时，严禁因初始起点区位加分而强制跨江拉扯
+        boolean allowStartPlaceProximity = (day == 1)
+                && (previous == null || ChongqingTopographyKnowledge.detectRiverCrossing(previous, a) == ChongqingTopographyKnowledge.RiverCrossingType.NONE);
+        if (allowStartPlaceProximity && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
+            String sp = c.getStartPlace();
+            if ((sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) && "江津区".equals(a.getDistrict())) {
+                districtScore += 120;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山")) && "南岸区".equals(a.getDistrict())) {
+                districtScore += 80;
+                if (a.getName().contains("南山") || a.getId().contains("nanshan") || a.getName().contains("龙门浩") || a.getName().contains("马鞍山")) {
+                    districtScore += 40;
+                }
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城")) && "沙坪坝区".equals(a.getDistrict())) {
+                districtScore += 80;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("渝中") || sp.contains("解放碑") || sp.contains("朝天门")) && "渝中区".equals(a.getDistrict())) {
+                districtScore += 60;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("江北") || sp.contains("观音桥")) && "江北区".equals(a.getDistrict())) {
+                districtScore += 60;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("九龙坡") || sp.contains("杨家坪")) && "九龙坡区".equals(a.getDistrict())) {
+                districtScore += 80;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("巴南")) && "巴南区".equals(a.getDistrict())) {
+                districtScore += 80;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("北碚")) && "北碚区".equals(a.getDistrict())) {
+                districtScore += 80;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("大渡口")) && "大渡口区".equals(a.getDistrict())) {
+                districtScore += 80;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            } else if ((sp.contains("渝北")) && "渝北区".equals(a.getDistrict())) {
+                districtScore += 60;
+                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
+            }
+        }
 
-        int totalScore = explicitBonus + mustVisitScore + avoidPenalty + interestScore + walkingScore + companionScore + diningScore;
+        int totalScore = explicitBonus + mustVisitScore + avoidPenalty + interestScore + walkingScore + companionScore + diningScore + districtScore;
         return new ScoreBreakdown(interestScore, companionScore, walkingScore, diningScore, mustVisitScore, avoidPenalty, explicitBonus, totalScore, reasonCodes);
     }
 
@@ -395,32 +488,30 @@ public class RouteAwarePlanner {
         return time.contains("18:") || time.contains("19:") || time.contains("20:") || time.contains("21:") || time.contains("晚上") || time.contains("夜间");
     }
 
+    private static final Set<String> CENTRAL_URBAN_DISTRICTS = Set.of(
+            "渝中区", "江北区", "南岸区", "沙坪坝区", "九龙坡区", "大渡口区", "渝北区", "巴南区", "北碚区"
+    );
+
     private boolean isDistantDistrict(String district) {
-        if (district == null) return false;
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足");
+        if (district == null || district.isBlank()) return false;
+        for (String central : CENTRAL_URBAN_DISTRICTS) {
+            if (district.contains(central) || district.contains(central.replace("区", ""))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isDistrictMatchingStartPlace(String startPlace, String district) {
+        if (startPlace == null || startPlace.isBlank() || "未提供".equals(startPlace) || district == null || district.isBlank()) {
+            return false;
+        }
+        String cleanDist = district.replace("区", "").replace("县", "");
+        return startPlace.contains(district) || (!cleanDist.isBlank() && startPlace.contains(cleanDist));
     }
 
     private String calculateDayDate(TravelConstraints constraints, int day) {
-        if (constraints == null) return null;
-        String source = String.join(" ", constraints.getArrivalAt(), constraints.getRawPrompt());
-        java.util.regex.Matcher iso = Pattern.compile("(20\\d{2}-\\d{2}-\\d{2})").matcher(source);
-        if (iso.find()) {
-            try {
-                return LocalDate.parse(iso.group(1), DateTimeFormatter.ISO_LOCAL_DATE).plusDays(day - 1).toString();
-            } catch (DateTimeParseException ignored) {}
-        }
-        java.util.regex.Matcher weekday = Pattern.compile("(?:周|星期)([一二三四五六日天])").matcher(source);
-        if (!weekday.find()) return null;
-        DayOfWeek target = switch (weekday.group(1)) {
-            case "一" -> DayOfWeek.MONDAY;
-            case "二" -> DayOfWeek.TUESDAY;
-            case "三" -> DayOfWeek.WEDNESDAY;
-            case "四" -> DayOfWeek.THURSDAY;
-            case "五" -> DayOfWeek.FRIDAY;
-            case "六" -> DayOfWeek.SATURDAY;
-            default -> DayOfWeek.SUNDAY;
-        };
-        return LocalDate.now().with(TemporalAdjusters.nextOrSame(target)).plusDays(day - 1).toString();
+        return TravelDateResolver.resolveItineraryDate(constraints, day);
     }
 
     private String dateLabel(TravelConstraints c, int day) {

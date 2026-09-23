@@ -149,24 +149,24 @@ public class RouteCostProvider {
             mode = "WALKING";
             walkingMeters = distanceMeters;
             durationMinutes = Math.max(5, (int) Math.round(distKm / 4.5 * 60));
+        } else if (sameDistrict) {
+            mode = distKm <= 5.0 ? "TRANSIT" : "DRIVING";
+            walkingMeters = Math.min(distanceMeters, 400);
+            durationMinutes = Math.max(10, (int) Math.round((distKm / 30.0) * 60 + 10));
         } else if (isFarOuterDistrict) {
             mode = "DRIVING";
             walkingMeters = 200;
-            durationMinutes = Math.max(60, (int) Math.round((distKm / 55.0) * 60 + 20));
-        } else if (sameDistrict) {
-            mode = "TRANSIT";
-            walkingMeters = Math.min(distanceMeters, 400);
-            durationMinutes = Math.max(10, (int) Math.round((distKm / 18.0) * 60 + 8));
+            durationMinutes = Math.max(45, (int) Math.round((distKm / 55.0) * 60 + 20));
         } else {
             mode = "TRANSIT";
             walkingMeters = 500;
             durationMinutes = Math.max(20, (int) Math.round((distKm / 22.0) * 60 + 12));
         }
 
-        String reason = isFarOuterDistrict
-                ? "主城与远郊（" + origDist + "与" + destDist + "）长途跨区交通估算"
-                : sameDistrict
+        String reason = sameDistrict
                 ? "同行政区（" + origDist + "）交通估算"
+                : isFarOuterDistrict
+                ? "主城与远郊（" + origDist + "与" + destDist + "）长途跨区交通估算"
                 : "主城跨区（" + origDist + "至" + destDist + "）公共交通估算";
 
         return RouteCost.estimated(distanceMeters, durationMinutes, walkingMeters, mode, reason);
@@ -179,10 +179,10 @@ public class RouteCostProvider {
     }
 
     private boolean isFarSuburban(String district) {
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足");
+        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足") || district.contains("江津");
     }
 
-    private double haversineDistanceKm(String loc1, String loc2) {
+    public double haversineDistanceKm(String loc1, String loc2) {
         if (loc1 == null || loc2 == null || !loc1.contains(",") || !loc2.contains(",")) return 5.0;
         try {
             String[] p1 = loc1.split(",");

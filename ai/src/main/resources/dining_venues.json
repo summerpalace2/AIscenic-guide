@@ -1,0 +1,1276 @@
+[
+  {
+    "id": "dining-yz-wanzamian",
+    "name": "中华路花市豌杂面(较场口总店)",
+    "district": "渝中区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.577000,29.556000",
+    "specialtyDish": "招牌干熘麻辣豌杂面、红油抄手、现煎荷包蛋配唯怡豆奶",
+    "averageCost": "人均约 18-25 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "重庆小面五十强前茅名店，豌豆软糯起沙，杂酱浓油赤酱，面条劲道裹汁，晨间开胃提神。",
+    "recommendationReason": "重庆最具代表性的人气小面总店，晨间体验纯正老重庆'蹲着吃小面'的市井烟火气息，长辈可选择微辣或清汤豌杂。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "小面五十强",
+      "老字号",
+      "长辈友好",
+      "市井烟火",
+      "早餐推荐"
+    ]
+  },
+  {
+    "id": "dining-yz-noodles-2",
+    "name": "曾家岩传统地道老面馆(三峡博物馆旁)",
+    "district": "渝中区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.551000,29.563000",
+    "specialtyDish": "地道牛肉面、清汤抄手、香菇炖鸡面",
+    "averageCost": "人均约 20-32 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "紧邻人民大礼堂与三峡博物馆的老字号社区面馆，红汤浓香扑鼻，清汤底料温润鲜美。",
+    "recommendationReason": "紧挨上午第一站三峡博物馆，平街无坡步行两分钟直达，观展前享用热气腾腾的重庆小面，动线顺路不绕路。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "三峡博物馆周边",
+      "平街无坡",
+      "长辈友好",
+      "清汤可选"
+    ]
+  },
+  {
+    "id": "dining-yz-noodles-3",
+    "name": "九园包子与地道重庆小面集(中山四路店)",
+    "district": "渝中区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.549000,29.561000",
+    "specialtyDish": "非遗酱肉包、传统麻辣小面、现磨浓豆浆",
+    "averageCost": "人均约 15-25 元",
+    "duration": "约 30 分钟",
+    "distanceDesc": "步行约 160 米",
+    "summary": "重庆老字号非遗面点名铺，酱肉包皮薄馅大酱香浓郁，搭配一碗地道小面，温润饱腹。",
+    "recommendationReason": "百年老字号非遗早点，既有地道小面又有松软包点，长辈同行极其友好，口味丰富不油腻。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "中华老字号",
+      "非遗面点",
+      "长辈友好",
+      "早餐首选"
+    ]
+  },
+  {
+    "id": "dining-yz-peijie",
+    "name": "较场口储奇门鳝鱼老火锅(传承九宫格)",
+    "district": "渝中区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.577000,29.556000",
+    "specialtyDish": "现划土鳝鱼、大刀极品鲜毛肚、现炸香酥肉、老冰粉",
+    "averageCost": "人均约 70-95 元",
+    "duration": "约 75 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "本地老饕首选的母城巷子老火锅，纯正牛油九宫格慢熬，醇香厚重，辣而不燥。",
+    "recommendationReason": "紧邻当前景区，契合重庆老火锅偏好，老重庆市井原味，无需跨区长途奔波。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "老饕推荐",
+      "巷弄火锅",
+      "地道牛油",
+      "市井原味"
+    ]
+  },
+  {
+    "id": "dining-yz-hotpot-chunyang",
+    "name": "解放碑纯阳老火锅(民生巷店)",
+    "district": "渝中区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.572000,29.557000",
+    "specialtyDish": "传统老牛油锅底、手打鲜虾滑、纯手工豆花",
+    "averageCost": "人均约 65-85 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 160 米",
+    "summary": "三十年民生巷子老店，香气浓郁，本地人排队必吃。",
+    "recommendationReason": "解放碑核心商圈巷弄老火锅代表，牛油香浓，菜品新鲜地道。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "三十年老店",
+      "解放碑周边",
+      "排队名店"
+    ]
+  },
+  {
+    "id": "dining-yz-hotpot-daijia",
+    "name": "戴家巷崖壁夜景九宫格火锅",
+    "district": "渝中区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "DINNER"
+    ],
+    "location": "106.581000,29.562000",
+    "specialtyDish": "鲜毛肚、贡菜丸子、边烫火锅边俯瞰千厮门大桥",
+    "averageCost": "人均约 80-105 元",
+    "duration": "约 80 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "崖壁临江露台，直面千厮门与嘉陵江夜景，视觉味觉双丰收。",
+    "recommendationReason": "崖壁江景与滚烫火锅的绝妙搭配，赏夜景极佳。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "red",
+    "tags": [
+      "江景露台",
+      "千厮门大桥",
+      "夜景观赏",
+      "网红打卡"
+    ]
+  },
+  {
+    "id": "dining-yz-qiuerguan",
+    "name": "邱二馆经典养生雪豆炖鸡汤(解放碑老字号)",
+    "district": "渝中区",
+    "category": "清淡不辣",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.574000,29.558000",
+    "specialtyDish": "招牌雪豆炖白条土鸡、鲜笋原汤、荷叶手撕肉",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "重庆百年温润老字号，特选高山雪豆与老母鸡慢火煨制数小时，汤白如乳，鲜香滋补，无丝毫辣椒刺激。",
+    "recommendationReason": "紧邻景区平街，长辈和小孩极度友好，舒缓逛街体力消耗，温润养胃。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "中华老字号",
+      "清淡养生",
+      "长辈最爱",
+      "无辣温和"
+    ]
+  },
+  {
+    "id": "dining-yz-mild-duck",
+    "name": "临江门传统老鸭清汤煲",
+    "district": "渝中区",
+    "category": "清淡不辣",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.576000,29.560000",
+    "specialtyDish": "酸萝卜老鸭汤、清炖蹄花汤、时令鲜蔬",
+    "averageCost": "人均约 45-60 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "慢火熬炖老鸭汤，清澈透亮，原汁原味，清润解燥。",
+    "recommendationReason": "清淡滋补，汤鲜回甘，适合饮食清淡的长辈与儿童同行就餐。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "老鸭汤",
+      "清淡滋补",
+      "平街就餐",
+      "家庭友好"
+    ]
+  },
+  {
+    "id": "dining-yz-mild-soup-pork",
+    "name": "人和街传统老字号清汤蹄花煲",
+    "district": "渝中区",
+    "category": "清淡不辣",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.554000,29.562000",
+    "specialtyDish": "雪白浓汤蹄花、清炒豌豆尖、原味手工抄手",
+    "averageCost": "人均约 35-55 元",
+    "duration": "约 55 分钟",
+    "distanceDesc": "步行约 160 米",
+    "summary": "母城老字号蹄花汤，炖至软烂脱骨，汤鲜味浓不油腻，温和养胃。",
+    "recommendationReason": "清淡滋补，长辈小孩皆宜，软烂好嚼易消化。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "老字号蹄花",
+      "胶原蛋白",
+      "软烂好嚼",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-yz-jh-liangshan",
+    "name": "李子坝梁山鸡(李子坝公园总店)",
+    "district": "渝中区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.538000,29.553000",
+    "specialtyDish": "招牌药膳梁山鸡、自制芋儿软糯香浓、养生鲜鸡汤",
+    "averageCost": "人均约 60-80 元",
+    "duration": "约 65 分钟",
+    "distanceDesc": "步行约 220 米 (平街通道)",
+    "summary": "重庆江湖菜翘楚，独家秘方草本药膳与高山土鸡慢火煲制，鸡肉香嫩入味，芋儿软糯拉丝。",
+    "recommendationReason": "紧邻李子坝轻轨穿楼观景台，步行平缓直达。既有江湖菜的浓烈香醇，又有草本养生底蕴。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "李子坝周边",
+      "江湖名菜",
+      "草本药膳",
+      "芋儿鸡"
+    ]
+  },
+  {
+    "id": "dining-yz-jh-yangji",
+    "name": "较场口杨记隆府百年江湖菜",
+    "district": "渝中区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.575000,29.555000",
+    "specialtyDish": "杨记大麻圆、招牌辣子鸡、光头司令大丸子",
+    "averageCost": "人均约 65-85 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "民国风情老字号江湖菜馆，菜量豪迈，大麻圆与辣子鸡桌桌必点。",
+    "recommendationReason": "地道川东大盘江湖名菜体验，装潢复古，氛围热闹。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "gold",
+    "tags": [
+      "百年江湖菜",
+      "招牌大麻圆",
+      "辣子鸡",
+      "较场口商圈"
+    ]
+  },
+  {
+    "id": "dining-yz-jh-shibati",
+    "name": "十八梯民间瓦罐煨汤与传统川菜馆",
+    "district": "渝中区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.576000,29.553000",
+    "specialtyDish": "老瓦罐土鸡汤、水煮牛肉、陈麻婆豆腐",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 160 米",
+    "summary": "青石板路旁的市井小馆，瓦罐慢煨浓汤搭配鲜辣热炒，极具母城烟火气。",
+    "recommendationReason": "传统巴渝家常与江湖热炒的完美结合，老街漫步就餐便利。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "十八梯周边",
+      "瓦罐煨汤",
+      "市井川菜",
+      "老重庆烟火"
+    ]
+  },
+  {
+    "id": "dining-yz-tea-daijia",
+    "name": "戴家巷崖壁步道江景咖啡厅",
+    "district": "渝中区",
+    "category": "休闲茶歇",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.581000,29.562000",
+    "specialtyDish": "山城特调江景拿铁、自制提拉米苏、瞰江景观位",
+    "averageCost": "人均约 35-50 元",
+    "duration": "约 50 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "崖壁栈道上的文艺咖啡馆，直面千厮门大桥与江景，出片极佳。",
+    "recommendationReason": "江风吹拂，文艺惬意，适合游览中途休息放空。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "崖壁步道",
+      "千厮门江景",
+      "下午茶",
+      "慢生活"
+    ]
+  },
+  {
+    "id": "dining-yz-tea-huguang",
+    "name": "湖广会馆古戏台传统盖碗茶",
+    "district": "渝中区",
+    "category": "休闲茶歇",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.588000,29.558000",
+    "specialtyDish": "重庆沱茶、碧潭飘雪、传统桃片糕",
+    "averageCost": "人均约 30-45 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 100 米",
+    "summary": "黄墙黛瓦明清古戏台旁，静听川剧余音，品一盅原味盖碗茶。",
+    "recommendationReason": "明清古韵，宁静舒适，极具巴渝传统茶馆文化体验。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "古戏台",
+      "传统盖碗茶",
+      "文化茶歇",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-na-noodles-1",
+    "name": "南坪后堡传统地道重庆小面(南滨路店)",
+    "district": "南岸区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.598000,29.542000",
+    "specialtyDish": "招牌干熘麻辣小面、现包老麻抄手、现煎荷包蛋",
+    "averageCost": "人均约 16-22 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "三十年老街坊口碑面馆，纯手工打面，油辣子红亮喷香，豌杂软糯。",
+    "recommendationReason": "晨间体验纯正老重庆小面市井烟火气，长辈可选择微辣或清汤。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "南岸老店",
+      "地道小面",
+      "手工抄手",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-na-hotpot-piba",
+    "name": "南山枇杷园食为鲜火锅(依山夜景观景店)",
+    "district": "南岸区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "DINNER"
+    ],
+    "location": "106.632000,29.548000",
+    "specialtyDish": "大刀鲜毛肚、生抠鸭肠、枇杷园特制红糖糍粑",
+    "averageCost": "人均约 85-110 元",
+    "duration": "约 80 分钟",
+    "distanceDesc": "步行约 260 米",
+    "summary": "依山傍景体验万家灯火漫山火锅，夜间夜景极度壮观。",
+    "recommendationReason": "紧邻南山景区，依山而建的千人漫山火锅，山城夜景一览无遗。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "red",
+    "tags": [
+      "漫山火锅",
+      "南山夜景",
+      "万家灯火",
+      "必吃榜名店"
+    ]
+  },
+  {
+    "id": "dining-na-jh-quanshui",
+    "name": "南山老厂泉水鸡一条街(招牌总店)",
+    "district": "南岸区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.621000,29.553000",
+    "specialtyDish": "南山名菜老厂泉水鸡(一鸡三吃：炒辣子鸡/泡椒鸡杂/鲜鸡血汤)",
+    "averageCost": "人均约 65-85 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "重庆经典江湖名菜发源地，选用南山优质泉水与生态土鸡，麻辣香浓，一鸡三吃层次极为丰富。",
+    "recommendationReason": "紧邻南山景区，名扬巴渝的第一招牌菜，地道江湖风味。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "gold",
+    "tags": [
+      "南山泉水鸡",
+      "一鸡三吃",
+      "江湖名菜",
+      "发源地名店"
+    ]
+  },
+  {
+    "id": "dining-na-mild-longmenhao",
+    "name": "龙门浩老街江畔开埠景观餐厅(温和轻餐)",
+    "district": "南岸区",
+    "category": "清淡不辣",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.594000,29.551000",
+    "specialtyDish": "招牌川西老妈蹄花、老茶馆原盅盖碗茶、手工滋粑",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "坐拥东水门大桥正江景，中西合璧开埠建筑内享受静谧川菜与江景慢生活。",
+    "recommendationReason": "步行极短无坡度，清淡温和老少皆宜，江景开阔惬意。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "龙门浩江景",
+      "老妈蹄花",
+      "清淡轻餐",
+      "长辈少走路"
+    ]
+  },
+  {
+    "id": "dining-spb-noodles-1",
+    "name": "磁器口老街挑挑小面与手工豆花",
+    "district": "沙坪坝区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.452000,29.584000",
+    "specialtyDish": "老字号挑挑小面、现磨嫩豆花、现炸香酥油条",
+    "averageCost": "人均约 15-20 元",
+    "duration": "约 30 分钟",
+    "distanceDesc": "步行约 100 米",
+    "summary": "磁器口晨间招牌早点，挑挑小面麻辣过瘾，热腾腾的手工豆花爽滑回甘。",
+    "recommendationReason": "古镇老街晨间慢生活，开胃提神，就餐轻快便利。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "磁器口古镇",
+      "挑挑小面",
+      "手工豆花",
+      "古镇早点"
+    ]
+  },
+  {
+    "id": "dining-spb-hotpot-1",
+    "name": "沙坪坝融汇温泉泉里老火锅",
+    "district": "沙坪坝区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.441000,29.542000",
+    "specialtyDish": "温泉养生牛油九宫格、屠场直供鲜毛肚、手打鲜虾滑",
+    "averageCost": "人均约 70-90 元",
+    "duration": "约 75 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "泡汤赏景后的绝配老火锅，牛油浓香，菜品品质上乘。",
+    "recommendationReason": "温泉与火锅双重享受，养生放松与热辣美味兼得。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "red",
+    "tags": [
+      "温泉周边",
+      "九宫格",
+      "养生度假",
+      "品质火锅"
+    ]
+  },
+  {
+    "id": "dining-spb-jh-maoxue",
+    "name": "磁器口茂庄古法毛血旺(古镇正宗总店)",
+    "district": "沙坪坝区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.453000,29.583000",
+    "specialtyDish": "传统古法毛血旺、老街瓦罐鸡杂、非遗陈麻花",
+    "averageCost": "人均约 40-60 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "毛血旺发源地名铺，红汤油亮而不腻，鸭血嫩如豆腐，回味醇香。",
+    "recommendationReason": "古法毛血旺非遗招牌，极富老重庆风骨，磁器口必吃名品。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "gold",
+    "tags": [
+      "古法毛血旺",
+      "非遗名吃",
+      "正宗总店",
+      "磁器口名店"
+    ]
+  },
+  {
+    "id": "dining-spb-mild-soup",
+    "name": "沙坪坝老字号清炖排骨藕汤煲",
+    "district": "沙坪坝区",
+    "category": "清淡不辣",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.458000,29.547000",
+    "specialtyDish": "慢炖排骨藕汤、清蒸鲈鱼、香菇炖鸡",
+    "averageCost": "人均约 45-60 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 160 米",
+    "summary": "九孔粉藕文火慢煲排骨，汤浓藕粉，鲜香暖胃。",
+    "recommendationReason": "清淡不油腻，老少皆宜，营养温润。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "粉藕排骨汤",
+      "清淡温和",
+      "家庭聚餐",
+      "无辣健康"
+    ]
+  },
+  {
+    "id": "dining-jj-fish",
+    "name": "江津特色老字号酸菜鱼(几江总店)",
+    "district": "江津区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.265000,29.281000",
+    "specialtyDish": "招牌酸菜草鱼、现炸酥肉、清炒时蔬",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "江津传统非遗名菜，选用鲜活草鱼配老坛酸菜，汤鲜微酸，鱼肉嫩滑不燥。",
+    "recommendationReason": "江津是酸菜鱼发源地之一，鲜嫩不油腻，老少皆宜。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "酸菜鱼发源地",
+      "非遗美食",
+      "鲜嫩无小刺",
+      "老少皆宜"
+    ]
+  },
+  {
+    "id": "dining-jj-breakfast",
+    "name": "江津古镇老码头清汤抄手与芝麻烧饼",
+    "district": "江津区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST"
+    ],
+    "location": "106.265000,29.281000",
+    "specialtyDish": "皮薄大馅老抄手、酥脆芝麻烧饼、现磨热豆浆",
+    "averageCost": "人均约 15-20 元",
+    "duration": "约 30 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "江津传统非遗早点，清汤大馅抄手皮薄馅嫩，配现烤芝麻烧饼香酥脆口。",
+    "recommendationReason": "古镇码头旁晨间早点，温和养胃，老少皆宜。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "古镇老码头",
+      "清汤抄手",
+      "芝麻烧饼",
+      "晨间早点"
+    ]
+  },
+  {
+    "id": "dining-jj-hotpot",
+    "name": "几江半岛老码头原味九宫格火锅",
+    "district": "江津区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.265000,29.281000",
+    "specialtyDish": "屠场鲜毛肚、手打鲜虾滑、现炸酥肉",
+    "averageCost": "人均约 65-85 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "地道川东老灶火锅，牛油浓郁厚重，老姜老蒜底料醇厚，江边就餐极具烟火气。",
+    "recommendationReason": "长江畔浓郁纯正的老灶牛油香气，江滨夜景开阔舒适。",
+    "spicinessLevel": "HIGH",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "滨江火锅",
+      "老灶牛油",
+      "川东特色"
+    ]
+  },
+  {
+    "id": "dining-jb-hotpot-1",
+    "name": "珮姐老火锅（江北北城天街店）",
+    "district": "江北区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.534200,29.577100",
+    "specialtyDish": "屠场直供鲜毛肚、贡菜丸子、大刀腰片、冰汤圆",
+    "averageCost": "人均约 85-110 元",
+    "duration": "约 80 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "观音桥商圈极具代表性的地道九宫格老火锅，底料醇厚，江北年轻人与游客热门打卡聚集地。",
+    "recommendationReason": "观音桥漫步后步行即达，支持微辣及鸳鸯锅定制，菜品新鲜脆嫩。",
+    "spicinessLevel": "SPICY",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "重庆火锅",
+      "观音桥商圈",
+      "招牌毛肚",
+      "排队名店"
+    ]
+  },
+  {
+    "id": "dining-jb-xiaomian-1",
+    "name": "佬江北特色杂酱面（观音桥旗舰店）",
+    "district": "江北区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.532800,29.575900",
+    "specialtyDish": "老江北招牌牛肉面、二两干熘杂酱面、自制溏心煎蛋、现磨热豆浆",
+    "averageCost": "人均约 16-24 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "传承三十年江北老味道，杂酱酱香浓郁，手工水叶子面筋道入味，早晨排队食客络绎不绝。",
+    "recommendationReason": "晨间出餐迅速，支持免辣或微辣，长辈配一碗热豆浆十分妥帖。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "重庆小面",
+      "晨间早点",
+      "老杂酱",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-jb-local-1",
+    "name": "纯阳老酒馆（江北嘴三洞桥店）",
+    "district": "江北区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.579200,29.567800",
+    "specialtyDish": "招牌活水鲢鱼、草菇老鸭汤、传统鲜酿果酒、牙签牛肉",
+    "averageCost": "人均约 65-85 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 220 米",
+    "summary": "临嘉陵江畔三洞桥民俗风情街，正对渝中半岛洪崖洞天际线，江湖小炒镬气十足，清汤老鸭汤极其适老。",
+    "recommendationReason": "游览大剧院江岸夜景后的绝佳晚餐去处，既有下酒江湖菜，又有清淡老鸭汤。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "江湖菜",
+      "三洞桥民俗街",
+      "大剧院江景",
+      "老鸭汤适老"
+    ]
+  },
+  {
+    "id": "dining-jb-local-2",
+    "name": "九村烤脑花（江北九街总店）",
+    "district": "江北区",
+    "category": "特色风味小吃",
+    "mealTypes": [
+      "DINNER"
+    ],
+    "location": "106.541200,29.580200",
+    "specialtyDish": "金牌锡纸烤脑花、泡椒鸭肠、炭烤脆骨、烤豆干",
+    "averageCost": "人均约 50-75 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "重庆烧烤界现象级老字号，以独创秘制锡纸红油烤脑花闻名，口感细腻如脂，香辣浓郁。",
+    "recommendationReason": "紧邻北仓文创街区，夜间市井烟火气浓郁，体验重庆夜生活的地道据点。",
+    "spicinessLevel": "SPICY",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "特色烧烤",
+      "非遗名吃",
+      "夜市烟火",
+      "九街地标"
+    ]
+  },
+  {
+    "id": "dining-jlp-snack-1",
+    "name": "交通茶馆传统盖碗茶点（黄桷坪总店）",
+    "district": "九龙坡区",
+    "category": "市井茶歇早点",
+    "mealTypes": [
+      "BREAKFAST"
+    ],
+    "location": "106.543600,29.497400",
+    "specialtyDish": "沱茶盖碗茶、手工花生酥、石磨热豆花、油茶麻花",
+    "averageCost": "人均约 12-20 元",
+    "duration": "约 45 分钟",
+    "distanceDesc": "步行约 50 米",
+    "summary": "重庆保持七八十年代老风貌的活化石茶馆，木梁灰瓦，鸟笼棋盘，市井原生态氛围扑面而来。",
+    "recommendationReason": "晨间点一碗盖碗茶配热豆花或油茶，步履安详，极其适合长辈与人文摄影爱好者。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "老茶馆",
+      "非遗早点",
+      "长辈首选",
+      "文化地标"
+    ]
+  },
+  {
+    "id": "dining-jlp-local-1",
+    "name": "胡记蹄花汤（黄桷坪川美老店）",
+    "district": "九龙坡区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.544100,29.497900",
+    "specialtyDish": "白汁清炖蹄花汤、红油拌白肉、豆花牛肉、家常炒时蔬",
+    "averageCost": "人均约 35-50 元",
+    "duration": "约 50 分钟",
+    "distanceDesc": "步行约 80 米",
+    "summary": "川美师生与九龙坡街坊三十年口碑名店，蹄花雪白软烂、入口即化，雪豆粉糯，蘸水香辣自调。",
+    "recommendationReason": "汤底鲜醇无辣、胶原丰富，老年人无需费力咀嚼，全家老少皆能吃得舒心暖胃。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "蹄花老店",
+      "软烂养生",
+      "长辈友好",
+      "老川美记忆"
+    ]
+  },
+  {
+    "id": "dining-jlp-hotpot-1",
+    "name": "谢家湾传统老火锅（杨家坪直港大道店）",
+    "district": "九龙坡区",
+    "category": "重庆火锅",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.512000,29.512500",
+    "specialtyDish": "屠场鲜毛肚、手撕鲜鸭肠、干贡菜、自发鲜鱿鱼",
+    "averageCost": "人均约 70-90 元",
+    "duration": "约 75 分钟",
+    "distanceDesc": "车行约 5 分钟 / 约 800 米",
+    "summary": "九龙坡直港大道美食街老牌九宫格火锅，底料牛油香重、回甜悠长，老居民家庭聚餐首选。",
+    "recommendationReason": "游览重庆动物园后的绝佳火锅落脚点，包间宽敞，支持微辣鸳鸯锅底。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "red",
+    "tags": [
+      "老牌火锅",
+      "直港大道",
+      "动物园周边",
+      "家庭聚餐"
+    ]
+  },
+  {
+    "id": "dining-ddk-xiaomian-1",
+    "name": "重钢钢花面馆（大渡口跃进村老店）",
+    "district": "大渡口区",
+    "category": "重庆小面",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.484200,29.482000",
+    "specialtyDish": "钢花招牌牛肉面、肥肠小面、二两清汤杂酱面、现炸溏心煎蛋",
+    "averageCost": "人均约 15-25 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 280 米",
+    "summary": "伴随数万重钢钢铁工人岁月的传奇老面馆，红油喷香，牛肉软烂大块，面汤底蕴厚实。",
+    "recommendationReason": "紧邻建川博物馆区，早间出餐极快，小面与杂酱可免辣，适合作为探索工业遗存的能量站。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "重钢记忆",
+      "老字号小面",
+      "大块牛肉",
+      "快捷实惠"
+    ]
+  },
+  {
+    "id": "dining-ddk-local-1",
+    "name": "工博防空洞老川菜（建川聚落特色餐厅）",
+    "district": "大渡口区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.487000,29.480900",
+    "specialtyDish": "防空洞毛血旺、老酱回锅肉、清蒸江团鱼、山水手作石磨豆花",
+    "averageCost": "人均约 50-70 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "依山体防空洞而建的原生态特色餐厅，冬暖夏凉，还原兵工三厂老食堂的传统川菜风味。",
+    "recommendationReason": "参观博物馆出洞即达，平路无台阶，清蒸江团与石磨豆花清淡适老，环境极富历史沉浸感。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "防空洞餐厅",
+      "工业文博周边",
+      "清蒸江团",
+      "无台阶友好"
+    ]
+  },
+  {
+    "id": "dining-bb-fish-1",
+    "name": "三溪口豆腐鱼庄（北碚非遗总店）",
+    "district": "北碚区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.435000,29.828000",
+    "specialtyDish": "传统红汤豆腐鱼、清汤滋补豆腐鱼、脆皮黄金鱼骨、鲜榨豆浆",
+    "averageCost": "人均约 55-75 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "车行约 6 分钟 / 约 1.8 公里",
+    "summary": "重庆北碚非物质文化遗产名吃，以鲜活草鱼配农家石磨胆水豆腐，鱼肉细嫩入味，豆腐甚至比鱼更滑更鲜。",
+    "recommendationReason": "清汤豆腐鱼采用高汤文火慢煨，无小骨刺，富含优质蛋白，是长辈与儿童的养生佳品。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "非遗名吃",
+      "豆腐鱼",
+      "高汤清淡",
+      "长辈最爱"
+    ]
+  },
+  {
+    "id": "dining-bb-local-1",
+    "name": "兼善三绝老字号酒楼（缙云山麓店）",
+    "district": "北碚区",
+    "category": "传统养生川菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.422500,29.835100",
+    "specialtyDish": "兼善面、兼善汤、兼善包子、古法蒸滑肉",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "始创于民国实业家卢作孚的兼善公所，以“兼善天下”为宗旨，菜品讲究清淡醇和、本色养生。",
+    "recommendationReason": "紧邻自然博物馆，无高辣刺激菜品，清汤兼善面与鲜馅包子温润适口，老人就餐安心舒泰。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "百年老字号",
+      "兼善三绝",
+      "清淡养生",
+      "文化名店"
+    ]
+  },
+  {
+    "id": "dining-wl-mutton-1",
+    "name": "仙女山巷子碗碗羊肉（武隆非遗名吃）",
+    "district": "武隆区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "107.798000,29.431000",
+    "specialtyDish": "招牌红油碗碗羊肉、清汤滋补羊肉汤锅、羊肉蒸笼、高山雪豆炖羊蹄",
+    "averageCost": "人均约 40-60 元",
+    "duration": "约 50 分钟",
+    "distanceDesc": "步行约 350 米",
+    "summary": "武隆喀斯特山区特色非遗小吃，精选高山放养白山羊，香料文火慢煨数小时，羊肉软烂无膻味。",
+    "recommendationReason": "天生三桥徒步体力消耗后补充热量绝配，长辈可选清汤羊肉汤锅，暖胃祛湿。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "武隆名吃",
+      "碗碗羊肉",
+      "滋补暖胃",
+      "景区中心"
+    ]
+  },
+  {
+    "id": "dining-wl-snack-1",
+    "name": "羊角豆干非遗体验坊（仙女山镇店）",
+    "district": "武隆区",
+    "category": "特色小吃早点",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "107.802500,29.427800",
+    "specialtyDish": "现磨高山热豆浆、传统五香羊角豆干、高山土家油茶、包谷粑",
+    "averageCost": "人均约 15-25 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 260 米",
+    "summary": "始于清乾隆年间的中华老字号，采用乌江山泉水与高山黄豆点卤烘烤，口感紧实弹牙，豆香浓郁。",
+    "recommendationReason": "晨间提供热气腾腾的土家油茶与现磨豆浆，饱腹暖身，是游览天生三桥前的轻便早餐。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "中华老字号",
+      "非遗豆干",
+      "土家早餐",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-wl-fish-1",
+    "name": "乌江江口老鱼庄（武隆特色江鲜馆）",
+    "district": "武隆区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "107.785000,29.435000",
+    "specialtyDish": "江口酸菜乌江鱼、清蒸岩鲤、泡椒黄辣丁、高山野菜炒蛋",
+    "averageCost": "人均约 60-80 元",
+    "duration": "约 65 分钟",
+    "distanceDesc": "车行约 5 分钟 / 约 2.0 公里",
+    "summary": "依乌江险滩水系传承的江口野生鱼庄，老坛酸菜酸香解腻，乌江水养出的活鱼肉质紧致细滑。",
+    "recommendationReason": "酸菜乌江鱼开胃可口无细刺，店内临窗可见山林峡谷，适合全家悠闲聚餐。",
+    "spicinessLevel": "MILD",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "乌江活鱼",
+      "酸菜江鲜",
+      "无细刺适老",
+      "峡谷风光"
+    ]
+  },
+  {
+    "id": "dining-dz-fish-1",
+    "name": "邮亭刘三鲫鱼老店（宝顶山分店）",
+    "district": "大足区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "105.786500,29.747200",
+    "specialtyDish": "招牌邮亭鲫鱼、老坛泡椒脆肚、碎花生香菜特调蘸水、鲜炒苕尖",
+    "averageCost": "人均约 50-70 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 300 米",
+    "summary": "大足享誉川渝的非遗江湖名菜，活鲫鱼下锅红油滚汤烫熟，搭配独创花生碎香油蘸水，鱼肉极为鲜滑。",
+    "recommendationReason": "大足石刻朝圣礼佛后的第一美食站，名气响亮，风味独树一帜。",
+    "spicinessLevel": "MEDIUM",
+    "elderFriendly": false,
+    "tone": "red",
+    "tags": [
+      "大足非遗",
+      "邮亭鲫鱼",
+      "石刻必吃",
+      "江湖名菜"
+    ]
+  },
+  {
+    "id": "dining-dz-local-1",
+    "name": "宝顶山冬菜传统烧白馆",
+    "district": "大足区",
+    "category": "传统老川菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "105.790500,29.750100",
+    "specialtyDish": "大足传统冬菜扣肉（烧白）、石门南瓜蒸腊肉、手撕包菜、农家豆花饭",
+    "averageCost": "人均约 35-50 元",
+    "duration": "约 50 分钟",
+    "distanceDesc": "步行约 180 米",
+    "summary": "大足千年冬菜文化发源地传承老店，五花肉经煮、炸、蒸数道工序，与黑冬菜同蒸得晶莹软烂。",
+    "recommendationReason": "烧白咸甜软烂、入口融化无须用力咀嚼，豆花饭温和养胃，是长辈出游的五星适老餐。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "大足冬菜",
+      "传统烧白",
+      "软烂咸鲜",
+      "长辈首选"
+    ]
+  },
+  {
+    "id": "dining-fl-local-1",
+    "name": "白鹤梁榨菜风味鱼庄（涪陵滨江店）",
+    "district": "涪陵区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "107.392500,29.707800",
+    "specialtyDish": "涪陵头道榨菜鲜鱼汤、传统油醪糟荷包蛋、榨菜小炒肉、涪陵小面",
+    "averageCost": "人均约 35-55 元",
+    "duration": "约 50 分钟",
+    "distanceDesc": "步行约 200 米",
+    "summary": "临长江白鹤梁水下博物馆，以涪陵非遗青菜头榨菜入馔，汤清味厚，咸鲜回甘。",
+    "recommendationReason": "紧邻白鹤梁水下参观通道，晨间有暖胃油醪糟与榨菜面，午间有无刺鲜鱼汤，平坦好走。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "涪陵榨菜非遗",
+      "白鹤梁旁",
+      "油醪糟早点",
+      "鲜鱼养生"
+    ]
+  },
+  {
+    "id": "dining-bn-local-1",
+    "name": "南温泉老泉豆花饭（南泉正街店）",
+    "district": "巴南区",
+    "category": "市井豆花小吃",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.597500,29.422500",
+    "specialtyDish": "古泉水手工热豆花、招牌回锅肉、粉蒸排骨、海带龙骨汤",
+    "averageCost": "人均约 22-35 元",
+    "duration": "约 40 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "依托南温泉地热水脉历史的百年豆花老馆，石磨现磨豆浆，胆水轻点，豆花细嫩如凝脂。",
+    "recommendationReason": "温泉泡汤与漫步后的经典搭配，豆花清热温润，蘸水可做不辣甜酱油版，极宜老幼。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "南温泉名吃",
+      "水磨豆花",
+      "清淡适口",
+      "泡汤绝配"
+    ]
+  },
+  {
+    "id": "dining-jj-baisha-local",
+    "name": "白沙聚仙楼老川菜馆",
+    "district": "江津区",
+    "category": "传统老川菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.013000,29.071800",
+    "specialtyDish": "白沙冰糖肘子、老坛酸菜黑鱼、传统夹沙肉、清炒南瓜尖",
+    "averageCost": "人均约 45-65 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 80 米",
+    "summary": "白沙古镇百年风貌街核心老字号，以清代官厨烹制传统肘子手艺闻名，肥而不腻、入口即化。",
+    "recommendationReason": "紧邻白沙古镇老街，平路进出无台阶，肘子软烂咸甜极为适老，全家老小皆宜。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "白沙古镇",
+      "百年老店",
+      "软烂肘子",
+      "长辈首选"
+    ]
+  },
+  {
+    "id": "dining-jj-baisha-fish",
+    "name": "白沙古镇朝天门码头鱼庄",
+    "district": "江津区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.011800,29.073000",
+    "specialtyDish": "长江清汤黄辣丁、老码头水煮活鱼、山水手磨豆花、清炒时蔬",
+    "averageCost": "人均约 50-70 元",
+    "duration": "约 65 分钟",
+    "distanceDesc": "步行约 110 米",
+    "summary": "坐落于白沙老码头长江江畔，观开阔江景与往来轮渡，活鱼现点现杀，清汤黄辣丁鲜甜无细刺。",
+    "recommendationReason": "码头江景视野极佳，清汤鱼肉细嫩软滑，长辈与儿童食用安全无负担。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "码头江景",
+      "清汤黄辣丁",
+      "无刺江鲜",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-jj-simianshan-chicken",
+    "name": "四面山望乡泉水土鸡庄",
+    "district": "江津区",
+    "category": "地道江湖菜",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.402000,28.664000",
+    "specialtyDish": "高山松茸炖土鸡、清炒高山鲜笋、土家烟熏腊肉、农家玉米饼",
+    "averageCost": "人均约 55-75 元",
+    "duration": "约 70 分钟",
+    "distanceDesc": "步行约 150 米",
+    "summary": "紧邻四面山望乡台大瀑布游客中心，精选高山林下散养跑山土鸡配山泉水慢煨，汤汁浓郁金黄。",
+    "recommendationReason": "游览大瀑布后补充热量绝选，鸡汤温补养生，高山竹笋清脆解腻，店内环境清幽空气清新。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "四面山景区",
+      "山泉炖土鸡",
+      "滋补养生",
+      "长辈最爱"
+    ]
+  },
+  {
+    "id": "dining-jj-zhongshan-doufu",
+    "name": "中山古镇石板街老豆腐坊",
+    "district": "江津区",
+    "category": "传统特色小吃",
+    "mealTypes": [
+      "BREAKFAST",
+      "LUNCH"
+    ],
+    "location": "106.397500,28.845500",
+    "specialtyDish": "中山古镇烟熏豆腐、石板现打热糍粑、山泉胆水豆花饭、笋溪河小鱼干",
+    "averageCost": "人均约 20-35 元",
+    "duration": "约 45 分钟",
+    "distanceDesc": "步行约 60 米",
+    "summary": "中山古镇笋溪河畔百年吊脚楼老铺，保留柴火石磨做豆腐与现打热糍粑传统，豆香浓郁。",
+    "recommendationReason": "古镇石板街平坦漫步必经，热糍粑软糯拉丝，豆花清爽利口，适合早餐与午间便餐。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "teal",
+    "tags": [
+      "中山古镇",
+      "烟熏豆腐",
+      "石板糍粑",
+      "市井早点"
+    ]
+  },
+  {
+    "id": "dining-spb-tea-ciqikou",
+    "name": "磁器口古镇非遗老茶馆与特色糖水体验坊",
+    "district": "沙坪坝区",
+    "category": "休闲茶歇",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.449500,29.581800",
+    "specialtyDish": "古镇传统盖碗茶、手工现炸非遗陈麻花、手搓红糖冰粉、传统手工凉糕、老红糖糍粑",
+    "averageCost": "人均约 20-35 元",
+    "duration": "约 40 分钟",
+    "distanceDesc": "步行约 100 米",
+    "summary": "坐落于磁器口古镇核心老街的巴渝非遗茶歇名坊，青砖木柱、竹椅小方桌，汇聚古镇非遗陈麻花与传统红糖小吃。",
+    "recommendationReason": "紧邻磁器口古镇主街，免除额外交通；在行程中段停步小憩，品一口老重庆盖碗茶，配上现炸酥脆甜香麻花与手搓冰粉，惬意解乏。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "磁器口",
+      "古镇茶歇",
+      "特色甜点",
+      "陈麻花",
+      "糖水铺",
+      "非遗名点",
+      "长辈友好"
+    ]
+  },
+  {
+    "id": "dining-yz-sweet-jiefangbei",
+    "name": "山城老字号传统糖水铺与手搓冰粉(解放碑总店)",
+    "district": "渝中区",
+    "category": "休闲茶歇",
+    "mealTypes": [
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.577500,29.557200",
+    "specialtyDish": "招牌手搓三鲜冰粉、古法老红糖凉糕、红糖小汤圆、传统银耳雪梨羹、手作桂花糕",
+    "averageCost": "人均约 18-30 元",
+    "duration": "约 35 分钟",
+    "distanceDesc": "步行约 120 米",
+    "summary": "山城老字号手工糖水小吃名铺，坚持古法红糖熬制与手工搓籽，清凉甘甜、温润生津。",
+    "recommendationReason": "位于核心商圈平街步道，逛累时就近落座小憩，温润清甜不腻，老少皆宜。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "解放碑",
+      "特色甜点",
+      "传统糖水",
+      "手搓冰粉",
+      "老字号",
+      "长辈友好"
+    ]
+  }
+]

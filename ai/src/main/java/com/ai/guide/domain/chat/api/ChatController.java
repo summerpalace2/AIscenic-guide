@@ -4,6 +4,7 @@ import com.ai.guide.domain.analytics.service.AnalyticsService;
 import com.ai.guide.domain.analytics.service.SentimentService;
 import com.ai.guide.domain.chat.service.ChatDomainPolicy;
 import com.ai.guide.domain.chat.service.IntentService;
+import com.ai.guide.domain.chat.service.IntentRadarService;
 import com.ai.guide.domain.chat.service.RedisChatMemory;
 import com.ai.guide.domain.chat.service.SlotTrackingService;
 import com.ai.guide.domain.rag.service.ParallelRagService;
@@ -15,6 +16,7 @@ import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.memory.service.TravelMemoryService;
 import com.ai.guide.domain.preferences.service.PreferencesService;
+import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.chat.model.ScenicResponse;
@@ -91,6 +93,12 @@ public class ChatController {
 
     @Autowired(required = false)
     private PreferencesService preferencesService;
+
+    @Autowired(required = false)
+    private RuntimeAttractionDetailService runtimeAttractionDetailService;
+
+    @Autowired(required = false)
+    private IntentRadarService intentRadarService;
 
     private static final String SYSTEM_PROMPT = ChatDomainPolicy.SYSTEM_PROMPT;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -269,6 +277,7 @@ public class ChatController {
         }
         String context = ChatDomainPolicy.protectRetrievedContext(retrieval.context());
         context = appendNearbyPoiContext(context, message, activeDay, activeStopId, activeStopName);
+        context = appendTargetPlacePoiContext(context, message, activeStopId, activeStopName);
         debugLogContext(message, context);
         log.info("[CHAT_STREAM_RAG_READY] session={} status={} source={} verified={}",
                 sessionKey, retrieval.status(), retrieval.source(), retrieval.verified());
@@ -277,7 +286,7 @@ public class ChatController {
 
         // 3. 构建 messages（使用 sessionKey 存取历史）。规划上下文只作为
         // 当前草稿的用户提供信息，模型不得把它当成已提交的 Trip 变更。
-        String modelContext = "不可用".equals(retrieval.status())
+        String modelContext = ("不可用".equals(retrieval.status()) && (context == null || context.isBlank()))
                 ? "__JAVA_RAG_UNAVAILABLE__ " + retrieval.reason() : context;
         String assistantMessage = plannerContextMessage(message, plannerSessionId, tripId, currentVersion);
         List<Message> allMessages = buildMessages(modelContext, assistantMessage, sessionKey, ctx, planContext, hasPlannerContext);
@@ -419,9 +428,32 @@ public class ChatController {
             addPlanPreference(entries, "交通", values.get("transportPreference"));
             addPlanPreference(entries, "餐饮", values.get("dietPreference"));
             addPlanPreference(entries, "住宿区域", values.get("stayArea"));
+            Object stopsObj = values.get("currentStops");
+            if (stopsObj instanceof List<?> stopsList && !stopsList.isEmpty()) {
+                StringBuilder stopsSb = new StringBuilder("当前规划行程已包含以下打卡站点：\n");
+                for (Object stopItem : stopsList) {
+                    if (stopItem instanceof Map<?, ?> stopMap) {
+                        String name = stopMap.get("name") == null ? "" : String.valueOf(stopMap.get("name")).trim();
+                        String address = stopMap.get("address") == null ? "" : String.valueOf(stopMap.get("address")).trim();
+                        String duration = stopMap.get("duration") == null ? "" : String.valueOf(stopMap.get("duration")).trim();
+                        String summary = stopMap.get("summary") == null ? "" : String.valueOf(stopMap.get("summary")).trim();
+                        String aiGuide = stopMap.get("aiGuide") == null ? "" : String.valueOf(stopMap.get("aiGuide")).trim();
+                        if (!name.isBlank()) {
+                            stopsSb.append("- 【").append(name).append("】");
+                            if (!address.isBlank()) stopsSb.append("，地址：").append(address);
+                            if (!duration.isBlank()) stopsSb.append("，建议时长：").append(duration);
+                            if (!summary.isBlank()) stopsSb.append("，简介：").append(summary);
+                            if (!aiGuide.isBlank()) stopsSb.append("，文旅导览：").append(aiGuide);
+                            stopsSb.append("\n");
+                        }
+                    }
+                }
+                stopsSb.append("用户询问上述任何打卡站点时，结合上述事实及重庆地理人文全面回答其亮点、交通与游览建议，绝不回答“未查到资料”。");
+                entries.add(stopsSb.toString());
+            }
             if (entries.isEmpty()) return "";
             return "【当前行程偏好快照（仅本次行程有效）】\n"
-                    + String.join("；", entries)
+                    + String.join("；\n", entries)
                     + "。\n回答、推荐和调整必须优先遵循这份快照；不要把它写成用户长期偏好，也不要使用冲突的历史画像。";
         } catch (Exception error) {
             log.debug("[CHAT_PLAN_CONTEXT] 忽略无效的行程偏好快照");
@@ -608,14 +640,59 @@ public class ChatController {
         return base + pois;
     }
 
+    private String appendTargetPlacePoiContext(String base, String message, String activeStopId, String activeStopName) {
+        if (runtimeAttractionDetailService == null) return base;
+        String text = message == null ? "" : message;
+
+        String amapPoiId = null;
+        String targetName = null;
+        if (activeStopId != null && (activeStopId.startsWith("amap-") || activeStopId.startsWith("runtime-stop-"))) {
+            amapPoiId = activeStopId;
+            targetName = activeStopName;
+        }
+
+        if (targetName == null || targetName.isBlank()) {
+            java.util.regex.Matcher m = Pattern.compile("【([^】]+)】|[“‘\"']([^”’\"']+)[”’\"']").matcher(text);
+            if (m.find()) {
+                targetName = m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+            }
+        }
+
+        if ((targetName == null || targetName.isBlank()) && activeStopName != null && !activeStopName.isBlank() && text.contains(activeStopName)) {
+            targetName = activeStopName.trim();
+        }
+
+        if (targetName == null || targetName.isBlank()) return base;
+
+        String poiInfo = null;
+        if (amapPoiId != null) {
+            poiInfo = runtimeAttractionDetailService.answer(amapPoiId);
+        } else {
+            poiInfo = runtimeAttractionDetailService.answerReference(targetName);
+        }
+
+        if (poiInfo != null && !poiInfo.contains("暂时没有从高德核验到") && !poiInfo.contains("高德暂时没有找到")) {
+            StringBuilder sb = new StringBuilder();
+            if (base != null && !base.isBlank() && !base.startsWith("__JAVA_RAG_UNAVAILABLE__")) {
+                sb.append(base).append("\n\n");
+            }
+            sb.append("【高德地图实时 POI 核验事实】\n").append(poiInfo)
+                    .append("\n【问答指引】该打卡点来自高德地图实时 POI 动态数据。请结合上述真实地址、类型及重庆文旅常识，给出客观清晰的游览建议、摄影/夜景机位特点、交通接驳与安全出游提示，避免绝对化未核验的开放时间。");
+            return sb.toString();
+        }
+        return base;
+    }
+
     private String plannerContextMessage(String message, String plannerSessionId, String tripId, String currentVersion) {
         if ((plannerSessionId == null || plannerSessionId.isBlank())
                 && (tripId == null || tripId.isBlank())) return message;
+        boolean hasSavedTrip = tripId != null && !tripId.isBlank();
         return String.format("""
-                【当前行程助手上下文】当前页面存在一份待调整的行程草稿。规划会话=%s；正式保存行程=%s；当前版本=%s。
-                “正式保存行程=未提供”只表示草稿尚未保存为正式行程，不代表当前草稿为空。请基于页面中的行程上下文回答或提出修改建议，但不要声称已经修改、保存或提交；任何变更必须等待用户确认并由 Java 行程接口执行。
+                【当前行程助手上下文】当前页面正在展示一份行程草稿（%s，草稿版本：%s）。
+                请基于页面中的行程上下文回答或提出修改建议，但不要声称已经修改、保存或提交；任何变更必须等待用户确认并由系统执行。
+                【输出规范】严禁在回答中暴露任何系统内部标识符（如 session-xxx、tripId、UUID 等技术 ID）。如提及当前行程，请自然表达为“当前行程草稿”或“已保存的正式行程”。
                 【用户请求】%s
-                """, safeContext(plannerSessionId), safeContext(tripId), safeContext(currentVersion), message);
+                """, hasSavedTrip ? "已关联正式行程" : "尚未保存为正式行程", safeContext(currentVersion), message);
     }
 
     private String safeContext(String value) {
@@ -638,6 +715,27 @@ public class ChatController {
         assistant.put("plannerSessionId", safeContext(plannerSessionId));
         assistant.put("tripId", safeContext(tripId));
         assistant.put("currentVersion", safeContext(currentVersion));
+
+        List<IntentRadarService.ActionableSuggestion> suggestions = List.of();
+        IntentRadarService.DetectedPreference detectedPref = null;
+        if (intentRadarService != null) {
+            IntentRadarService.RadarResult radar = intentRadarService.scan(message);
+            if (radar != null) {
+                detectedPref = radar.preference();
+                suggestions = radar.suggestions() == null ? List.of() : radar.suggestions();
+                if (detectedPref != null) {
+                    assistant.put("detectedPreference", Map.of(
+                            "domain", detectedPref.domain(),
+                            "trait", detectedPref.trait(),
+                            "confidence", detectedPref.confidence()
+                    ));
+                }
+                if (!suggestions.isEmpty()) {
+                    assistant.put("actionableSuggestions", suggestions);
+                }
+            }
+        }
+
         var retrieval = new java.util.LinkedHashMap<String, Object>();
         retrieval.put("mode", "deep".equals(mode) ? "deep" : "normal");
         retrieval.put("status", retrievalStatus);
@@ -649,6 +747,16 @@ public class ChatController {
         payload.put("assistant", assistant);
         payload.put("retrieval", retrieval);
         payload.put("citations", citations == null ? List.of() : citations);
+        if (detectedPref != null) {
+            payload.put("detectedPreference", Map.of(
+                    "domain", detectedPref.domain(),
+                    "trait", detectedPref.trait(),
+                    "confidence", detectedPref.confidence()
+            ));
+        }
+        if (!suggestions.isEmpty()) {
+            payload.put("actionableSuggestions", suggestions);
+        }
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {

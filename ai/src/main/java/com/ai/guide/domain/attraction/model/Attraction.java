@@ -88,8 +88,9 @@ public class Attraction {
     /** 核心特色标签 */
     private List<String> featureTags;
 
-    /** 当前请求从 AMap 返回的图片 URL；静态目录不保存该值。 */
+    /** 当前请求从 AMap 返回的图片 URL */
     private String image;
+    private String photoUrl;
 
     /** 图片来源（例如 AMap Web Service）。 */
     private String imageSource;

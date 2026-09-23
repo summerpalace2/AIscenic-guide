@@ -1,0 +1,2041 @@
+[
+  {
+    "id": "cq-hongyadong",
+    "name": "洪崖洞",
+    "displayName": "洪崖洞",
+    "district": "渝中区",
+    "category": "夜景",
+    "tags": [
+      "夜景",
+      "临江",
+      "城市地标",
+      "拍照"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "朋友出游",
+      "情侣出游"
+    ],
+    "featureTags": [
+      "夜景",
+      "临江",
+      "城市地标",
+      "拍照"
+    ],
+    "icon": "灯",
+    "tone": "gold",
+    "location": "106.582967,29.563009",
+    "summary": "山城吊脚楼依山而建，金碧辉煌的夜色与两江交汇交相辉映。",
+    "walk": "步行约 12 分钟",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "免费开放 · 无需预约",
+    "bestTime": "19:30 - 22:00",
+    "amapQuery": {
+      "keywords": "洪崖洞",
+      "matches": [
+        "洪崖洞",
+        "洪崖洞民俗风貌区",
+        "洪崖洞景区"
+      ]
+    },
+    "intro": "洪崖洞民俗风貌区以巴渝传统建筑吊脚楼为主体，依山就势沿崖而建，高低落差达11层。入夜后华灯初上，宛如现实版《千与千寻》，是重庆山城夜景的经典名片。",
+    "fit": "适合喜欢夜景、摄影打卡、希望集中感受重庆山城立体辨识度的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/d69a8d621edd4c1fc967029ac5011785",
+    "photoUrl": "http://store.is.autonavi.com/showpic/d69a8d621edd4c1fc967029ac5011785"
+  },
+  {
+    "id": "cq-jiefangbei",
+    "name": "解放碑步行街",
+    "displayName": "解放碑步行街",
+    "district": "渝中区",
+    "category": "城市",
+    "tags": [
+      "城市",
+      "街区",
+      "少走路",
+      "地标",
+      "美食"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "城市",
+      "街区",
+      "少走路",
+      "地标",
+      "美食",
+      "平街"
+    ],
+    "icon": "碑",
+    "tone": "red",
+    "location": "106.577054,29.557161",
+    "summary": "重庆最核心的城市原点与平街商圈，地势平缓适合悠闲漫步。",
+    "walk": "少走路 · 平街步行",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "全天可游览",
+    "amapQuery": {
+      "keywords": "解放碑步行街",
+      "alternatives": [
+        "解放碑",
+        "人民解放纪念碑"
+      ],
+      "matches": [
+        "解放碑",
+        "解放碑步行街",
+        "人民解放纪念碑",
+        "解放碑商圈",
+        "重庆解放碑"
+      ]
+    },
+    "intro": "解放碑是全中国唯一一座纪念中华民族抗日战争胜利的纪念碑，也是重庆母城中心。步行街平坦无陡坡，周边汇聚八一路好吃街、各大老字号与现代商业综合体。",
+    "fit": "适合作为抵渝第一站认知城市、带父母长辈轻松漫步以及品尝地道小吃的旅行者。",
+    "image": "https://store.is.autonavi.com/showpic/869232b91d33972e0000005137038556?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/869232b91d33972e0000005137038556?type=pic"
+  },
+  {
+    "id": "cq-museum",
+    "name": "重庆中国三峡博物馆",
+    "displayName": "重庆中国三峡博物馆",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "室内",
+      "人文",
+      "历史",
+      "少走路",
+      "长辈友好"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "带父母",
+      "带孩子",
+      "独自出发"
+    ],
+    "featureTags": [
+      "室内",
+      "人文",
+      "历史",
+      "少走路",
+      "长辈友好",
+      "亲子",
+      "科普",
+      "无障碍",
+      "清淡友好"
+    ],
+    "icon": "馆",
+    "tone": "blue",
+    "location": "106.549882,29.558371",
+    "summary": "馆藏巴蜀青铜器与三峡变迁史诗，全馆无障碍平滑观展。",
+    "walk": "公交优先 · 无障碍平滑",
+    "duration": "约 120 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 建议刷身份证",
+    "bestTime": "09:00 - 17:00 (周一闭馆)",
+    "amapQuery": {
+      "keywords": "重庆中国三峡博物馆",
+      "matches": [
+        "重庆中国三峡博物馆",
+        "三峡博物馆"
+      ]
+    },
+    "intro": "国家一级博物馆，馆内系统展示了壮丽三峡的自然地貌与人文迁徙历史、巴渝远古文明及抗战岁月。全馆配备完善的直梯与坡道，冬暖夏凉，是雨天或避暑的极佳室内场馆。",
+    "fit": "适合热爱历史人文、带父母小孩同行、或遇到雨天需要舒适室内场馆的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/f0793548abccf60661920c5dc752e8b6",
+    "photoUrl": "http://store.is.autonavi.com/showpic/f0793548abccf60661920c5dc752e8b6"
+  },
+  {
+    "id": "cq-liziba",
+    "name": "李子坝轻轨站",
+    "displayName": "李子坝轻轨站",
+    "district": "渝中区",
+    "category": "城市",
+    "tags": [
+      "8D魔幻",
+      "交通",
+      "拍照",
+      "短停留"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 45,
+    "companionTags": [
+      "带孩子",
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "8D魔幻",
+      "交通",
+      "拍照",
+      "短停留",
+      "单轨"
+    ],
+    "icon": "轨",
+    "tone": "green",
+    "location": "106.539328,29.553896",
+    "summary": "单轨列车穿楼而过的魔幻奇观，地面观景平台平坦视野极佳。",
+    "walk": "轻轨直达 · 地面观景",
+    "duration": "约 45 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 无需预约",
+    "bestTime": "白天光线充足时",
+    "amapQuery": {
+      "keywords": "李子坝轻轨站",
+      "alternatives": [
+        "李子坝",
+        "李子坝地铁站"
+      ],
+      "matches": [
+        "李子坝(地铁站)",
+        "李子坝单轨穿楼观景平台",
+        "李子坝轻轨站",
+        "李子坝"
+      ]
+    },
+    "intro": "重庆轨道交通2号线李子坝站，因列车直接穿越居民楼而闻名全球。地面设有平整开阔的观景拍照平台，配有无障碍直梯，无需爬山即可轻松捕捉轻轨穿楼奇景。",
+    "fit": "适合想快速打卡重庆标志性8D魔幻交通、停留时间有限的游客。",
+    "image": "https://aos-comment.amap.com/BV10045690/comment/%5B2026-03-10-11-09-49%5D4BE93E46-C7D7-4464-886A-5FCF3FF7689_1773112191545_89620383.jpg",
+    "photoUrl": "https://aos-comment.amap.com/BV10045690/comment/%5B2026-03-10-11-09-49%5D4BE93E46-C7D7-4464-886A-5FCF3FF7689_1773112191545_89620383.jpg"
+  },
+  {
+    "id": "cq-grand-theatre",
+    "name": "重庆大剧院江岸夜景",
+    "displayName": "重庆大剧院江岸夜景",
+    "district": "江北区",
+    "category": "夜景",
+    "tags": [
+      "夜景",
+      "江岸",
+      "少走路",
+      "拍照",
+      "视野开阔"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "摄影"
+    ],
+    "featureTags": [
+      "夜景",
+      "江岸",
+      "少走路",
+      "拍照",
+      "视野开阔",
+      "长辈友好"
+    ],
+    "icon": "景",
+    "tone": "green",
+    "location": "106.577488,29.568471",
+    "summary": "隔江远眺洪崖洞与千厮门大桥全景，江风拂面且免受人潮拥挤。",
+    "walk": "轻轨/公交直达 · 短步行",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "江岸公共区域免费",
+    "bestTime": "19:30 - 22:30",
+    "amapQuery": {
+      "keywords": "重庆大剧院",
+      "matches": [
+        "重庆大剧院",
+        "江北嘴江滩公园",
+        "大剧院"
+      ]
+    },
+    "intro": "位于江北嘴江畔，与洪崖洞隔江相望。在这里不仅能拍摄到千厮门大桥与洪崖洞同框的经典夜景机位，还能避开洪崖洞内部的拥挤排队，江滩步道平整，长辈同行极为适宜。",
+    "fit": "适合少走路、带父母长辈、追求开阔全景视野与舒适夜景体验的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/3829197ae3742c20a6e4ecf006cd2c0b",
+    "photoUrl": "http://store.is.autonavi.com/showpic/3829197ae3742c20a6e4ecf006cd2c0b"
+  },
+  {
+    "id": "cq-ciqikou",
+    "name": "磁器口古镇",
+    "displayName": "磁器口古镇",
+    "district": "沙坪坝区",
+    "category": "美食",
+    "tags": [
+      "古镇",
+      "美食",
+      "市井",
+      "非遗小吃"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "朋友出游",
+      "美食探店"
+    ],
+    "featureTags": [
+      "古镇",
+      "美食",
+      "市井",
+      "非遗小吃",
+      "老街"
+    ],
+    "icon": "镇",
+    "tone": "gold",
+    "location": "106.448564,29.582947",
+    "summary": "千年古镇巴渝风情，陈麻花、毛血旺与老茶馆烟火气十足。",
+    "walk": "地铁1号线直达 · 青石板路",
+    "duration": "约 120 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "免费开放 · 无需预约",
+    "bestTime": "白天至傍晚",
+    "amapQuery": {
+      "keywords": "磁器口古镇",
+      "matches": [
+        "磁器口古镇",
+        "磁器口"
+      ]
+    },
+    "intro": "“白日里千人拱手，入夜来万盏明灯”，磁器口曾是嘉陵江畔著名的水陆码头。古镇内保存着大量明清风格院落，沿街汇集毛血旺、手工酸辣粉、现炸麻花等道地巴渝美食。",
+    "fit": "适合喜爱老街风貌、寻访地道传统小吃、感受老重庆码头市井文化的旅行者。",
+    "image": "http://aos-cdn-image.amap.com/sns/ugccomment/0563885f-17e8-4b9a-b97f-ce1e60360f19.jpg",
+    "photoUrl": "http://aos-cdn-image.amap.com/sns/ugccomment/0563885f-17e8-4b9a-b97f-ce1e60360f19.jpg"
+  },
+  {
+    "id": "cq-kuixinglou",
+    "name": "魁星楼空中天桥",
+    "displayName": "魁星楼空中天桥",
+    "district": "渝中区",
+    "category": "城市",
+    "tags": [
+      "8D魔幻",
+      "空中连廊",
+      "短停留",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 45,
+    "companionTags": [
+      "独自出发",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "8D魔幻",
+      "空中连廊",
+      "短停留",
+      "少走路",
+      "天桥",
+      "地标"
+    ],
+    "icon": "楼",
+    "tone": "purple",
+    "location": "106.575042,29.560662",
+    "summary": "“停在22楼的平街”，魔幻山城空间格局最具代表性的地标。",
+    "walk": "平街直达 · 零爬坡",
+    "duration": "约 45 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "全天可游览",
+    "amapQuery": {
+      "keywords": "魁星楼",
+      "matches": [
+        "魁星楼",
+        "临江门魁星楼"
+      ]
+    },
+    "intro": "从临江门进入广场看似平地，走到外侧护栏才发现脚下竟是22层悬空大厦。空中天桥横跨峡谷般的高楼之间，完美诠释重庆“你以为的一楼其实是顶楼”的魔幻建筑逻辑。",
+    "fit": "适合体验8D魔幻地形、摄影爱好者以及不愿爬坡的随行老人。",
+    "image": "https://store.is.autonavi.com/showpic/a97076f9e4979abd0000003334668049?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/a97076f9e4979abd0000003334668049?type=pic"
+  },
+  {
+    "id": "cq-shibati",
+    "name": "十八梯传统风貌区",
+    "displayName": "十八梯传统风貌区",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "市井烟火",
+      "老重庆",
+      "夜景",
+      "文创"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "朋友出游",
+      "情侣出游"
+    ],
+    "featureTags": [
+      "市井烟火",
+      "老重庆",
+      "夜景",
+      "文创",
+      "老街"
+    ],
+    "icon": "梯",
+    "tone": "gold",
+    "location": "106.573215,29.551682",
+    "summary": "连接上半城与下半城的母城记忆，入夜后吊脚楼灯火温馨如画。",
+    "walk": "较场口平街进入 · 阶梯与电梯并存",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "免费开放 · 无需预约",
+    "bestTime": "17:00 - 22:00",
+    "amapQuery": {
+      "keywords": "十八梯传统风貌区",
+      "matches": [
+        "十八梯",
+        "十八梯传统风貌区"
+      ]
+    },
+    "intro": "十八梯是老重庆上下半城的纽带。经过精心保护性修缮后，青石板路、巴渝吊脚楼与老黄桷树依旧，融入了非遗手作、特色茶铺与山城夜景，夜间灯光极富层次感。",
+    "fit": "适合喜欢老城韵味、散步拍照、感受母城历史温度与地道市井情怀的游客。",
+    "image": "http://aos-cdn-image.amap.com/sns/ugccomment/94c7f6f2-0f66-408d-a064-d2be65194a4d.jpg",
+    "photoUrl": "http://aos-cdn-image.amap.com/sns/ugccomment/94c7f6f2-0f66-408d-a064-d2be65194a4d.jpg"
+  },
+  {
+    "id": "cq-erling",
+    "name": "鹅岭二厂文创公园",
+    "displayName": "鹅岭二厂文创公园",
+    "district": "渝中区",
+    "category": "文创",
+    "tags": [
+      "工业风",
+      "瞰江",
+      "拍照",
+      "文创艺术"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "情侣出游",
+      "独自出发",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "工业风",
+      "瞰江",
+      "拍照",
+      "文创艺术",
+      "文创"
+    ],
+    "icon": "厂",
+    "tone": "teal",
+    "location": "106.529815,29.550182",
+    "summary": "民国印钞厂改造的工业潮流地标，天台可同时俯瞰两江壮景。",
+    "walk": "公交/打车直达园区",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "园区免费 · 部分天台另收清洁费",
+    "bestTime": "下午至日落时分",
+    "amapQuery": {
+      "keywords": "鹅岭二厂",
+      "matches": [
+        "鹅岭二厂",
+        "贰厂文创公园"
+      ]
+    },
+    "intro": "前身为重庆印钞厂，斑驳的红砖厂房与工业管道被改造成集艺术画廊、独立咖啡、设计师文创于一体的潮流地标。顶楼天台视野绝佳，可极目远眺两江环抱的城市天际线。",
+    "fit": "适合青年情侣、文艺青年、拍照摄影及喜欢慢节奏品味咖啡的旅行者。",
+    "image": "http://aos-cdn-image.amap.com/sns/ugccomment/e6037a6b-1338-41e2-af2b-e4e21c102f8d.jpg",
+    "photoUrl": "http://aos-cdn-image.amap.com/sns/ugccomment/e6037a6b-1338-41e2-af2b-e4e21c102f8d.jpg"
+  },
+  {
+    "id": "cq-changjiang-cable",
+    "name": "长江索道",
+    "displayName": "长江索道",
+    "district": "渝中区",
+    "category": "城市",
+    "tags": [
+      "空中巴士",
+      "飞渡长江",
+      "地标",
+      "经典打卡"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 60,
+    "companionTags": [
+      "朋友出游",
+      "家庭出游"
+    ],
+    "featureTags": [
+      "空中巴士",
+      "飞渡长江",
+      "地标",
+      "经典打卡",
+      "交通"
+    ],
+    "icon": "索",
+    "tone": "red",
+    "location": "106.584982,29.557342",
+    "summary": "横跨长江的“空中公交”，在车厢中近距离感受江水与楼宇穿行。",
+    "walk": "地铁小什字站直达",
+    "duration": "约 60 分钟 (含排队)",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "需购票 · 单程约20元",
+    "bestTime": "傍晚日落或华灯初上时",
+    "amapQuery": {
+      "keywords": "长江索道",
+      "matches": [
+        "长江索道",
+        "长江索道景区"
+      ]
+    },
+    "intro": "被誉为“万里长江第一条空中走廊”，全长1166米。乘坐索道轿厢飞渡长江，脚下滚滚江水东逝，两岸摩天大楼林立，体验独一无二的山水立体交融之感。",
+    "fit": "适合初次抵渝必打卡经典景观、想全方位俯瞰两江四岸风光的游客。",
+    "image": "https://aos-comment.amap.com/BV10453482/comment/content_media_external_file_1000013159_ss__1760157470419_40763361.jpg",
+    "photoUrl": "https://aos-comment.amap.com/BV10453482/comment/content_media_external_file_1000013159_ss__1760157470419_40763361.jpg"
+  },
+  {
+    "id": "cq-nanshan-yikeshu",
+    "name": "南山一棵树观景台",
+    "displayName": "南山一棵树观景台",
+    "district": "南岸区",
+    "category": "夜景",
+    "tags": [
+      "俯瞰全城",
+      "夜景大片",
+      "渝中半岛",
+      "摄影天堂"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "情侣出游",
+      "摄影"
+    ],
+    "featureTags": [
+      "俯瞰全城",
+      "夜景大片",
+      "渝中半岛",
+      "摄影天堂",
+      "浪漫"
+    ],
+    "icon": "树",
+    "tone": "gold",
+    "location": "106.592518,29.548962",
+    "summary": "南山制高点俯瞰渝中半岛万家灯火，饱览山水之城宏大夜景画卷。",
+    "walk": "建议打车或旅游专线直达",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "需门票 · 约30元",
+    "bestTime": "19:30 - 22:00",
+    "amapQuery": {
+      "keywords": "南山一棵树观景台",
+      "matches": [
+        "南山一棵树",
+        "南山一棵树观景台"
+      ]
+    },
+    "intro": "位于南山半山腰，是观赏渝中半岛夜景的绝佳制高点。华灯齐放时，两江环抱的渝中半岛如同一艘金碧辉煌的巨型航母，江面波光倒影，气势恢宏。",
+    "fit": "适合摄影发烧友、情侣夜游、追求震撼城市全景夜色的旅行者。",
+    "image": "https://aos-comment.amap.com/B0FFGAMI8G/comment/34B6CF01_E49C_4A7C_81AF_732571BBD83B_L0_001_1170_154_1766394585852_36077043.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0FFGAMI8G/comment/34B6CF01_E49C_4A7C_81AF_732571BBD83B_L0_001_1170_154_1766394585852_36077043.jpg"
+  },
+  {
+    "id": "cq-danzi-shi",
+    "name": "弹子石老街",
+    "displayName": "弹子石老街",
+    "district": "南岸区",
+    "category": "夜景",
+    "tags": [
+      "开埠文化",
+      "江岸夜景",
+      "少走路",
+      "美食"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "家庭出游"
+    ],
+    "featureTags": [
+      "开埠文化",
+      "江岸夜景",
+      "少走路",
+      "美食",
+      "扶梯全覆盖",
+      "长辈友好"
+    ],
+    "icon": "街",
+    "tone": "purple",
+    "location": "106.595874,29.570182",
+    "summary": "十里老街重温开埠岁月，正对朝天门大剧院江景与喷泉秀。",
+    "walk": "配有多级户外扶梯 · 少走路友好",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "18:00 - 21:30",
+    "amapQuery": {
+      "keywords": "长嘉汇弹子石老街",
+      "matches": [
+        "弹子石老街",
+        "长嘉汇弹子石老街"
+      ]
+    },
+    "intro": "全国首个以开埠文化与退台式坡地建筑打造的4A级景区。老街依南滨路而建，全覆盖自动扶梯，对长辈极其友好。正对朝天门来福士与两江交汇，夜景与音乐喷泉交相辉映。",
+    "fit": "适合全家出游、长辈陪伴、兼顾美食与惬意江景漫步的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/61d46fc3a0ae5f57a17f395bfa250493",
+    "photoUrl": "http://store.is.autonavi.com/showpic/61d46fc3a0ae5f57a17f395bfa250493"
+  },
+  {
+    "id": "cq-guanyinqiao",
+    "name": "观音桥步行街",
+    "displayName": "观音桥步行街",
+    "district": "江北区",
+    "category": "美食",
+    "tags": [
+      "时尚商圈",
+      "重庆火锅",
+      "街头小吃",
+      "潮流活力"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "时尚商圈",
+      "重庆火锅",
+      "街头小吃",
+      "潮流活力",
+      "火锅",
+      "美食"
+    ],
+    "icon": "桥",
+    "tone": "red",
+    "location": "106.533215,29.576842",
+    "summary": "重庆本地人最常去的超级商圈，九街不夜城与好吃街美食云集。",
+    "walk": "地铁3/9号线直达 · 平坦宽敞",
+    "duration": "约 120 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "傍晚至深夜",
+    "amapQuery": {
+      "keywords": "观音桥步行街",
+      "matches": [
+        "观音桥步行街",
+        "观音桥商圈"
+      ]
+    },
+    "intro": "中国著名商业街之一，拥有亚洲最大的户外LED大屏。商圈内拥有数百家重庆老火锅、江湖菜与地道小吃街，邻近九街更是重庆年轻活力的夜生活中心。",
+    "fit": "适合美食狂热者、喜欢购物逛街、体验重庆地道市井夜生活的年轻人与朋友结伴。",
+    "image": "https://aos-comment.amap.com/B0M69CCYZZ/comment/content_media_external_file_50546_ss__1770860924901_37925735.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0M69CCYZZ/comment/content_media_external_file_50546_ss__1770860924901_37925735.jpg"
+  },
+  {
+    "id": "cq-luohan-temple",
+    "name": "罗汉寺",
+    "displayName": "罗汉寺",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "千年古刹",
+      "闹中取静",
+      "室内",
+      "历史"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 60,
+    "companionTags": [
+      "带父母",
+      "独自出发"
+    ],
+    "featureTags": [
+      "千年古刹",
+      "闹中取静",
+      "室内",
+      "历史",
+      "清幽"
+    ],
+    "icon": "寺",
+    "tone": "blue",
+    "location": "106.584215,29.559812",
+    "summary": "摩天高楼环抱中的千年宋代古刹，《疯狂的石头》取景胜地。",
+    "walk": "小什字地铁站平街直达",
+    "duration": "约 60 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "门票约 20 元 (含香火券)",
+    "bestTime": "08:30 - 17:00",
+    "amapQuery": {
+      "keywords": "罗汉寺",
+      "matches": [
+        "罗汉寺",
+        "重庆罗汉寺"
+      ]
+    },
+    "intro": "始建于北宋治平年间的千年名刹，寺内藏有古朴珍贵的五百罗汉泥塑与宋代岩石摩崖石刻。高耸的现代大厦环绕着古刹飞檐，形成奇妙古今对话，内部清幽肃穆。",
+    "fit": "适合喜爱佛教禅意文化、古建筑、电影取景地寻访及寻求闹市静谧的游客。",
+    "image": "https://store.is.autonavi.com/showpic/738782e7bc8d1c9e0000003772096173?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/738782e7bc8d1c9e0000003772096173?type=pic"
+  },
+  {
+    "id": "cq-huguang-guild",
+    "name": "湖广会馆",
+    "displayName": "湖广会馆",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "移民文化",
+      "明清古建",
+      "室内",
+      "黄色封火墙"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "历史研学"
+    ],
+    "featureTags": [
+      "移民文化",
+      "明清古建",
+      "室内",
+      "黄色封火墙",
+      "古建"
+    ],
+    "icon": "馆",
+    "tone": "blue",
+    "location": "106.590124,29.555218",
+    "summary": "全国最大的清代古会馆建筑群，明黄色封火墙气势恢宏。",
+    "walk": "地铁小什字站转公交/步行",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "需购票 · 约25元",
+    "bestTime": "09:00 - 17:00",
+    "amapQuery": {
+      "keywords": "重庆湖广会馆",
+      "matches": [
+        "湖广会馆",
+        "重庆湖广会馆"
+      ]
+    },
+    "intro": "坐落于长江之滨，始建于清乾隆年间，是“湖广填四川”历史的珍贵见证。会馆依山造势，拥有精美的木雕石刻、戏楼舞台与标志性的明黄色封火墙，文化底蕴深厚。",
+    "fit": "适合热爱历史建筑、民俗文化研究、拍照古风写真的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/b44117b134ac7b1d6dabee5d837c7642",
+    "photoUrl": "http://store.is.autonavi.com/showpic/b44117b134ac7b1d6dabee5d837c7642"
+  },
+  {
+    "id": "cq-zhongshan-road",
+    "name": "中山四路",
+    "displayName": "中山四路",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "最美林荫道",
+      "抗战遗址",
+      "少走路",
+      "静谧散步"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "独自出发"
+    ],
+    "featureTags": [
+      "最美林荫道",
+      "抗战遗址",
+      "少走路",
+      "静谧散步",
+      "清淡友好"
+    ],
+    "icon": "路",
+    "tone": "teal",
+    "location": "106.545812,29.556218",
+    "summary": "黄桷树浓荫下的最美历史文化街，桂园与周公馆承载风云岁月。",
+    "walk": "地势平缓 · 步行极舒适",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "街区免费 · 纪念馆免费开放",
+    "bestTime": "上午或午后阳光斑驳时",
+    "amapQuery": {
+      "keywords": "中山四路",
+      "matches": [
+        "中山四路",
+        "中山四路历史文化街区"
+      ]
+    },
+    "intro": "被誉为“重庆最美林荫大道”，茂密的百年黄桷树掩映着青砖黛瓦。沿线汇集了桂园（重庆谈判签字地）、周公馆、特园等众多抗战历史遗迹，道路平整，清幽宜人。",
+    "fit": "适合喜欢静心散步、陪伴长辈、品味民国抗战历史与城市慢生活的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/6cf641482e38c69083c1dd5c9a20a3d6",
+    "photoUrl": "http://store.is.autonavi.com/showpic/6cf641482e38c69083c1dd5c9a20a3d6"
+  },
+  {
+    "id": "cq-baiheliang",
+    "name": "白鹤梁水下博物馆",
+    "displayName": "白鹤梁水下博物馆",
+    "district": "涪陵区",
+    "category": "人文",
+    "tags": [
+      "世界首座水下博物馆",
+      "水文水石刻",
+      "室内",
+      "国宝级"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带孩子",
+      "科普研学"
+    ],
+    "featureTags": [
+      "世界首座水下博物馆",
+      "水文水石刻",
+      "室内",
+      "国宝级",
+      "科普",
+      "亲子",
+      "清淡友好"
+    ],
+    "icon": "梁",
+    "tone": "blue",
+    "location": "107.391215,29.708912",
+    "summary": "乘长扶梯深入长江水下40米，隔观景窗品读千年水文石刻题跋。",
+    "walk": "馆内全自动扶梯与直梯",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "需购票 · 约50元",
+    "bestTime": "09:00 - 17:00 (周一闭馆)",
+    "amapQuery": {
+      "keywords": "白鹤梁水下博物馆",
+      "matches": [
+        "白鹤梁水下博物馆",
+        "白鹤梁"
+      ]
+    },
+    "intro": "被联合国教科文组织誉为“世界首座免减压水下博物馆”。通过91米水下电梯下潜至长江江心深处，隔着特制玻璃舱近距离观赏自唐代起记录长江枯水水位的古石鱼题刻。",
+    "fit": "适合科技与文物爱好者、亲子科普研学以及深度文化探索者。",
+    "image": "http://store.is.autonavi.com/showpic/392a6edf813b870c8d92f1577d9efc12",
+    "photoUrl": "http://store.is.autonavi.com/showpic/392a6edf813b870c8d92f1577d9efc12"
+  },
+  {
+    "id": "cq-wulong-tiankeng",
+    "name": "武隆天生三桥",
+    "displayName": "武隆天生三桥",
+    "district": "武隆区",
+    "category": "自然",
+    "tags": [
+      "世界自然遗产",
+      "喀斯特峡谷",
+      "满城尽带黄金甲取景地"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 180,
+    "companionTags": [
+      "带孩子",
+      "朋友出游",
+      "徒步摄影"
+    ],
+    "featureTags": [
+      "世界自然遗产",
+      "喀斯特峡谷",
+      "自然",
+      "满城尽带黄金甲取景地"
+    ],
+    "icon": "峰",
+    "tone": "green",
+    "location": "107.801215,29.428912",
+    "summary": "世界最大天生桥群与深邃天坑，峡谷幽深，天福官驿遗世独立。",
+    "walk": "配观光直梯下坑 · 谷底步行平缓",
+    "duration": "约 180 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "需门票及中转车",
+    "bestTime": "四季皆宜 · 清晨烟雾缭绕最佳",
+    "amapQuery": {
+      "keywords": "武隆天生三桥",
+      "matches": [
+        "武隆天生三桥",
+        "天生三桥"
+      ]
+    },
+    "intro": "罕见的地质奇观生态型旅游区，拥有天龙桥、青龙桥、黑龙桥三座天然石拱桥。下临深幽天坑，悬崖峭壁如刀劈斧削，谷底保留古朴的天福官驿，宛若仙侠秘境。",
+    "fit": "适合大自然山水爱好者、徒步摄影、打卡电影经典名场面的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/e6fe25b445e04e5d48344d4927386e0a",
+    "photoUrl": "http://store.is.autonavi.com/showpic/e6fe25b445e04e5d48344d4927386e0a"
+  },
+  {
+    "id": "cq-dazu-rock",
+    "name": "大足石刻",
+    "displayName": "大足石刻 (宝顶山)",
+    "district": "大足区",
+    "category": "人文",
+    "tags": [
+      "世界文化遗产",
+      "东方石窟艺术巅峰",
+      "室内外展陈"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 180,
+    "companionTags": [
+      "带父母",
+      "文化学者"
+    ],
+    "featureTags": [
+      "世界文化遗产",
+      "东方石窟艺术巅峰",
+      "室内外展陈",
+      "人文"
+    ],
+    "icon": "石",
+    "tone": "blue",
+    "location": "105.789124,29.748912",
+    "summary": "唐宋摩崖石刻艺术集大成者，千手观音与卧佛造像精美绝伦。",
+    "walk": "园区观光车接驳 · 平缓步道",
+    "duration": "约 180 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "需门票",
+    "bestTime": "08:30 - 17:00",
+    "amapQuery": {
+      "keywords": "大足石刻",
+      "matches": [
+        "大足石刻",
+        "宝顶山石刻"
+      ]
+    },
+    "intro": "中国石窟艺术史上最后的丰碑，以规模宏大、雕刻精美、题材丰富著称。宝顶山石刻以大佛湾为核心，展现了佛、道、儒三教合一的独特造像艺术，千手观音金光庄严。",
+    "fit": "适合古建雕塑艺术鉴赏家、文史学者及深度探寻巴蜀文化底蕴的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/e255d2bd73f1fc3fe51b21401e837a33",
+    "photoUrl": "http://store.is.autonavi.com/showpic/e255d2bd73f1fc3fe51b21401e837a33"
+  },
+  {
+    "id": "cq-ronghui-hotspring",
+    "name": "融汇温泉",
+    "displayName": "融汇温泉",
+    "district": "沙坪坝区",
+    "category": "休闲",
+    "tags": [
+      "天然地热温泉",
+      "养生放松",
+      "长辈最爱",
+      "室内外"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 180,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "全家度假"
+    ],
+    "featureTags": [
+      "天然地热温泉",
+      "养生放松",
+      "长辈最爱",
+      "室内外",
+      "温泉",
+      "清淡友好"
+    ],
+    "icon": "泉",
+    "tone": "teal",
+    "location": "106.458912,29.541215",
+    "summary": "都市核心区高品质天然硫酸盐泉，洗去旅途疲惫、舒缓身心。",
+    "walk": "园区内部平坦 · 设施完备",
+    "duration": "约 180 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "需门票",
+    "bestTime": "下午至晚间",
+    "amapQuery": {
+      "keywords": "融汇温泉",
+      "matches": [
+        "重庆融汇温泉",
+        "融汇温泉城"
+      ]
+    },
+    "intro": "依托沙坪坝地下优质地热资源打造的都市生态温泉。设有动感水疗区、养生药浴汤池及舒适室内休息厅，环境优雅，是慢游重庆舒缓肌肉与放松身心的理想去处。",
+    "fit": "适合全家度假、孝敬长辈、在紧凑行程之余享受惬意私享时光的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/4ed9e60fd22b5cde4261f024af4a3a9b",
+    "photoUrl": "http://store.is.autonavi.com/showpic/4ed9e60fd22b5cde4261f024af4a3a9b"
+  },
+  {
+    "id": "cq-south-hotspring",
+    "name": "南温泉风景区",
+    "displayName": "南温泉风景区",
+    "district": "巴南区",
+    "category": "自然",
+    "tags": [
+      "山水峡谷",
+      "古温泉",
+      "休闲漫步",
+      "森林氧吧"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "带父母",
+      "带孩子",
+      "近郊休闲"
+    ],
+    "featureTags": [
+      "山水峡谷",
+      "古温泉",
+      "休闲漫步",
+      "森林氧吧",
+      "自然",
+      "温泉"
+    ],
+    "icon": "溪",
+    "tone": "green",
+    "location": "106.598912,29.421215",
+    "summary": "温塘峡谷水清木华，十二景名胜与天然温泉交融的山水胜境。",
+    "walk": "峡谷步道平坦",
+    "duration": "约 120 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "景区免费 · 温泉另购",
+    "bestTime": "四季皆宜",
+    "amapQuery": {
+      "keywords": "南温泉风景区",
+      "matches": [
+        "南温泉",
+        "南温泉风景区"
+      ]
+    },
+    "intro": "自古为巴渝名胜，花溪河穿峡而过，两岸悬崖滴翠。景区内不仅有历史悠久的温泉眼，还拥有古仙女洞、建文遗址等古迹，林荫蔽日，空气清新。",
+    "fit": "适合近郊吸氧洗肺、轻松徒步、寻访自然山水幽静的旅行者。",
+    "image": "https://store.is.autonavi.com/showpic/035666b55b0c27ad0000003158204984?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/035666b55b0c27ad0000003158204984?type=pic"
+  },
+  {
+    "id": "cq-geleyuan",
+    "name": "歌乐山烈士陵园与渣滓洞",
+    "displayName": "歌乐山红色遗址",
+    "district": "沙坪坝区",
+    "category": "人文",
+    "tags": [
+      "红色记忆",
+      "历史风云",
+      "红岩精神",
+      "爱国教育"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "党建研学",
+      "青少年"
+    ],
+    "featureTags": [
+      "红色记忆",
+      "历史风云",
+      "红岩精神",
+      "爱国教育"
+    ],
+    "icon": "松",
+    "tone": "red",
+    "location": "106.431215,29.578912",
+    "summary": "追寻红岩风骨与革命热血，重温那段荡气回肠的英雄史诗。",
+    "walk": "专线观光车接驳各景点",
+    "duration": "约 120 分钟",
+    "indoor": true,
+    "walkDifficulty": "中",
+    "ticket": "免费开放 · 需提前实名预约",
+    "bestTime": "09:00 - 16:30",
+    "amapQuery": {
+      "keywords": "渣滓洞",
+      "matches": [
+        "渣滓洞",
+        "白公馆",
+        "歌乐山烈士陵园"
+      ]
+    },
+    "intro": "包括渣滓洞、白公馆与红岩魂陈列馆等重要旧址，是红岩精神的核心发源地。陈列展示了大量珍贵的革命先烈手迹与历史物件，令人肃然起敬。",
+    "fit": "适合党建教育、带青少年研学、了解重庆近现代风云历史的家庭与团队。",
+    "image": "http://store.is.autonavi.com/showpic/20d594d2893d3383ce8fdf0d2141281f",
+    "photoUrl": "http://store.is.autonavi.com/showpic/20d594d2893d3383ce8fdf0d2141281f"
+  },
+  {
+    "id": "cq-maanshan",
+    "name": "马鞍山传统风貌区",
+    "displayName": "马鞍山传统风貌区",
+    "district": "南岸区",
+    "category": "文创",
+    "tags": [
+      "开埠建筑群",
+      "山城慢调",
+      "茶饮咖啡",
+      "拍照出片"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "情侣出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "开埠建筑群",
+      "山城慢调",
+      "茶饮咖啡",
+      "拍照出片",
+      "文创"
+    ],
+    "icon": "山",
+    "tone": "teal",
+    "location": "106.581215,29.548912",
+    "summary": "掩映在黄桷树下的开埠老洋房，品茗瞰江享受悠闲午后。",
+    "walk": "阶梯缓坡 · 景致幽雅",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "午后至傍晚",
+    "amapQuery": {
+      "keywords": "马鞍山传统风貌区",
+      "matches": [
+        "马鞍山",
+        "马鞍山传统风貌区"
+      ]
+    },
+    "intro": "坐落于南岸南滨路上方，保留了众多中西合璧的近代开埠老建筑和民居院落。青砖灰瓦、绿树成荫，错落分布着格调茶室、文创空间，极富岁月静好之感。",
+    "fit": "适合避开热门人潮、品味老重庆慢生活、闺蜜情侣拍照探店的旅行者。",
+    "image": "https://aos-comment.amap.com/B0JDCCTKNL/comment/f6a638d700f1fb80234521f2c3e9c08b_2048_2048_80.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0JDCCTKNL/comment/f6a638d700f1fb80234521f2c3e9c08b_2048_2048_80.jpg"
+  },
+  {
+    "id": "cq-beicang",
+    "name": "北仓文创街区",
+    "displayName": "北仓文创街区",
+    "district": "江北区",
+    "category": "文创",
+    "tags": [
+      "城市书房",
+      "纺织老仓库",
+      "潮流手作",
+      "文艺社区"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 60,
+    "companionTags": [
+      "独自出发",
+      "青年文艺"
+    ],
+    "featureTags": [
+      "城市书房",
+      "纺织老仓库",
+      "潮流手作",
+      "文艺社区",
+      "文创",
+      "清淡友好"
+    ],
+    "icon": "仓",
+    "tone": "teal",
+    "location": "106.539812,29.579812",
+    "summary": "闹市中遗世独立的纺织老仓库，城市公共图书馆与手作空间。",
+    "walk": "观音桥平街步行可达",
+    "duration": "约 60 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天",
+    "bestTime": "全天可游览",
+    "amapQuery": {
+      "keywords": "北仓文创街区",
+      "matches": [
+        "北仓",
+        "北仓文创街区"
+      ]
+    },
+    "intro": "由江北纺织仓库改建而成，隐藏在观音桥繁华闹市旁的老居民区深处。拥有温馨通透的北仓图书馆、手工作坊和创意集市，充满安静温润的人文质感。",
+    "fit": "适合喜爱读书阅读、挑选原创手作、享受闹中取静城市角落的旅行者。",
+    "image": "https://store.is.autonavi.com/showpic/6924aea09723bbf50000003298842142",
+    "photoUrl": "https://store.is.autonavi.com/showpic/6924aea09723bbf50000003298842142"
+  },
+  {
+    "id": "cq-kejiguan",
+    "name": "重庆科技馆",
+    "displayName": "重庆科技馆",
+    "district": "江北区",
+    "category": "科普",
+    "tags": [
+      "室内",
+      "科普",
+      "亲子",
+      "少走路",
+      "江北嘴"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 150,
+    "companionTags": [
+      "带孩子",
+      "带父母",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "室内",
+      "互动",
+      "科普",
+      "无障碍",
+      "亲子"
+    ],
+    "icon": "科",
+    "tone": "blue",
+    "location": "106.580560,29.566960",
+    "summary": "江北嘴的互动科普场馆，适合作为亲子与雨天的低体力半日安排。",
+    "walk": "大剧院站附近 · 馆内直梯与休息区",
+    "duration": "约 150 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "开放与预约以官方当日信息为准",
+    "bestTime": "雨天或下午室内时段",
+    "amapQuery": {
+      "keywords": "重庆科技馆",
+      "matches": [
+        "重庆科技馆",
+        "重庆科技馆(江北嘴)"
+      ]
+    },
+    "intro": "重庆科技馆位于江北嘴中央广场，设有互动科技展区。馆内外以坡道、直梯和休息设施为主，适合将科普参观与江北嘴城市景观串联。",
+    "fit": "适合带孩子、带长辈、需要室内活动或希望减少步行的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/928e8136f94a6b34dcc701aae28b958a",
+    "photoUrl": "http://store.is.autonavi.com/showpic/928e8136f94a6b34dcc701aae28b958a"
+  },
+  {
+    "id": "cq-ziran-museum",
+    "name": "重庆自然博物馆",
+    "displayName": "重庆自然博物馆",
+    "district": "北碚区",
+    "category": "科普",
+    "tags": [
+      "室内",
+      "自然",
+      "恐龙",
+      "亲子",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 180,
+    "companionTags": [
+      "带孩子",
+      "带父母",
+      "独自出发"
+    ],
+    "featureTags": [
+      "恐龙",
+      "科普",
+      "室内",
+      "无障碍",
+      "亲子"
+    ],
+    "icon": "博",
+    "tone": "green",
+    "location": "106.423700,29.834400",
+    "summary": "以恐龙化石与自然标本为主题的大型室内场馆，适合独立安排半日。",
+    "walk": "北碚区打车接驳优先 · 馆内平层参观",
+    "duration": "约 180 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "开放与预约以官方当日信息为准",
+    "bestTime": "上午或雨天半日",
+    "amapQuery": {
+      "keywords": "重庆自然博物馆",
+      "matches": [
+        "重庆自然博物馆",
+        "重庆自然博物馆新馆"
+      ]
+    },
+    "intro": "重庆自然博物馆以恐龙骨架、地球科学与三峡自然标本为特色。场馆主体平整，设直梯、自动扶梯、无障碍卫生间及休息区域。",
+    "fit": "适合亲子科普、带老人轻松参观，以及愿意为一座大型展馆单独安排半天的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/78d6c8810137ea47fb03b1db627ff0a8",
+    "photoUrl": "http://store.is.autonavi.com/showpic/78d6c8810137ea47fb03b1db627ff0a8"
+  },
+  {
+    "id": "cq-meishuguan",
+    "name": "重庆美术馆",
+    "displayName": "重庆美术馆（国泰艺术中心）",
+    "district": "渝中区",
+    "category": "艺术",
+    "tags": [
+      "室内",
+      "艺术",
+      "解放碑",
+      "少走路",
+      "雨天"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "情侣出游",
+      "独自出发",
+      "带父母"
+    ],
+    "featureTags": [
+      "艺术展览",
+      "室内",
+      "无障碍",
+      "解放碑"
+    ],
+    "icon": "艺",
+    "tone": "purple",
+    "location": "106.579100,29.558400",
+    "summary": "解放碑核心区的室内艺术空间，可与商圈和魁星楼短停留组合。",
+    "walk": "临江门/解放碑片区平街衔接",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "展览与开放安排以馆方当日信息为准",
+    "bestTime": "午后或雨天",
+    "amapQuery": {
+      "keywords": "重庆美术馆",
+      "matches": [
+        "重庆美术馆",
+        "国泰艺术中心"
+      ]
+    },
+    "intro": "重庆美术馆位于国泰艺术中心内，展厅以室内参观为主，设有直梯、坡道和休息区域。适合在解放碑商圈中安排一段安静的文化停留。",
+    "fit": "适合艺术展览、情侣或独自出发，也适合作为减少户外行走的室内补充。",
+    "image": "https://aos-comment.amap.com/B0FFFYS1T2/comment/2EA4439C_BA85_4BDD_A91C_D31A9B0E20BD_L0_001_1170_138_1773455793615_10072776.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0FFFYS1T2/comment/2EA4439C_BA85_4BDD_A91C_D31A9B0E20BD_L0_001_1170_138_1773455793615_10072776.jpg"
+  },
+  {
+    "id": "cq-renmin-dalitang",
+    "name": "重庆人民大礼堂",
+    "displayName": "重庆人民大礼堂",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "建筑",
+      "人文",
+      "三峡博物馆",
+      "拍照",
+      "少走路"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 60,
+    "companionTags": [
+      "带父母",
+      "朋友出游",
+      "摄影"
+    ],
+    "featureTags": [
+      "地标建筑",
+      "人民广场",
+      "三峡博物馆",
+      "拍照"
+    ],
+    "icon": "礼",
+    "tone": "red",
+    "location": "106.549500,29.558900",
+    "summary": "三峡博物馆对面的地标建筑，适合在平坦的人民广场外观拍照。",
+    "walk": "广场平地拍照优先 · 入内路线需确认",
+    "duration": "约 60 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "入内开放信息以官方当日信息为准",
+    "bestTime": "博物馆前后或傍晚",
+    "amapQuery": {
+      "keywords": "重庆人民大礼堂",
+      "matches": [
+        "重庆人民大礼堂",
+        "人民大礼堂"
+      ]
+    },
+    "intro": "重庆人民大礼堂与人民广场、三峡博物馆相邻。外围广场平坦，适合外观拍照；建筑正门台阶较多，低体力行程宜优先安排外围与无障碍通道。",
+    "fit": "适合历史建筑外观、三峡博物馆组合，以及希望少走路但仍想保留城市地标打卡的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/71effaff3c5057491d6b782555b9fa01",
+    "photoUrl": "http://store.is.autonavi.com/showpic/71effaff3c5057491d6b782555b9fa01"
+  },
+  {
+    "id": "cq-chaotianmen",
+    "name": "朝天门广场",
+    "displayName": "朝天门广场",
+    "district": "渝中区",
+    "category": "江景",
+    "tags": [
+      "两江交汇",
+      "江景",
+      "来福士",
+      "夜景",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 75,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "两江交汇",
+      "观景",
+      "来福士",
+      "夜景"
+    ],
+    "icon": "江",
+    "tone": "blue",
+    "location": "106.587200,29.562400",
+    "summary": "渝中半岛端部的两江交汇观景点，可与来福士和两江游衔接。",
+    "walk": "来福士电梯可衔接广场层",
+    "duration": "约 75 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "公共广场免费开放 · 动态管理以现场为准",
+    "bestTime": "傍晚至夜间",
+    "amapQuery": {
+      "keywords": "朝天门广场",
+      "matches": [
+        "朝天门广场",
+        "朝天门码头"
+      ]
+    },
+    "intro": "朝天门广场位于两江交汇处，与来福士相连。利用商场电梯可减少高差，适合短暂停留观江或前往码头体验两江游。",
+    "fit": "适合看两江交汇、拍城市地标、带长辈低体力观景。",
+    "image": "http://store.is.autonavi.com/showpic/105d90142d77b0cf02e17ec4e683e87c",
+    "photoUrl": "http://store.is.autonavi.com/showpic/105d90142d77b0cf02e17ec4e683e87c"
+  },
+  {
+    "id": "cq-rff-square",
+    "name": "重庆来福士广场",
+    "displayName": "重庆来福士广场（朝天门）",
+    "district": "渝中区",
+    "category": "城市",
+    "tags": [
+      "室内",
+      "商场",
+      "朝天门",
+      "江景",
+      "餐饮"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "带孩子",
+      "情侣出游"
+    ],
+    "featureTags": [
+      "室内休息",
+      "餐饮",
+      "商场",
+      "朝天门"
+    ],
+    "icon": "城",
+    "tone": "gold",
+    "location": "106.586700,29.562000",
+    "summary": "朝天门片区的室内综合体，可作为观江前后的餐饮与休息节点。",
+    "walk": "室内电梯与扶梯衔接朝天门片区",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "商业空间开放以商场当日信息为准",
+    "bestTime": "午间、雨天或夜景前后",
+    "amapQuery": {
+      "keywords": "重庆来福士广场",
+      "matches": [
+        "重庆来福士",
+        "重庆来福士广场"
+      ]
+    },
+    "intro": "重庆来福士广场位于朝天门片区，提供餐饮、室内休息和通往江岸观景区域的衔接。具体活动、观景层与营业信息需以当日现场为准。",
+    "fit": "适合将室内用餐、休息与朝天门观江组合，尤其适合带老人、带孩子或遇到雨天。",
+    "image": "https://store.is.autonavi.com/showpic/42c16ca6313fe7520000003069768558?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/42c16ca6313fe7520000003069768558?type=pic"
+  },
+  {
+    "id": "cq-nanbinlu",
+    "name": "南滨路",
+    "displayName": "南滨路江岸",
+    "district": "南岸区",
+    "category": "夜景",
+    "tags": [
+      "夜景",
+      "江景",
+      "少走路",
+      "平路",
+      "餐饮"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "滨江步道",
+      "夜景",
+      "平路",
+      "休息座椅"
+    ],
+    "icon": "岸",
+    "tone": "teal",
+    "location": "106.589000,29.548400",
+    "summary": "南岸滨江的平缓观景步道，适合以少走路方式看渝中半岛夜景。",
+    "walk": "滨江平路 · 可按体力缩短停留区间",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "公共滨江区域免费开放",
+    "bestTime": "亮灯后至夜间",
+    "amapQuery": {
+      "keywords": "南滨路",
+      "matches": [
+        "南滨路",
+        "南滨路长嘉汇"
+      ]
+    },
+    "intro": "南滨路沿江分布多段公共步道、休息点与餐饮空间。其平缓的滨江环境适合将晚餐、短距离散步和夜景组合为同一晚间安排。",
+    "fit": "适合看夜景、带老人、情侣约会，以及不希望爬坡或长距离步行的旅行者。",
+    "image": "https://store.is.autonavi.com/showpic/be71189dcd070135a1f71748084af5d5",
+    "photoUrl": "https://store.is.autonavi.com/showpic/be71189dcd070135a1f71748084af5d5"
+  },
+  {
+    "id": "cq-liangjiang-you",
+    "name": "两江游",
+    "displayName": "重庆两江游",
+    "district": "渝中区",
+    "category": "夜景",
+    "tags": [
+      "夜景",
+      "游船",
+      "少走路",
+      "江景",
+      "长辈友好"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "游船",
+      "坐着观景",
+      "夜景",
+      "两江"
+    ],
+    "icon": "船",
+    "tone": "blue",
+    "location": "106.586400,29.561600",
+    "summary": "以乘船方式观看两江夜景，适合希望减少步行的晚间体验。",
+    "walk": "码头跳板与登船条件需按当日班次确认",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "班次、票价和登船码头以官方当日信息为准",
+    "bestTime": "夜间班次",
+    "amapQuery": {
+      "keywords": "重庆两江游",
+      "matches": [
+        "重庆两江游",
+        "朝天门码头",
+        "洪崖洞码头"
+      ]
+    },
+    "intro": "两江游从朝天门或周边码头出发，以坐席观景为主。登船时可能有跳板斜坡，带老人或轮椅同行应在购票前向运营方确认协助与班次条件。",
+    "fit": "适合以低体力方式观看洪崖洞、大剧院和两江夜景的旅行者。",
+    "image": "https://aos-comment.amap.com/B0I64SQ4P5/comment/content_media_external_file_1000015219_ss__1761856543350_51139003.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0I64SQ4P5/comment/content_media_external_file_1000015219_ss__1761856543350_51139003.jpg"
+  },
+  {
+    "id": "cq-longmenhao",
+    "name": "龙门浩老街",
+    "displayName": "龙门浩老街",
+    "district": "南岸区",
+    "category": "人文",
+    "tags": [
+      "历史街区",
+      "江景",
+      "文创",
+      "摄影",
+      "南岸"
+    ],
+    "accessibility": "PARTIAL",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "情侣出游",
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "开埠文化",
+      "历史街区",
+      "江景",
+      "文创"
+    ],
+    "icon": "街",
+    "tone": "orange",
+    "location": "106.594400,29.548700",
+    "summary": "南岸的开埠历史街区，可与南滨路夜景安排在同一片区。",
+    "walk": "老街存在高差，建议只选平层与电梯可达区段",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "公共街区开放以现场为准",
+    "bestTime": "下午至傍晚",
+    "amapQuery": {
+      "keywords": "龙门浩老街",
+      "matches": [
+        "龙门浩老街",
+        "龙门浩"
+      ]
+    },
+    "intro": "龙门浩老街以开埠历史建筑、文创与滨江视野为特色。因街区依山分布，低体力行程应按当日电梯、平层入口和可达区段安排。",
+    "fit": "适合喜欢历史街区、咖啡文创和江景摄影的旅行者；不建议把全部坡地街巷纳入少走路路线。",
+    "image": "https://store.is.autonavi.com/showpic/9b0c06113f448dfe0000003171130248?type=pic",
+    "photoUrl": "https://store.is.autonavi.com/showpic/9b0c06113f448dfe0000003171130248?type=pic"
+  },
+  {
+    "id": "cq-chongqing-zoo",
+    "name": "重庆动物园",
+    "displayName": "重庆动物园",
+    "district": "九龙坡区",
+    "category": "亲子",
+    "tags": [
+      "大熊猫",
+      "亲子",
+      "动物",
+      "少走路",
+      "户外"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 150,
+    "companionTags": [
+      "带孩子",
+      "带父母",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "大熊猫",
+      "亲子",
+      "观光车",
+      "无障碍"
+    ],
+    "icon": "熊",
+    "tone": "green",
+    "location": "106.502300,29.511800",
+    "summary": "以大熊猫馆为代表的亲子目的地，可采用短路线和园内代步方式降低体力消耗。",
+    "walk": "主入口至熊猫馆短线路优先 · 园内代步以现场为准",
+    "duration": "约 150 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "票务与开放信息以官方当日信息为准",
+    "bestTime": "上午或避开高温时段",
+    "amapQuery": {
+      "keywords": "重庆动物园",
+      "matches": [
+        "重庆动物园",
+        "重庆动物园大熊猫馆"
+      ]
+    },
+    "intro": "重庆动物园是看大熊猫的热门目的地。对少走路行程可优先从主入口到大熊猫馆的短路线，并根据现场情况使用园内代步服务。",
+    "fit": "适合亲子、带长辈和以看大熊猫为明确目标的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/09de14668d0efa3d8dd189ed267d87b7",
+    "photoUrl": "http://store.is.autonavi.com/showpic/09de14668d0efa3d8dd189ed267d87b7"
+  },
+  {
+    "id": "cq-hongyan-memorial",
+    "name": "红岩革命纪念馆",
+    "displayName": "红岩革命纪念馆",
+    "district": "渝中区",
+    "category": "人文",
+    "tags": [
+      "红色旅游",
+      "纪念馆",
+      "室内",
+      "研学",
+      "历史"
+    ],
+    "accessibility": "UNKNOWN",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "带孩子",
+      "独自出发"
+    ],
+    "featureTags": [
+      "红岩历史",
+      "革命文物",
+      "研学",
+      "纪念馆"
+    ],
+    "icon": "忆",
+    "tone": "red",
+    "location": "106.544000,29.555000",
+    "summary": "以红岩历史和革命文物展陈为主题的纪念馆，适合历史研学类行程。",
+    "walk": "入口与无障碍条件请以现场信息为准",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "中",
+    "ticket": "开放与预约以官方当日信息为准",
+    "bestTime": "上午或下午室内时段",
+    "amapQuery": {
+      "keywords": "红岩革命纪念馆",
+      "matches": [
+        "红岩革命纪念馆",
+        "红岩村"
+      ]
+    },
+    "intro": "红岩革命纪念馆以红岩历史与革命文物展陈为核心。当前目录仅将其作为历史人文候选，具体开放、入口和无障碍条件需要在行程落地时核验。",
+    "fit": "适合红色研学、历史人文参观，以及希望补充室内文化内容的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/d1dfccfe9a813238529a3850d8ce66eb",
+    "photoUrl": "http://store.is.autonavi.com/showpic/d1dfccfe9a813238529a3850d8ce66eb"
+  },
+  {
+    "id": "cq-jianchuan-museum",
+    "name": "重庆建川博物馆",
+    "displayName": "重庆建川博物馆",
+    "district": "大渡口区",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "工业遗产",
+      "历史",
+      "室内",
+      "专题展览"
+    ],
+    "accessibility": "UNKNOWN",
+    "environment": "MIXED",
+    "recommendedVisitMinutes": 150,
+    "companionTags": [
+      "带父母",
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "近现代史",
+      "工业遗产",
+      "专题收藏",
+      "博物馆"
+    ],
+    "icon": "藏",
+    "tone": "brown",
+    "location": "106.486400,29.481400",
+    "summary": "大渡口工业遗产片区的专题博物馆群，适合历史与工业文化主题半日。",
+    "walk": "馆区范围和无障碍条件需按具体展馆确认",
+    "duration": "约 150 分钟",
+    "indoor": true,
+    "walkDifficulty": "中",
+    "ticket": "展馆开放与票务以官方当日信息为准",
+    "bestTime": "下午室内时段",
+    "amapQuery": {
+      "keywords": "重庆建川博物馆",
+      "matches": [
+        "重庆建川博物馆",
+        "建川博物馆重庆"
+      ]
+    },
+    "intro": "重庆建川博物馆位于大渡口工业遗产片区，涵盖近现代历史、工业遗产与专题收藏。当前目录将其作为人文主题候选，排程前应核验具体展馆开放与步行范围。",
+    "fit": "适合对近现代史、工业遗产和专题博物馆感兴趣的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/c6e75d17cd0e00baa7ba3ca9b495694c",
+    "photoUrl": "http://store.is.autonavi.com/showpic/c6e75d17cd0e00baa7ba3ca9b495694c"
+  },
+  {
+    "id": "cq-jiangjin-baisha",
+    "name": "白沙古镇",
+    "displayName": "白沙古镇",
+    "district": "江津区",
+    "category": "人文",
+    "tags": [
+      "古镇",
+      "人文",
+      "历史",
+      "码头文化",
+      "抗战文化",
+      "老街",
+      "免费开放",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "带父母",
+      "朋友出游",
+      "独自出发"
+    ],
+    "featureTags": [
+      "古码头",
+      "老街历史",
+      "聚奎书院",
+      "少走路"
+    ],
+    "icon": "镇",
+    "tone": "gold",
+    "location": "106.012500,29.072200",
+    "summary": "中国历史文化名镇，长江上游保存完好的川东老街与抗战文化风貌区，石板街与古码头极具年代韵味。",
+    "walk": "沿江平坦石板老街，步履平缓轻松",
+    "duration": "约 120 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 无需门票",
+    "bestTime": "上午或下午日间漫步",
+    "amapQuery": {
+      "keywords": "白沙古镇",
+      "matches": [
+        "白沙古镇",
+        "江津白沙老街"
+      ]
+    },
+    "intro": "白沙古镇地处江津区西部长江之滨，是中国历史文化名镇。古镇保留了清代及民国时期的万寿宫、聚奎书院及抗战文化旧址，江景开阔，民风淳朴温润。",
+    "fit": "适合喜爱历史古镇、古建文博、滨江慢节奏漫步与摄影的旅行者。",
+    "image": "https://aos-comment.amap.com/B0FFHKXALC/comment/20260305-74a80e8c6bed1be8917d64f3-AheQfioos0wA30cL9LbLiC.jpg",
+    "photoUrl": "https://aos-comment.amap.com/B0FFHKXALC/comment/20260305-74a80e8c6bed1be8917d64f3-AheQfioos0wA30cL9LbLiC.jpg"
+  },
+  {
+    "id": "cq-jiangjin-simianshan",
+    "name": "四面山风景名胜区",
+    "displayName": "四面山",
+    "district": "江津区",
+    "category": "自然",
+    "tags": [
+      "自然",
+      "自然奇观",
+      "瀑布",
+      "丹霞地貌",
+      "国家5A",
+      "山水",
+      "森林氧吧"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 180,
+    "companionTags": [
+      "情侣出游",
+      "朋友出游",
+      "带孩子"
+    ],
+    "featureTags": [
+      "望乡台大瀑布",
+      "丹霞奇观",
+      "避暑森林",
+      "5A景区"
+    ],
+    "icon": "山",
+    "tone": "teal",
+    "location": "106.401000,28.665000",
+    "summary": "国家 5A 级风景名胜区，集丹霞地貌、望乡台天桥大瀑布、原始森林与清凉湖泊于一体的高氧避暑奇观。",
+    "walk": "景区配有观光车与观景步道",
+    "duration": "约 180 分钟",
+    "indoor": false,
+    "walkDifficulty": "中",
+    "ticket": "国家5A级景区门票",
+    "bestTime": "上午至下午日间游览",
+    "amapQuery": {
+      "keywords": "四面山风景名胜区",
+      "matches": [
+        "四面山",
+        "四面山风景区"
+      ]
+    },
+    "intro": "四面山位于江津区南部，为国家 5A 级旅游景区。以望乡台瀑布（高158米）、土地岩壁画、龙潭湖闻名，是重庆西南极具代表性的自然奇观与森林氧吧。",
+    "fit": "适合热爱自然山水、森林瀑布摄影与户外山岳奇观探索的旅行者。",
+    "image": "http://store.is.autonavi.com/showpic/4a363b43ef144cc6816ad52e86ac0c2e",
+    "photoUrl": "http://store.is.autonavi.com/showpic/4a363b43ef144cc6816ad52e86ac0c2e"
+  },
+  {
+    "id": "cq-jiangjin-nie-memorial",
+    "name": "聂荣臻元帅陈列馆",
+    "displayName": "聂荣臻元帅陈列馆",
+    "district": "江津区",
+    "category": "人文",
+    "tags": [
+      "人文",
+      "历史",
+      "纪念馆",
+      "红色文化",
+      "鼎山公园",
+      "免费开放",
+      "长辈友好",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "INDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "带父母",
+      "带孩子",
+      "独自出发"
+    ],
+    "featureTags": [
+      "红色研学",
+      "元帅故里",
+      "室内无障碍",
+      "鼎山绿道"
+    ],
+    "icon": "馆",
+    "tone": "red",
+    "location": "106.265200,29.281500",
+    "summary": "全国爱国主义教育示范基地，坐落于江津鼎山之麓，馆区环境清幽秀美，展陈翔实，全无障碍通道。",
+    "walk": "平层展馆与无障碍直梯，零台阶游览",
+    "duration": "约 90 分钟",
+    "indoor": true,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 凭有效身份证件入馆",
+    "bestTime": "上午或下午室内时段",
+    "amapQuery": {
+      "keywords": "聂荣臻元帅陈列馆",
+      "matches": [
+        "聂荣臻元帅陈列馆",
+        "聂荣臻纪念馆"
+      ]
+    },
+    "intro": "聂荣臻元帅陈列馆位于江津城区几江半岛鼎山公园内，通过大量历史实物与多媒体影像全景展示新中国科技国防建设史，院落清静雅致。",
+    "fit": "适合长辈同行、家庭研学与近现代历史文化爱好者。",
+    "image": "http://store.is.autonavi.com/showpic/a3b49b157a60e2047dbd8dc0b9d80568",
+    "photoUrl": "http://store.is.autonavi.com/showpic/a3b49b157a60e2047dbd8dc0b9d80568"
+  },
+  {
+    "id": "cq-jiangjin-zhongshan",
+    "name": "中山古镇",
+    "displayName": "中山古镇",
+    "district": "江津区",
+    "category": "人文",
+    "tags": [
+      "古镇",
+      "市井烟火",
+      "老街",
+      "吊脚楼",
+      "传统手作",
+      "免费开放",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 120,
+    "companionTags": [
+      "带父母",
+      "情侣出游",
+      "朋友出游"
+    ],
+    "featureTags": [
+      "笋溪河老街",
+      "依山傍水",
+      "传统石板街",
+      "烟火民俗"
+    ],
+    "icon": "古",
+    "tone": "gold",
+    "location": "106.398000,28.845000",
+    "summary": "笋溪河畔的原生态千年老街，千米穿斗式吊脚楼依山傍水，石板街老铺林立，石板滋粑与古镇烟火浓郁。",
+    "walk": "千米平缓石板老街，雨街不湿鞋",
+    "duration": "约 120 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天游览",
+    "bestTime": "上午或下午闲步品茶",
+    "amapQuery": {
+      "keywords": "中山古镇",
+      "matches": [
+        "中山古镇",
+        "江津中山老街"
+      ]
+    },
+    "intro": "中山古镇地处江津西南部，笋溪河穿镇而过。古镇建筑顺山就势，保留了完整的骑楼式长街，石板滋粑、古镇烟熏豆腐与茶馆极富巴渝乡愁。",
+    "fit": "适合喜爱原生态老街慢节奏、品味市井烟火与地道小吃的游客。",
+    "image": "http://store.is.autonavi.com/showpic/ebdbd7f8dd1930d0e95649385d1e3a1f",
+    "photoUrl": "http://store.is.autonavi.com/showpic/ebdbd7f8dd1930d0e95649385d1e3a1f"
+  },
+  {
+    "id": "cq-jiangjin-binjiang-night",
+    "name": "几江长江滨江路夜景带",
+    "displayName": "几江长江滨江路夜景",
+    "district": "江津区",
+    "category": "夜景",
+    "tags": [
+      "夜景",
+      "江景",
+      "城市",
+      "散步",
+      "滨江路",
+      "鼎山长江大桥",
+      "免费开放",
+      "少走路"
+    ],
+    "accessibility": "SUPPORTED",
+    "environment": "OUTDOOR",
+    "recommendedVisitMinutes": 90,
+    "companionTags": [
+      "独自出发",
+      "情侣出游",
+      "朋友出游",
+      "带父母"
+    ],
+    "featureTags": [
+      "长江夜色",
+      "鼎山大桥灯光",
+      "江风步道",
+      "滨江夜市"
+    ],
+    "icon": "夜",
+    "tone": "blue",
+    "location": "106.262000,29.293000",
+    "summary": "几江半岛长江之滨的高人气夜景观景带，鼎山长江大桥璀璨灯火与江风徐徐，滨江亲水步道宽敞平坦。",
+    "walk": "沿江亲水宽阔慢行步道，平地无台阶",
+    "duration": "约 90 分钟",
+    "indoor": false,
+    "walkDifficulty": "低",
+    "ticket": "免费开放 · 全天漫步",
+    "bestTime": "18:30-22:00夜间江风漫步与夜景摄影",
+    "amapQuery": {
+      "keywords": "几江滨江路",
+      "matches": [
+        "几江滨江路",
+        "江津滨江路",
+        "鼎山长江大桥"
+      ]
+    },
+    "intro": "几江长江滨江路夜景观光带紧邻几江老城区，正对浩荡长江。夜幕降临后，几江长江大桥、鼎山长江大桥华灯齐放，江面倒映两岸璀璨霓虹，江风习习，茶摊与市井烟火格外怡人。",
+    "fit": "适合夜间散步、江畔吹风、夜景观赏与体验江津本地市民慢生活。",
+    "image": "https://aos-comment.amap.com/BZ9SNM006N/comment/3806ed97272827f04815b3b824f16034_2048_2048_80.jpg",
+    "photoUrl": "https://aos-comment.amap.com/BZ9SNM006N/comment/3806ed97272827f04815b3b824f16034_2048_2048_80.jpg"
+  }
+]

@@ -184,11 +184,13 @@ public class PlanVerifier {
 
             // Check 4: Cross-district extreme bounce in same half-day (GS-01)
             for (int j = 1; j < stops.size(); j++) {
+                if (isDiningStop(stops.get(j - 1)) || isDiningStop(stops.get(j))) {
+                    continue;
+                }
                 String prevDist = safeText(stops.get(j - 1).get("district"));
                 String currDist = safeText(stops.get(j).get("district"));
                 boolean isPrevSuburban = isDistantSuburban(prevDist);
                 boolean isCurrSuburban = isDistantSuburban(currDist);
-
                 if (isPrevSuburban != isCurrSuburban) {
                     violations.add(new PlanViolation(
                             "CROSS_DISTRICT_INVIABLE",
@@ -227,14 +229,14 @@ public class PlanVerifier {
                 }
             }
 
-            if (totalDayMinutes > 600 && !stops.isEmpty()) {
+            if (totalDayMinutes > 660 && !stops.isEmpty()) {
                 Map<String, Object> lastStop = stops.get(stops.size() - 1);
                 violations.add(new PlanViolation(
                         "DAY_SCHEDULE_OVERFLOW",
                         dayNumber,
                         safeText(lastStop.get("id")),
                         safeText(lastStop.get("venueId")),
-                        "第 " + dayNumber + " 天总游览与交通耗时（" + totalDayMinutes + " 分钟）超出单日合理上限（600 分钟）。",
+                        "第 " + dayNumber + " 天总游览与交通耗时（" + totalDayMinutes + " 分钟）超出单日合理上限（660 分钟）。",
                         true
                 ));
             }
@@ -306,9 +308,26 @@ public class PlanVerifier {
         return obj == null ? "" : String.valueOf(obj).trim();
     }
 
+    private boolean isDiningStop(Map<String, Object> stop) {
+        if (stop == null) return false;
+        String type = safeText(stop.get("type"));
+        String category = safeText(stop.get("category"));
+        String icon = safeText(stop.get("icon"));
+        String name = safeText(stop.get("name"));
+        String id = safeText(stop.get("id"));
+        return "DINING".equalsIgnoreCase(type)
+                || "美食".equals(category)
+                || "餐".equals(icon)
+                || id.contains("dining")
+                || name.contains("餐推荐")
+                || name.contains("【早餐】")
+                || name.contains("【午餐】")
+                || name.contains("【晚餐】");
+    }
+
     private boolean isDistantSuburban(String district) {
         if (district == null) return false;
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足");
+        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足") || district.contains("江津");
     }
 
     private boolean isMorningSlot(String time) {

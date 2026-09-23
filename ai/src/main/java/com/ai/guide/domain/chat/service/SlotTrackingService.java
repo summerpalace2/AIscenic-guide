@@ -44,7 +44,7 @@ public class SlotTrackingService {
         // 兴趣偏好 → 滑动窗口 3 条（预编译正则）
         Map<Pattern, String> interest = new LinkedHashMap<>();
         interest.put(Pattern.compile("景点|景区|风景|玩的|游览|观赏|观光"), "景点");
-        interest.put(Pattern.compile("美食|好吃的|餐厅|吃饭|小吃|素斋|素食"), "美食");
+        interest.put(Pattern.compile("美食|好吃的|餐厅|吃饭|小吃|素斋|素食|甜品|甜食|甜点|甜的|吃甜"), "美食");
         interest.put(Pattern.compile("文化|历史|故事|渊源|来历|传统|佛教|禅"), "文化");
         interest.put(Pattern.compile("路线|行程|规划|怎么走|游玩顺序|游览路线|推荐路线"), "路线");
         interest.put(Pattern.compile("住宿|酒店|住哪|房间|客栈|民宿"), "住宿");

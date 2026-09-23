@@ -54,44 +54,29 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
             "cq-south-hotspring", "cq-geleyuan", "cq-maanshan", "cq-beicang"
     );
 
-    private static final List<PatternId> EXPLICIT_ATTRACTIONS = List.of(
-            new PatternId("武隆|天坑|天生三桥", "cq-wulong-tiankeng"),
-            new PatternId("融汇温泉", "cq-ronghui-hotspring"),
-            new PatternId("南温泉", "cq-south-hotspring"),
-            new PatternId("温泉|水疗|泡汤", "cq-ronghui-hotspring"),
-            new PatternId("大足|石刻|宝顶山", "cq-dazu-rock"),
-            new PatternId("白鹤梁|水下博物馆", "cq-baiheliang"),
-            new PatternId("磁器口|古镇", "cq-ciqikou"),
-            new PatternId("观音桥|九街", "cq-guanyinqiao"),
-            new PatternId("北仓", "cq-beicang"),
-            new PatternId("二厂|鹅岭", "cq-erling"),
-            new PatternId("马鞍山", "cq-maanshan"),
-            new PatternId("一棵树|南山", "cq-nanshan-yikeshu"),
-            new PatternId("弹子石", "cq-danzi-shi"),
-            new PatternId("索道|长江索道", "cq-changjiang-cable"),
-            new PatternId("魁星楼", "cq-kuixinglou"),
-            new PatternId("罗汉寺", "cq-luohan-temple"),
-            new PatternId("湖广会馆", "cq-huguang-guild"),
-            new PatternId("中山四路", "cq-zhongshan-road"),
-            new PatternId("歌乐山|渣滓洞|白公馆|红岩", "cq-geleyuan"));
-
     private final AttractionService attractionService;
     private final RouteAwarePlanner routeAwarePlanner;
     private final PlanVerifier planVerifier;
     private final LocalPlanRepairer localPlanRepairer;
     private final PlanNarrativeService planNarrativeService;
+    private final com.ai.guide.domain.attraction.service.AttractionAliasMatcher aliasMatcher;
+
+    @Autowired(required = false)
+    private com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService runtimeAttractionDetailService;
 
     @Autowired
     public ItineraryBuilder(AttractionService attractionService,
                             RouteAwarePlanner routeAwarePlanner,
                             PlanVerifier planVerifier,
                             LocalPlanRepairer localPlanRepairer,
-                            PlanNarrativeService planNarrativeService) {
+                            PlanNarrativeService planNarrativeService,
+                            @Autowired(required = false) com.ai.guide.domain.attraction.service.AttractionAliasMatcher aliasMatcher) {
         this.attractionService = attractionService;
         this.routeAwarePlanner = routeAwarePlanner;
         this.planVerifier = planVerifier;
         this.localPlanRepairer = localPlanRepairer;
         this.planNarrativeService = planNarrativeService;
+        this.aliasMatcher = aliasMatcher != null ? aliasMatcher : new com.ai.guide.domain.attraction.service.AttractionAliasMatcher(attractionService);
     }
 
     public ItineraryBuilder(AttractionService attractionService) {
@@ -103,23 +88,33 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         this.localPlanRepairer = repairer;
         this.routeAwarePlanner = new RouteAwarePlanner(costProvider, verifier, repairer);
         this.planNarrativeService = new PlanNarrativeService();
+        this.aliasMatcher = new com.ai.guide.domain.attraction.service.AttractionAliasMatcher(attractionService);
     }
 
     public Map<String, Object> build(int version, TravelConstraints constraints) {
-        List<Attraction> catalog = attractionService.list(null, null);
+        List<Attraction> catalog = new ArrayList<>(attractionService.list(null, null));
+        catalog.sort(Comparator.comparingInt(a -> catalogRank(a.getId())));
         Map<String, Attraction> byId = new LinkedHashMap<>();
         for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
         List<String> explicitIds = explicitIds(constraints.getRawPrompt(), byId);
         int requestedDays = constraints.getDurationDays() <= 0 ? 2 : constraints.getDurationDays();
         int dayCount = Math.max(1, Math.min(7, requestedDays));
-        boolean isGoldenBaseline = explicitIds.isEmpty() && dayCount == 2;
+        boolean hasStartPlace = constraints.getStartPlace() != null
+                && !constraints.getStartPlace().isBlank()
+                && !"未提供".equals(constraints.getStartPlace());
+        boolean isGoldenBaseline = explicitIds.isEmpty() && dayCount == 2 && !hasStartPlace;
 
         List<Map<String, Object>> days = isGoldenBaseline
                 ? routeAwarePlanner.resolveAndVerifyDays(buildBaselineDays(dayCount, constraints, byId), byId, constraints)
                 : routeAwarePlanner.planDays(dayCount, constraints, byId, explicitIds, this);
 
+        enrichDaysWithDining(days, constraints, byId);
+        annotateStops(days, constraints);
+
         String title = isGoldenBaseline
                 ? "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·山城漫游线"
+                : hasStartPlace
+                ? "从" + constraints.getStartPlace() + "出发·重庆" + dayCount + "天专属方案"
                 : "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·专属定制方案";
         String subtitle = ("低".equals(constraints.getWalkingTolerance()) ? "少走路优先" : "按约束排序")
                 + " · " + constraints.getCompanions() + " · " + String.join(" + ", constraints.getInterests().stream().limit(2).toList());
@@ -244,7 +239,62 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         return stop;
     }
 
+    @Override
+    public Map<String, Object> createDiningStop(AttractionDiningKnowledge.DiningOption dining, String stopId, String time, String district) {
+        Map<String, Object> stop = new LinkedHashMap<>();
+        stop.put("id", stopId);
+        stop.put("stableStopId", stopId);
+        stop.put("entityId", dining.id());
+        stop.put("venueId", dining.id());
+        stop.put("name", dining.name());
+        stop.put("displayName", dining.name());
+        stop.put("district", district != null && !district.isBlank() ? district : "渝中区");
+        stop.put("time", time);
+        stop.put("startTime", time);
+        stop.put("duration", dining.duration());
+        stop.put("type", "DINING");
+        stop.put("category", "美食");
+        stop.put("icon", "餐");
+        stop.put("tone", dining.tone());
+        stop.put("summary", dining.summary());
+        stop.put("detail", dining.specialtyDish() + " · " + dining.summary());
+        stop.put("specialtyDish", dining.specialtyDish());
+        stop.put("diningType", dining.diningType());
+        stop.put("ticket", dining.averageCost());
+        stop.put("costSummary", dining.averageCost());
+        stop.put("estimatedCost", dining.averageCost());
+        stop.put("walk", dining.distanceFromAttraction() + "即达");
+        stop.put("walkDifficulty", "低");
+        stop.put("walkingDifficulty", "低");
+        stop.put("indoor", true);
+        stop.put("bestTime", "全天营业·用餐便利");
+        stop.put("recommendationReason", dining.recommendationReason());
+        stop.put("location", dining.location());
+        stop.put("address", (district != null && !district.isBlank() ? district + " · " : "") + dining.distanceFromAttraction() + "即达");
+        stop.put("routePreference", "walking");
+        stop.put("walkingInfo", Map.of("summary", dining.distanceFromAttraction() + "即达", "status", "已知"));
+        Map<String, Object> rfp = new LinkedHashMap<>();
+        rfp.put("selectedMode", "步行");
+        rfp.put("summary", dining.distanceFromAttraction() + "即达");
+        rfp.put("selected", Map.of(
+                "duration", "约 5 分钟",
+                "durationSeconds", 300,
+                "distance", dining.distanceFromAttraction(),
+                "distanceMeters", 180,
+                "summary", "从上一游览点步行" + dining.distanceFromAttraction() + "即达"
+        ));
+        stop.put("routeFromPrevious", rfp);
+        stop.put("resolvedRouteCost", RouteCost.estimated(180, 5, 180, "WALKING", "步行即达").asMap());
+        stop.put("estimatedRouteCost", RouteCost.estimated(180, 5, 180, "WALKING", "步行即达").asMap());
+        stop.put("routeDataStatus", "ESTIMATED");
+        return stop;
+    }
+
     public Attraction attraction(String id) {
+        if (id != null && id.startsWith("amap-") && runtimeAttractionDetailService != null) {
+            Attraction dynamic = runtimeAttractionDetailService.toAttraction(id);
+            if (dynamic != null) return dynamic;
+        }
         return attractionService.get(id);
     }
 
@@ -261,15 +311,15 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private List<Map<String, Object>> buildBaselineDays(int dayCount, TravelConstraints constraints,
                                                           Map<String, Attraction> byId) {
         List<List<Spec>> templates = List.of(
-                List.of(new Spec("day1-jiefangbei", "cq-jiefangbei", "14:30", "约 90 分钟", "城市地标与街区热身，平街漫步把节奏放慢。", "适合作为抵渝第一站，先完成城市地标认知与小吃品尝。"),
-                        new Spec("day1-hongyadong", "cq-hongyadong", "19:30", "约 90 分钟", "夜景主场，金碧辉煌吊脚楼依山就势。", "以夜景和临江层次为核心，动态拥挤度保留弹性。")),
-                List.of(new Spec("day2-museum", "cq-museum", "10:00", "约 120 分钟", "全馆无障碍平滑观展，壮丽三峡与巴渝历史史诗。", "室内环境冬暖夏凉，是长辈与亲子最舒适的室内场馆。"),
-                        new Spec("day2-liziba", "cq-liziba", "14:30", "约 45 分钟", "单轨穿楼地面平坦观景台，捕捉山城8D魔幻奇观。", "停留时间短、识别度高，作为收束站点极其稳妥。"),
-                        new Spec("day2-shibati", "cq-shibati", "18:00", "约 90 分钟", "上下半城烟火记忆，青石板路与吊脚楼灯火温馨如画。", "保留老重庆市井韵味与特色茶铺，夜间灯光富有层次。")),
-                List.of(new Spec("day3-erling", "cq-erling", "14:00", "约 90 分钟", "工业红砖厂房与潮流文创，天台俯瞰两江壮阔景观。", "适合文艺摄影与慢节奏品味咖啡，天台视野绝佳。"),
-                        new Spec("day3-grand-theatre", "cq-grand-theatre", "19:30", "约 90 分钟", "隔江远眺千厮门与洪崖洞全景，江风拂面且免受人潮拥挤。", "适合少走路、带长辈，开阔全景机位极其舒适。")),
-                List.of(new Spec("day4-ciqikou", "cq-ciqikou", "10:30", "约 120 分钟", "千年水陆码头，陈麻花、毛血旺与老茶馆烟火气十足。", "明清院落与道地巴渝非遗美食汇集。"),
-                        new Spec("day4-danzi-shi", "cq-danzi-shi", "17:30", "约 90 分钟", "全覆盖自动扶梯对长辈友好，正对朝天门来福士江景。", "十里老街重温开埠岁月，兼顾美食与惬意江景漫步。")));
+                List.of(new Spec("day1-jiefangbei", "cq-jiefangbei", "14:30"),
+                        new Spec("day1-hongyadong", "cq-hongyadong", "19:30")),
+                List.of(new Spec("day2-museum", "cq-museum", "10:00"),
+                        new Spec("day2-liziba", "cq-liziba", "14:30"),
+                        new Spec("day2-shibati", "cq-shibati", "18:00")),
+                List.of(new Spec("day3-erling", "cq-erling", "14:00"),
+                        new Spec("day3-grand-theatre", "cq-grand-theatre", "19:30")),
+                List.of(new Spec("day4-ciqikou", "cq-ciqikou", "10:30"),
+                        new Spec("day4-danzi-shi", "cq-danzi-shi", "17:30")));
         String[] labels = {"母城地标与山城夜景", "文博静谧与8D魔幻穿楼", "江岸开阔视野与工业文创", "千年古镇与巴渝风情"};
         List<Map<String, Object>> days = new ArrayList<>();
         for (int day = 1; day <= dayCount; day++) {
@@ -290,7 +340,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
                         }
                     }
                     if (!shouldAvoid) {
-                        stops.add(createStop(attraction, spec.id().replaceFirst("day\\d+", "day" + day), spec.time(), spec.duration(), spec.summary(), spec.detail()));
+                        stops.add(createStop(attraction, spec.id().replaceFirst("day\\d+", "day" + day), spec.time(), attraction.getDuration(), attraction.getSummary(), attraction.getFit()));
                     }
                 }
             }
@@ -539,6 +589,127 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         return "夜景".equals(a.getCategory()) || tags.contains("夜景") || bestTime.contains("18:") || bestTime.contains("19:");
     }
 
+    private void enrichDaysWithDining(List<Map<String, Object>> days, TravelConstraints constraints, Map<String, Attraction> byId) {
+        if (days == null || days.isEmpty()) return;
+        int dayCount = days.size();
+        String arrival = constraints == null ? "" : constraints.getArrivalAt();
+        String departure = constraints == null ? "" : constraints.getDepartureAt();
+
+        // 跨天全局记录已推荐餐厅，杜绝多日行程中重复推荐相同餐厅或顿顿小面
+        Set<String> usedDiningNames = new HashSet<>();
+
+        for (Map<String, Object> day : days) {
+            Object stopsObj = day.get("stops");
+            if (!(stopsObj instanceof List<?> rawList)) continue;
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> currentStops = new ArrayList<>((List<Map<String, Object>>) rawList);
+            if (currentStops.isEmpty()) continue;
+
+            // Check if dining stops already exist
+            boolean hasLunch = currentStops.stream().anyMatch(s -> "12:00".equals(s.get("time")) || "餐".equals(s.get("icon")));
+            boolean hasDinner = currentStops.stream().anyMatch(s -> "18:00".equals(s.get("time")) || ("DINNER".equals(s.get("type")) && "餐".equals(s.get("icon"))));
+
+            int dayNum = day.get("day") instanceof Number n ? n.intValue() : 1;
+            boolean isFirstDay = (dayNum == 1);
+            boolean isLastDay = (dayNum == dayCount);
+
+            // Separate into morning, afternoon, evening attractions
+            Map<String, Object> morningStop = null;
+            Map<String, Object> afternoonStop = null;
+            Map<String, Object> eveningStop = null;
+
+            for (Map<String, Object> stop : currentStops) {
+                if ("餐".equals(stop.get("icon")) || "DINING".equals(stop.get("type"))) continue;
+                String time = String.valueOf(stop.get("time"));
+                if (time.contains("09:") || time.contains("10:") || time.contains("11:")) {
+                    if (morningStop == null) morningStop = stop;
+                } else if (time.contains("13:") || time.contains("14:") || time.contains("15:") || time.contains("16:") || time.contains("17:")) {
+                    if (afternoonStop == null) afternoonStop = stop;
+                } else if (time.contains("18:") || time.contains("19:") || time.contains("20:")) {
+                    if (eveningStop == null) eveningStop = stop;
+                }
+            }
+
+            // Fallback if slot times are slightly different (e.g. only 2 stops)
+            if (morningStop == null && afternoonStop == null && eveningStop == null) {
+                if (currentStops.size() == 1) {
+                    morningStop = currentStops.get(0);
+                } else if (currentStops.size() >= 2) {
+                    morningStop = currentStops.get(0);
+                    afternoonStop = currentStops.get(1);
+                }
+            }
+
+            List<Map<String, Object>> newStops = new ArrayList<>();
+
+            // Decide whether lunch is applicable
+            boolean allowLunch = !hasLunch;
+            if (isFirstDay && (arrival.contains("下午") || arrival.contains("晚上") || arrival.contains("夜间"))) {
+                allowLunch = false;
+            }
+            if (morningStop == null) {
+                allowLunch = false;
+            }
+
+            // Decide whether dinner is applicable
+            boolean allowDinner = !hasDinner;
+            if (isLastDay && (departure.contains("上午") || departure.contains("早晨") || departure.contains("中午"))) {
+                allowDinner = false;
+            }
+            if (afternoonStop == null && eveningStop == null && morningStop == null) {
+                allowDinner = false;
+            }
+
+            for (Map<String, Object> stop : currentStops) {
+                newStops.add(stop);
+
+                if (stop == morningStop && allowLunch) {
+                    Attraction anchor = byId.get(String.valueOf(morningStop.get("venueId")));
+                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(morningStop.get("district"));
+                    AttractionDiningKnowledge.DiningOption lunchOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "LUNCH", constraints, usedDiningNames);
+                    if (lunchOption != null && lunchOption.name() != null) {
+                        usedDiningNames.add(lunchOption.name());
+                    }
+                    Map<String, Object> lunchStop = createDiningStop(lunchOption, "day" + dayNum + "-lunch", "12:00", district);
+                    newStops.add(lunchStop);
+                    allowLunch = false;
+                }
+
+                if (stop == afternoonStop && allowDinner && eveningStop != null) {
+                    Attraction anchor = byId.get(String.valueOf(afternoonStop.get("venueId")));
+                    if (anchor == null && eveningStop != null) {
+                        anchor = byId.get(String.valueOf(eveningStop.get("venueId")));
+                    }
+                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(afternoonStop.get("district"));
+                    AttractionDiningKnowledge.DiningOption dinnerOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "DINNER", constraints, usedDiningNames);
+                    if (dinnerOption != null && dinnerOption.name() != null) {
+                        usedDiningNames.add(dinnerOption.name());
+                    }
+                    Map<String, Object> dinnerStop = createDiningStop(dinnerOption, "day" + dayNum + "-dinner", "18:00", district);
+                    newStops.add(dinnerStop);
+                    allowDinner = false;
+                }
+            }
+
+            // If dinner is still allowed and there was no evening stop after afternoon stop
+            if (allowDinner) {
+                Map<String, Object> anchorStop = afternoonStop != null ? afternoonStop : (morningStop != null ? morningStop : null);
+                if (anchorStop != null) {
+                    Attraction anchor = byId.get(String.valueOf(anchorStop.get("venueId")));
+                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(anchorStop.get("district"));
+                    AttractionDiningKnowledge.DiningOption dinnerOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "DINNER", constraints, usedDiningNames);
+                    if (dinnerOption != null && dinnerOption.name() != null) {
+                        usedDiningNames.add(dinnerOption.name());
+                    }
+                    Map<String, Object> dinnerStop = createDiningStop(dinnerOption, "day" + dayNum + "-dinner", "18:00", district);
+                    newStops.add(dinnerStop);
+                }
+            }
+
+            day.put("stops", newStops);
+        }
+    }
+
     private void annotateStops(List<Map<String, Object>> days, TravelConstraints constraints) {
         List<String> matches = new ArrayList<>();
         if (!"未提供".equals(constraints.getCompanions()) && constraints.originOf("companions") != com.ai.guide.domain.planner.model.ConstraintOrigin.DEFAULT) {
@@ -558,15 +729,60 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         }
         String route = routePreference(constraints);
         for (Map<String, Object> day : days) {
-            day.put("departureContext", "未提供".equals(constraints.getStayArea()) ? "未指定住宿区域，路线从首个景点开始计算。" : "已将“" + constraints.getStayArea() + "”作为出发衔接参考，具体酒店地址仍需高德解析。");
+            String departureContext;
+            if (constraints.getStartPlace() != null && !constraints.getStartPlace().isBlank() && !"未提供".equals(constraints.getStartPlace())) {
+                String sp = constraints.getStartPlace();
+                if (sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) {
+                    departureContext = "已确认行程起点【" + sp + "】。优先安排江津特色名胜（白沙古镇、四面山等），并规划沿线或经江跳线衔接主城的交通用时。";
+                } else if (sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山")) {
+                    departureContext = "已确认行程起点【" + sp + "】。首日优先衔接南山风景带与南岸沿江地标，减少跨江折返。";
+                } else if (sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城")) {
+                    departureContext = "已确认行程起点【" + sp + "】。首日优先安排沙坪坝文化科教与磁器口古镇片区。";
+                } else {
+                    departureContext = "已确认行程起点【" + sp + "】。路线优先从出发地开始交通衔接与游览规划。";
+                }
+            } else if (!"未提供".equals(constraints.getStayArea())) {
+                departureContext = "已将“" + constraints.getStayArea() + "”作为出发衔接参考，具体酒店地址仍需高德解析。";
+            } else {
+                departureContext = "未指定住宿区域，路线从首个景点开始计算。";
+            }
+            day.put("departureContext", departureContext);
             day.put("mealGuidance", mealGuidance(constraints));
             Object stopsValue = day.get("stops");
             if (!(stopsValue instanceof List<?> stops)) continue;
-            for (Object value : stops) if (value instanceof Map<?, ?> raw) {
+            int dayNum = day.get("day") instanceof Number num ? num.intValue() : 1;
+            for (int sIdx = 0; sIdx < stops.size(); sIdx++) {
+                Object value = stops.get(sIdx);
+                if (!(value instanceof Map<?, ?> raw)) continue;
                 @SuppressWarnings("unchecked") Map<String, Object> stop = (Map<String, Object>) raw;
                 stop.put("matchedConstraints", new ArrayList<>(matches));
                 stop.put("routePreference", route);
-                stop.put("walkingInfo", Map.of("summary", stop.get("walk"), "status", "未知", "preference", route));
+
+                // Day 1 First stop departure marker
+                if (dayNum == 1 && sIdx == 0 && constraints.getStartPlace() != null && !constraints.getStartPlace().isBlank() && !"未提供".equals(constraints.getStartPlace())) {
+                    String sp = constraints.getStartPlace();
+                    stop.put("departureLabel", "行程起点：" + sp);
+                    stop.put("startPlace", sp);
+                    Map<String, Object> rfp = new LinkedHashMap<>();
+                    rfp.put("selectedMode", "接驳出发");
+                    rfp.put("summary", "从【" + sp + "】出发 · 车程/步行约 15-30 分钟");
+                    rfp.put("selected", Map.of(
+                            "mode", "TRANSIT",
+                            "duration", "约 20 分钟",
+                            "durationSeconds", 1200,
+                            "distance", "约 5-10 公里",
+                            "distanceMeters", 8000,
+                            "summary", "从【" + sp + "】出发 · 车程/步行约 15-30 分钟抵达首站"
+                    ));
+                    stop.put("routeFromPrevious", rfp);
+                }
+
+                // If this is a dining stop, preserve its dining recommendation reason and attributes
+                if ("DINING".equals(stop.get("type")) || "餐".equals(stop.get("icon"))) {
+                    continue;
+                }
+
+                stop.put("walkingInfo", Map.of("summary", stop.get("walk") == null ? "路线待计算" : stop.get("walk"), "status", "未知", "preference", route));
                 Attraction attraction = attractionService.get(String.valueOf(stop.get("venueId")));
                 ScoreBreakdown breakdown = scoreBreakdown(stop.get("scoreBreakdown"));
                 RouteCost routeCost = RouteCost.fromMap(stop.get("resolvedRouteCost"));
@@ -617,10 +833,14 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     private String mealGuidance(TravelConstraints c) {
+        if ("清淡不辣".equals(c.getDietPreference()) || "清淡".equals(c.getDietPreference())) return "饮食策略：优选清淡温和餐品与非辣风味（如老字号酸菜鱼、清汤抄手、养生汤锅），避开重油重辣。";
+        if ("重庆火锅".equals(c.getDietPreference())) return "饮食策略：优先安排地道九宫格老火锅与防空洞火锅体验，具体店铺结合景区就近安排。";
+        if ("江湖菜".equals(c.getDietPreference())) return "饮食策略：精选景区周边老字号江湖菜馆，体验麻辣鲜香、市井镬气的巴渝风味。";
+        if ("街头小吃".equals(c.getDietPreference()) || "小吃小面".equals(c.getDietPreference())) return "饮食策略：穿插非遗小吃、地道重庆小面与名特名点，感受市井烟火。";
         if ("素食".equals(c.getDietPreference())) return "饮食策略：优先筛选素食可选项，具体餐厅与营业状态出发前确认。";
         if ("清真".equals(c.getDietPreference())) return "饮食策略：优先筛选清真可选项，具体餐厅与营业状态出发前确认。";
-        if ("本地菜优先".equals(c.getDietPreference()) || "重庆火锅".equals(c.getDietPreference())) return "饮食策略：优先安排重庆本地菜与老火锅体验，具体店铺与消费出发前确认。";
-        return "饮食策略：未指定饮食限制，餐饮安排保持弹性。";
+        if ("本地菜优先".equals(c.getDietPreference())) return "饮食策略：优先安排重庆本地特色家常菜与名优名点，结合景区周边步程合理配置。";
+        return "饮食策略：结合景区周边精选地道特色美食，午晚两餐就近步行可达。";
     }
 
     private Map<String, Object> qualityMetrics(TravelConstraints c, int requestedDays, List<Map<String, Object>> days) {
@@ -680,27 +900,9 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private Map<String, Object> summary(int dayCount) { return Map.of("confirmed", List.of("路线骨架", "景点顺序", dayCount + "日节奏"), "dynamic", List.of("天气", "实时人流", "公交与步行耗时"), "unknown", List.of("门票与预约", "营业时间", "最终消费"), "conflict", List.of("热门景点高峰期停留时长需现场决策")); }
     private Map<String, Object> weather() { return fact("天气", "未知·待查询", "未知", "天气必须在出行前再次确认，当前尚未取得动态结果。", List.of(citation("高德天气接口", "/v3/weather/weatherInfo"))); }
 
-    /** Returns an ISO date only when the request contains a concrete date or weekday. */
+    /** Returns an ISO date resolved from the request, defaulting to today when unspecified. */
     private String itineraryDate(TravelConstraints constraints, int day) {
-        String source = String.join(" ", constraints.getArrivalAt(), constraints.getRawPrompt());
-        java.util.regex.Matcher iso = Pattern.compile("(20\\d{2}-\\d{2}-\\d{2})").matcher(source);
-        if (iso.find()) {
-            try {
-                return LocalDate.parse(iso.group(1), DateTimeFormatter.ISO_LOCAL_DATE).plusDays(day - 1).toString();
-            } catch (DateTimeParseException ignored) { }
-        }
-        java.util.regex.Matcher weekday = Pattern.compile("(?:周|星期)([一二三四五六日天])").matcher(source);
-        if (!weekday.find()) return null;
-        DayOfWeek target = switch (weekday.group(1)) {
-            case "一" -> DayOfWeek.MONDAY;
-            case "二" -> DayOfWeek.TUESDAY;
-            case "三" -> DayOfWeek.WEDNESDAY;
-            case "四" -> DayOfWeek.THURSDAY;
-            case "五" -> DayOfWeek.FRIDAY;
-            case "六" -> DayOfWeek.SATURDAY;
-            default -> DayOfWeek.SUNDAY;
-        };
-        return LocalDate.now().with(TemporalAdjusters.nextOrSame(target)).plusDays(day - 1).toString();
+        return TravelDateResolver.resolveItineraryDate(constraints, day);
     }
 
     private String dateLabel(TravelConstraints c, int day) { return "未提供".equals(c.getArrivalAt()) ? "旅行第" + day + "天" : c.getArrivalAt() + "起第" + day + "天"; }
@@ -714,7 +916,15 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private List<Map<String, Object>> citations() { return List.of(citation("高德 POI 搜索接口", "/v5/place/text"), citation("高德步行路线接口", "/v5/direction/walking"), citation("高德公交路线接口", "/v5/direction/transit/integrated")); }
     private Map<String, Object> citation(String title, String endpoint) { return citation(title, endpoint, "待查询"); }
     private Map<String, Object> citation(String title, String endpoint, String status) { return Map.of("title", title, "publisher", "高德开放平台", "endpoint", endpoint, "status", status, "note", "当前为规划阶段的保守来源标记。"); }
-    private Map<String, Object> fact(String label, Object value, String status, String note, List<Map<String, Object>> citations) { return Map.of("label", label, "value", value, "status", status, "note", note, "citations", citations); }
+    private Map<String, Object> fact(String label, Object value, String status, String note, List<Map<String, Object>> citations) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("label", label != null ? label : "");
+        f.put("value", value != null ? value : "未知·需确认");
+        f.put("status", status != null ? status : "未知");
+        f.put("note", note != null ? note : "");
+        f.put("citations", citations != null ? citations : List.of());
+        return f;
+    }
     private Map<String, Object> mapContext(String location) {
         List<Double> coordinates = new ArrayList<>();
         if (location != null && location.contains(",")) try { coordinates.add(Double.parseDouble(location.split(",")[0])); coordinates.add(Double.parseDouble(location.split(",")[1])); } catch (NumberFormatException ignored) { }
@@ -756,12 +966,12 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     private List<String> explicitIds(String prompt, Map<String, Attraction> byId) {
-        Set<String> result = new LinkedHashSet<>();
-        for (PatternId item : EXPLICIT_ATTRACTIONS) if (Pattern.compile(item.pattern()).matcher(prompt == null ? "" : prompt).find() && byId.containsKey(item.id())) result.add(item.id());
-        return new ArrayList<>(result);
+        if (aliasMatcher != null) {
+            return aliasMatcher.findExplicitAttractionIds(prompt, byId != null ? byId.keySet() : null);
+        }
+        return List.of();
     }
 
-    private record PatternId(String pattern, String id) { }
-    private record Spec(String id, String attractionId, String time, String duration, String summary, String detail) { }
+    private record Spec(String id, String attractionId, String time) { }
     private record Scored(Attraction attraction, int score, ScoreBreakdown breakdown) { }
 }

@@ -24,6 +24,16 @@ import java.util.Map;
 public class TravelConstraints {
     @Builder.Default
     private String destination = "重庆";
+    /**
+     * 用户明确提供的动态规划起点。它不是目的地，也不要求出现在核心景点目录中。
+     */
+    @Builder.Default
+    private String startPlace = "未提供";
+    /**
+     * 小时/分钟级的短途预算；大于 0 时与明确起点共同触发高德动态规划。
+     */
+    @Builder.Default
+    private int timeBudgetMinutes = 0;
     @Builder.Default
     private String arrivalAt = "未提供";
     @Builder.Default
@@ -66,6 +76,8 @@ public class TravelConstraints {
     public Map<String, Object> asMap() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("destination", destination);
+        result.put("startPlace", startPlace);
+        result.put("timeBudgetMinutes", timeBudgetMinutes);
         result.put("arrivalAt", arrivalAt);
         result.put("departureAt", departureAt);
         result.put("durationDays", durationDays);
@@ -111,7 +123,7 @@ public class TravelConstraints {
     }
 
     private Map<String, String> provenance() {
-        List<String> fields = List.of("destination", "arrivalAt", "departureAt", "durationDays", "companions",
+        List<String> fields = List.of("destination", "startPlace", "timeBudgetMinutes", "arrivalAt", "departureAt", "durationDays", "companions",
                 "walkingTolerance", "budget", "interests", "stayArea", "transportPreference", "dietPreference",
                 "mustVisit", "avoid");
         Map<String, String> result = new LinkedHashMap<>();
@@ -149,6 +161,8 @@ public class TravelConstraints {
     public TravelConstraints copy() {
         return TravelConstraints.builder()
                 .destination(destination)
+                .startPlace(startPlace)
+                .timeBudgetMinutes(timeBudgetMinutes)
                 .arrivalAt(arrivalAt)
                 .departureAt(departureAt)
                 .durationDays(durationDays)
@@ -168,5 +182,13 @@ public class TravelConstraints {
                 .rawPrompt(rawPrompt)
                 .origins(origins == null ? new LinkedHashMap<>() : new LinkedHashMap<>(origins))
                 .build();
+    }
+
+    public boolean hasExplicitSpatialRequest() {
+        return timeBudgetMinutes > 0
+                && startPlace != null
+                && !startPlace.isBlank()
+                && !"未提供".equals(startPlace)
+                && originOf("startPlace") != ConstraintOrigin.DEFAULT;
     }
 }

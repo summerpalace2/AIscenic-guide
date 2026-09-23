@@ -23,9 +23,16 @@ import java.util.regex.Pattern;
 @Service
 public class TravelConstraintParser implements TravelConstraintParserPort {
 
-    private static final Pattern ARRIVAL = Pattern.compile("((?:周|星期)[一二三四五六日天])\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:到重庆|抵达重庆|到达重庆)");
-    private static final Pattern DEPARTURE = Pattern.compile("((?:周|星期)[一二三四五六日天])\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回重庆以外|回家|回)");
+    private static final Pattern ARRIVAL = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:到重庆|抵达重庆|到达重庆|出发|到达|抵渝)");
+    private static final Pattern DEPARTURE = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回重庆以外|回家|回)");
     private static final Pattern DAYS = Pattern.compile("([一二三四五六七八九十\\d]+)\\s*天");
+    private static final Pattern TIME_BUDGET = Pattern.compile("(半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟))");
+    private static final Pattern TIME_INTERVAL = Pattern.compile(
+            "(?:从)?\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?\\s*(?:到|至|\\-|~|——|—)\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?");
+    private static final Pattern EXPLICIT_START_PLACE = Pattern.compile(
+            "(?:我在|我人在|人在|现在在|目前在|我目前在|位于|定位在|位置在|坐标(?:是|为)?|地址(?:是|在)?|从|以|(?:(?:今天|今日|现在|目前|上午|中午|下午|傍晚|晚上|夜间)?在))\\s*([^，。；;\\n]+?)(?=\\s*(?:为我|给我|帮我|请|想|要|需要|做|做个|来个|整点)?\\s*(?:规划|推荐|安排|方案|路线|旅游|出行)|\\s*(?:从)?(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*\\d{1,2}(?::\\d{2})?(?:点|时)?(?:半)?\\s*(?:到|至|\\-|~|——|—)|\\s*(?:给我|帮我|请|想|要|需要|规划|安排|推荐|限定|限时|只|有|剩|用|花|玩|游玩|的)?\\s*(?:半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟|天))|[，。；;\\n]|$)");
+    private static final Pattern SUFFIX_START_PLACE = Pattern.compile(
+            "(?:从|以)?\\s*([^，。；;\\n\\s]+?)(?:出发|起步|作为起点)(?=[，。；;\\n\\s]|$)");
     private static final Pattern AMOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*元");
     private static final Pattern STAY = Pattern.compile("(?:住在|住宿|酒店在)\\s*([^，。；;]+)");
     private static final Pattern MUST_VISIT = Pattern.compile("(?:必须|一定要|务必)(?:去|看|逛|体验)?\\s*([^，。；;]+)");
@@ -66,20 +73,74 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         Matcher days = DAYS.matcher(source);
         Matcher amount = AMOUNT.matcher(source);
         Matcher stay = STAY.matcher(source);
+        Matcher timeBudget = TIME_BUDGET.matcher(source);
+        Matcher startPlace = EXPLICIT_START_PLACE.matcher(source);
 
         boolean arrivalFound = arrival.find();
         boolean departureFound = departure.find();
         boolean daysFound = days.find();
         boolean amountFound = amount.find();
         boolean stayFound = stay.find();
+        boolean timeBudgetFound = timeBudget.find();
+        boolean startPlaceFound = startPlace.find();
+        String extractedStartPlace;
+        if (startPlaceFound) {
+            extractedStartPlace = normalizeStartPlace(startPlace.group(1));
+        } else {
+            Matcher suffixStart = SUFFIX_START_PLACE.matcher(source);
+            boolean suffixFound = false;
+            String foundPlace = "未提供";
+            while (suffixStart.find()) {
+                String candidate = suffixStart.group(1).trim();
+                if (!isTemporalWord(candidate) && candidate.length() >= 2) {
+                    suffixFound = true;
+                    foundPlace = normalizeStartPlace(candidate);
+                    break;
+                }
+            }
+            startPlaceFound = suffixFound;
+            extractedStartPlace = foundPlace;
+        }
 
-        String arrivalAt = arrivalFound ? arrival.group(1) + nullToEmpty(arrival.group(2)) : "未提供";
-        String departureAt = departureFound ? departure.group(1) + nullToEmpty(departure.group(2)) : "未提供";
+        Matcher timeInterval = TIME_INTERVAL.matcher(source);
+        boolean timeIntervalFound = timeInterval.find();
+        int intervalBudgetMinutes = 0;
+        String intervalArrival = null;
+        String intervalDeparture = null;
+        if (timeIntervalFound) {
+            int startMin = parseMinutesFromTime(timeInterval.group(1), timeInterval.group(2), timeInterval.group(3));
+            int endMin = parseMinutesFromTime(timeInterval.group(4), timeInterval.group(5), timeInterval.group(6));
+            if (startMin >= 0 && endMin >= 0) {
+                if (endMin < startMin && endMin <= 12 * 60) {
+                    endMin += 12 * 60;
+                }
+                if (endMin > startMin) {
+                    intervalBudgetMinutes = endMin - startMin;
+                    intervalArrival = String.format("%02d:%02d", startMin / 60, startMin % 60);
+                    intervalDeparture = String.format("%02d:%02d", endMin / 60, endMin % 60);
+                }
+            }
+        }
+
+        int timeBudgetMinutes = timeBudgetFound ? parseTimeBudgetMinutes(timeBudget.group(1)) : 0;
+        if (timeBudgetMinutes == 0 && intervalBudgetMinutes > 0) {
+            timeBudgetMinutes = intervalBudgetMinutes;
+            timeBudgetFound = true;
+        }
+
+        String arrivalAt = arrivalFound ? arrival.group(1) + nullToEmpty(arrival.group(2))
+                : (intervalArrival != null ? intervalArrival : "未提供");
+        String departureAt = departureFound ? departure.group(1) + nullToEmpty(departure.group(2))
+                : (intervalDeparture != null ? intervalDeparture : "未提供");
 
         int dowDays = calculateDaysFromDayOfWeek(arrivalAt, departureAt);
         int durationDays = 2;
         boolean durationSpecified = false;
-        if (source.matches(".*(全天|单天|当天|1天|一天|一日|半天).*")) {
+        if (timeBudgetMinutes > 0) {
+            // 小时级或时间区间级需求永远是单日短途，不得沿用默认的两天规划。
+            durationDays = 1;
+            durationSpecified = true;
+        } else if (source.matches(".*(全天|单天|当天|1天|一天|一日|半天).*")) {
             durationDays = 1;
             durationSpecified = true;
         } else if (source.matches(".*(2天|两天|两日|二天).*")) {
@@ -151,8 +212,10 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         List<String> mustVisit = extractMustVisit(source);
         Map<String, ConstraintOrigin> origins = new LinkedHashMap<>();
         if (source.contains("重庆")) origins.put("destination", ConstraintOrigin.PROMPT);
-        if (arrivalFound) origins.put("arrivalAt", ConstraintOrigin.PROMPT);
-        if (departureFound) origins.put("departureAt", ConstraintOrigin.PROMPT);
+        if (startPlaceFound) origins.put("startPlace", ConstraintOrigin.PROMPT);
+        if (timeBudgetFound) origins.put("timeBudgetMinutes", ConstraintOrigin.PROMPT);
+        if (arrivalFound || intervalArrival != null) origins.put("arrivalAt", ConstraintOrigin.PROMPT);
+        if (departureFound || intervalDeparture != null) origins.put("departureAt", ConstraintOrigin.PROMPT);
         if (daysFound || durationSpecified) origins.put("durationDays", ConstraintOrigin.PROMPT);
         if (explicitCompanions) origins.put("companions", ConstraintOrigin.PROMPT);
         if (explicitWalking) origins.put("walkingTolerance", ConstraintOrigin.PROMPT);
@@ -164,13 +227,15 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         if (!mustVisit.isEmpty()) origins.put("mustVisit", ConstraintOrigin.PROMPT);
         if (!avoid.isEmpty()) origins.put("avoid", ConstraintOrigin.PROMPT);
 
-        List<String> missing = criticalMissing(arrivalFound, departureFound, daysFound || durationSpecified);
+        List<String> missing = criticalMissing(arrivalFound || intervalArrival != null, departureFound || intervalDeparture != null, daysFound || durationSpecified);
         LlmShadowPreferenceExtractor.ShadowExtractionResult shadow = shadowExtractor != null
                 ? shadowExtractor.extractShadowPreferences(source)
                 : null;
 
         return TravelConstraints.builder()
                 .destination("重庆")
+                .startPlace(extractedStartPlace)
+                .timeBudgetMinutes(timeBudgetMinutes)
                 .arrivalAt(arrivalAt)
                 .departureAt(departureAt)
                 .durationDays(durationDays)
@@ -204,6 +269,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private int parseDayOfWeek(String text) {
         if (text == null) return 0;
+        if (!text.contains("周") && !text.contains("星期")) return 0;
         if (text.contains("一")) return 1;
         if (text.contains("二")) return 2;
         if (text.contains("三")) return 3;
@@ -219,6 +285,16 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         if (overrides == null || overrides.isEmpty()) return base.copy();
         TravelConstraints next = base.copy();
         if (setText(overrides, "destination", next::setDestination)) next.markOrigin("destination", ConstraintOrigin.REQUEST);
+        if (overrides.containsKey("startPlace")) {
+            Object sp = overrides.get("startPlace");
+            String spText = sp == null ? "" : String.valueOf(sp).trim();
+            if (spText.isBlank() || "未提供".equals(spText)) {
+                next.setStartPlace(null);
+            } else {
+                next.setStartPlace(spText);
+            }
+            next.markOrigin("startPlace", ConstraintOrigin.REQUEST);
+        }
         if (setText(overrides, "arrivalAt", next::setArrivalAt)) next.markOrigin("arrivalAt", ConstraintOrigin.REQUEST);
         if (setText(overrides, "departureAt", next::setDepartureAt)) next.markOrigin("departureAt", ConstraintOrigin.REQUEST);
         if (setText(overrides, "companions", next::setCompanions)) next.markOrigin("companions", ConstraintOrigin.REQUEST);
@@ -237,6 +313,21 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
                 if (parsed >= 1 && parsed <= 7) {
                     next.setDurationDays(parsed);
                     next.markOrigin("durationDays", ConstraintOrigin.REQUEST);
+                }
+            } catch (NumberFormatException ignored) { }
+        }
+        Object budgetMinutes = overrides.get("timeBudgetMinutes");
+        if (budgetMinutes != null) {
+            try {
+                int parsed = Integer.parseInt(String.valueOf(budgetMinutes));
+                if (parsed > 0) {
+                    next.setTimeBudgetMinutes(parsed);
+                    next.setDurationDays(1);
+                    next.markOrigin("timeBudgetMinutes", ConstraintOrigin.REQUEST);
+                    next.markOrigin("durationDays", ConstraintOrigin.REQUEST);
+                } else if (parsed == 0) {
+                    next.setTimeBudgetMinutes(0);
+                    next.markOrigin("timeBudgetMinutes", ConstraintOrigin.REQUEST);
                 }
             } catch (NumberFormatException ignored) { }
         }
@@ -266,7 +357,8 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
     private void refreshMissing(TravelConstraints constraints) {
         boolean arrival = !"未提供".equals(constraints.getArrivalAt());
         boolean departure = !"未提供".equals(constraints.getDepartureAt());
-        boolean duration = constraints.originOf("durationDays") != ConstraintOrigin.DEFAULT || arrival || departure;
+        boolean duration = constraints.originOf("durationDays") != ConstraintOrigin.DEFAULT
+                || constraints.getTimeBudgetMinutes() > 0 || arrival || departure;
         List<String> missing = criticalMissing(arrival, departure, duration);
         constraints.setCriticalMissingFields(missing);
         constraints.setNeedsClarification(!missing.isEmpty());
@@ -338,7 +430,10 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private int parseNumber(String value) {
         try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { }
-        if (value.length() == 1) return "一二三四五六七八九".indexOf(value) + 1;
+        if (value.length() == 1) {
+            if ("两".equals(value)) return 2;
+            return "一二三四五六七八九".indexOf(value) + 1;
+        }
         if (value.equals("十")) return 10;
         if (value.startsWith("十")) return 10 + parseNumber(value.substring(1));
         if (value.endsWith("十")) return parseNumber(value.substring(0, value.length() - 1)) * 10;
@@ -347,6 +442,69 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
             return parseNumber(parts[0]) * 10 + (parts.length > 1 && !parts[1].isBlank() ? parseNumber(parts[1]) : 0);
         }
         return 2;
+    }
+
+    private int parseMinutesFromTime(String period, String timeStr, String halfStr) {
+        if (timeStr == null || timeStr.isBlank()) return -1;
+        double hour = 0;
+        int minute = 0;
+        if (timeStr.contains(":")) {
+            String[] parts = timeStr.split(":", 2);
+            hour = parseNumber(parts[0].trim());
+            if (parts.length > 1 && !parts[1].isBlank()) {
+                minute = (int) Math.round(parseDecimalOrChinese(parts[1].trim()));
+            }
+        } else {
+            hour = parseDecimalOrChinese(timeStr.trim());
+        }
+        if ("半".equals(halfStr)) {
+            minute += 30;
+        }
+
+        if (period != null) {
+            if ((period.contains("下午") || period.contains("晚上") || period.contains("傍晚") || period.contains("夜间")) && hour < 12) {
+                hour += 12;
+            } else if (period.contains("中午") && hour < 11) {
+                hour += 12;
+            }
+        }
+        return (int) Math.round(hour * 60 + minute);
+    }
+
+    private int parseTimeBudgetMinutes(String value) {
+        if (value == null || value.isBlank()) return 0;
+        String normalized = value.replace(" ", "");
+        if (normalized.equals("半天")) return 4 * 60;
+        Matcher hours = Pattern.compile("^([0-9.]+|[一二两三四五六七八九十百]+)(?:个)?(?:小时|钟头|时)$").matcher(normalized);
+        if (hours.matches()) {
+            return Math.max(1, (int) Math.round(parseDecimalOrChinese(hours.group(1)) * 60));
+        }
+        Matcher minutes = Pattern.compile("^([0-9.]+|[一二两三四五六七八九十百]+)(?:个)?分钟$").matcher(normalized);
+        if (minutes.matches()) {
+            return Math.max(1, (int) Math.round(parseDecimalOrChinese(minutes.group(1))));
+        }
+        return 0;
+    }
+
+    private double parseDecimalOrChinese(String value) {
+        try { return Double.parseDouble(value); } catch (NumberFormatException ignored) { }
+        return parseNumber(value);
+    }
+
+    private String normalizeStartPlace(String value) {
+        if (value == null || value.isBlank()) return "未提供";
+        String normalized = value.trim()
+                .replaceFirst("^(?:的|在)\\s*", "")
+                .replaceFirst("(?:出发|开始|作为起点)$", "")
+                .replaceAll("\\s*(?:从)?(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*\\d{1,2}(?::\\d{2})?(?:点|时)?(?:半)?\\s*(?:到|至|\\-|~|——|—).*", "")
+                .replaceFirst("(?:为我|给我|帮我|请|想|要)?(?:规划|安排|推荐|玩玩|玩耍|旅游|出行).*$", "")
+                .trim();
+        return normalized.isBlank() ? "未提供" : normalized;
+    }
+
+    private boolean isTemporalWord(String word) {
+        if (word == null || word.isBlank()) return true;
+        return word.matches(".*(今天|今日|明天|后天|周[一二三四五六日天]|星期[一二三四五六日天]|上午|中午|下午|傍晚|晚上|夜间|早上|晨间|早晨|现在|目前|随时|何时).*");
     }
 
     private String nullToEmpty(String value) { return value == null ? "" : value; }

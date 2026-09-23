@@ -87,6 +87,19 @@ class JwtAuthFilterTest {
     }
 
     @Test
+    void searchBaiduMayBeAnonymous() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/ai/search/baidu");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilterInternal(request, response, chain);
+
+        assertEquals(200, response.getStatus());
+        assertTrue(chain.getRequest() != null);
+        assertTrue(UserContext.isAnonymous());
+    }
+
+    @Test
     void unknownNestedAttractionRouteIsNotAnonymous() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/ai/attractions/cq-1/admin");
         MockHttpServletResponse response = new MockHttpServletResponse();

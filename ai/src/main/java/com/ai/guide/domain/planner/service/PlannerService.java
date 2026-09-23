@@ -567,18 +567,45 @@ public class PlannerService implements PlanningApplicationService {
         if (parsed.originOf("durationDays") == com.ai.guide.domain.planner.model.ConstraintOrigin.PROMPT && parsed.getDurationDays() > 0) {
             constraints.setDurationDays(parsed.getDurationDays());
         }
-        Map<String, Object> trip = plannerV1Enabled
-                ? itineraryBuilder.build(1, constraints)
-                : itineraryBuilder.buildLegacy(1, constraints);
-        // Provider calls mutate only this in-memory result; they never write a
-        // planner session or formal Trip.
-        amapPlannerGateway.hydrate(trip);
+        Map<String, Object> trip = null;
+        if (plannerV1Enabled && constraints.hasExplicitSpatialRequest()) {
+            trip = amapPlannerGateway.planFromLocation(constraints, 1);
+            if (trip != null && isTripEmpty(trip)) {
+                log.warn("基于起点的周边动态规划未生成有效站点 (startPlace={})，自动降级为全城路线规划以确保行程可用",
+                        constraints.getStartPlace());
+                trip = null;
+            }
+        }
+        if (trip == null) {
+            trip = plannerV1Enabled
+                    ? itineraryBuilder.build(1, constraints)
+                    : itineraryBuilder.buildLegacy(1, constraints);
+            // Provider calls mutate only this in-memory result; they never write a
+            // planner session or formal Trip.
+            amapPlannerGateway.hydrate(trip);
+        }
 
-        if (plannerV1Enabled && groundedNarrativeService != null) {
+        if (plannerV1Enabled && groundedNarrativeService != null
+                && !constraints.hasExplicitSpatialRequest()) {
             groundedNarrativeService.enhanceTrip(trip, constraints, resolved.snapshot());
         }
 
         return new PlanningComputation(constraints, resolved.snapshot(), trip);
+    }
+
+    private boolean isTripEmpty(Map<String, Object> trip) {
+        if (trip == null || trip.isEmpty()) return true;
+        Object daysObj = trip.get("days");
+        if (!(daysObj instanceof List<?> days) || days.isEmpty()) return true;
+        for (Object dayObj : days) {
+            if (dayObj instanceof Map<?, ?> day) {
+                Object stopsObj = day.get("stops");
+                if (stopsObj instanceof List<?> stops && !stops.isEmpty()) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private Map<String, Object> shadowTripResponse(Map<String, Object> trip) {
@@ -844,4 +871,13 @@ public class PlannerService implements PlanningApplicationService {
                                        Map<String, Object> trip) { }
     private record StopLocation(List<Map<String, Object>> stops, int index, Map<String, Object> stop) { }
     private record Ranked(Attraction attraction, int score) { }
+
+    public static String stripTrailingPunctuation(String text) {
+        if (text == null) return "";
+        String trimmed = text.trim();
+        while (trimmed.endsWith("。") || trimmed.endsWith(".") || trimmed.endsWith("；") || trimmed.endsWith(";")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
+        }
+        return trimmed;
+    }
 }

@@ -23,12 +23,14 @@ class AmapWebServiceClientTest {
                 "https://restapi.amap.com/", "test-key");
 
         URI poi = client.buildPoiTextRequest("洪崖洞", "重庆");
+        URI diningPoi = client.buildPoiTextRequest("璧山", "重庆", "050000", "navi");
         URI walking = client.buildWalkingRequest("106.000,29.000", "106.010,29.010");
         URI transit = client.buildTransitRequest("106.000,29.000", "106.010,29.010", "重庆");
 
         assertEquals("/v5/place/text", poi.getPath());
         assertTrue(poi.getQuery().contains("key=test-key"));
         assertTrue(poi.getQuery().contains("show_fields=navi"));
+        assertTrue(diningPoi.getQuery().contains("types=050000"));
         assertEquals("/v5/direction/walking", walking.getPath());
         assertTrue(walking.getQuery().contains("show_fields=cost,navi,polyline"));
         assertEquals("/v5/direction/transit/integrated", transit.getPath());

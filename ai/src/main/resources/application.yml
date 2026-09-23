@@ -1,4 +1,4 @@
-﻿spring:
+spring:
   main:
     allow-bean-definition-overriding: true
   servlet:
@@ -28,11 +28,12 @@
       chat:
         options:
           model: "${DEEPSEEK_MODEL:deepseek-v4-flash}"
-          max-tokens: 2000
+          max-tokens: "${DEEPSEEK_MAX_TOKENS:8192}"
           temperature: 0.3
 alibabacloud:
   dashscope:
     api-key: "${DASHSCOPE_API_KEY:}"
+    embedding-url: "${DASHSCOPE_EMBEDDING_URL:https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding}"
 bailian:
   rerank-url: "${BAILIAN_RERANK_URL:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}"
 qdrant:
@@ -76,6 +77,9 @@ planner:
       timeout-ms: "${PLANNER_LLM_NARRATIVE_TIMEOUT_MS:30000}"
 context:
   keep-recent: 12
+chat:
+  stream:
+    timeout-ms: "${CHAT_STREAM_TIMEOUT_MS:120000}"
 # 业务元数据数据库。生产环境在 Zeabur 配置 KNOWLEDGE_DB_TYPE=postgresql、
 # KNOWLEDGE_DB_URL、KNOWLEDGE_DB_USERNAME、KNOWLEDGE_DB_PASSWORD；本地默认 SQLite。
 knowledge:

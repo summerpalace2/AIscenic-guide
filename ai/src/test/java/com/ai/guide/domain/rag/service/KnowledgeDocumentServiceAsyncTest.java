@@ -47,7 +47,7 @@ class KnowledgeDocumentServiceAsyncTest {
 
             assertTrue(completed.await(2, TimeUnit.SECONDS));
             assertEquals("test-knowledge-index", threadName.get());
-            verify(jdbcTemplate).update(
+            verify(jdbcTemplate, org.mockito.Mockito.timeout(2000)).update(
                     contains("vector_status = 'synced'"),
                     eq("text-doc-1"), eq(3), eq("doc-1"));
         } finally {
