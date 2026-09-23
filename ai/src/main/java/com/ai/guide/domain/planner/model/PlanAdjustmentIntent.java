@@ -32,6 +32,10 @@ public class PlanAdjustmentIntent {
     private String replacementPlaceId;
     private Integer reduceCount;
     private String condition;
+    private String startPlace;
+    private Integer timeBudgetMinutes;
+    private Integer durationDays;
+    private String targetPlace;
     @Builder.Default
     private List<String> preferences = new ArrayList<>();
     @Builder.Default
@@ -66,6 +70,7 @@ public class PlanAdjustmentIntent {
                 case PLACE_QUESTION -> "QA";
                 case APPLY_REPLACEMENT -> "APPLY_REPLACEMENT";
                 case CLARIFICATION -> "CLARIFICATION";
+                case PLAN -> "PLAN";
                 case UNKNOWN -> "UNKNOWN";
             };
         }
@@ -77,6 +82,10 @@ public class PlanAdjustmentIntent {
         map.put("type", type == null ? ConversationIntentType.UNKNOWN.name() : type.name());
         map.put("operation", getOperation());
         if (scope != null && !scope.isBlank()) map.put("scope", scope);
+        if (startPlace != null && !startPlace.isBlank()) map.put("startPlace", startPlace);
+        if (timeBudgetMinutes != null) map.put("timeBudgetMinutes", timeBudgetMinutes);
+        if (durationDays != null) map.put("durationDays", durationDays);
+        if (targetPlace != null && !targetPlace.isBlank()) map.put("targetPlace", targetPlace);
         if (targetDayReference != null && !targetDayReference.isBlank()) map.put("targetDayReference", targetDayReference);
         if (dayNumber != null) map.put("dayNumber", dayNumber);
         if (targetStopReference != null && !targetStopReference.isBlank()) map.put("targetStopReference", targetStopReference);

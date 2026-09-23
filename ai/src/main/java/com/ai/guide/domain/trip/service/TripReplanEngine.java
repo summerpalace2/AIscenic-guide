@@ -79,7 +79,7 @@ public class TripReplanEngine {
                 stopId,
                 safeValue(target.stop().get("time"), "待安排"),
                 safeValue(target.stop().get("duration"), replacement.getDuration()),
-                "因为“" + reason + "”，换成更合适的" + replacement.getName() + "（" + replacement.getSummary() + "）。",
+                "因为“" + reason + "”，换成更合适的" + replacement.getName() + "（" + com.ai.guide.domain.planner.service.PlannerService.stripTrailingPunctuation(replacement.getSummary()) + "）。",
                 "这是服务端局部替换，仅改变目标站点；" + replacement.getIntro());
         copyConstraintAnnotations(target.stop(), newStop);
         target.stops().set(target.index(), newStop);

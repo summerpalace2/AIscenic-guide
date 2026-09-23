@@ -19,9 +19,12 @@ public interface ItineraryBuilderPort {
     Map<String, Object> createStop(Attraction attraction, String stopId, String time,
                                   String duration, String summary, String detail);
 
+    Map<String, Object> createDiningStop(AttractionDiningKnowledge.DiningOption dining, String stopId, String time, String district);
+
     Attraction attraction(String id);
 
     List<Attraction> attractionServiceList();
 
     int catalogRank(String attractionId);
 }
+

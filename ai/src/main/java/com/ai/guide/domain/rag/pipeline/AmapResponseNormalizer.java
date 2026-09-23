@@ -29,6 +29,17 @@ final class AmapResponseNormalizer {
         for (JsonNode poi : pois) {
             JsonNode navigation = poi.path("navi");
             Photo photo = firstPhoto(poi.path("photos"));
+            JsonNode business = poi.path("business");
+            Double rating = parseRating(text(business, "rating"));
+            String rectag = text(business, "rectag");
+            String keytag = text(business, "keytag");
+            String tag = text(business, "tag");
+            List<String> tags = new ArrayList<>();
+            if (rectag != null && !rectag.isBlank()) tags.add(rectag);
+            if (keytag != null && !keytag.isBlank() && !tags.contains(keytag)) tags.add(keytag);
+            if (tag != null && !tag.isBlank() && !tags.contains(tag)) tags.add(tag);
+            String heatTag = String.join(";", tags);
+
             result.add(new PoiCandidate(
                     text(poi, "id"),
                     text(poi, "name"),
@@ -41,7 +52,9 @@ final class AmapResponseNormalizer {
                             coordinate(text(navigation, "exit_location"))),
                     text(poi, "navi_poiid"),
                     photo.url(),
-                    photo.title()
+                    photo.title(),
+                    rating,
+                    heatTag
             ));
         }
         return List.copyOf(result);
@@ -228,6 +241,16 @@ final class AmapResponseNormalizer {
         return value == null || value.isNull() ? null : value.asText();
     }
 
+    private static Double parseRating(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            double r = Double.parseDouble(value.trim());
+            return r > 0 ? r : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
     public record Coordinate(double longitude, double latitude) {
     }
 
@@ -241,8 +264,24 @@ final class AmapResponseNormalizer {
             Coordinate navigationExit,
             String navigationPoiId,
             String photoUrl,
-            String photoTitle
+            String photoTitle,
+            Double rating,
+            String heatTag
     ) {
+        public PoiCandidate(
+                String poiId,
+                String name,
+                Coordinate coordinate,
+                String address,
+                String type,
+                Coordinate navigationEntrance,
+                Coordinate navigationExit,
+                String navigationPoiId,
+                String photoUrl,
+                String photoTitle
+        ) {
+            this(poiId, name, coordinate, address, type, navigationEntrance, navigationExit, navigationPoiId, photoUrl, photoTitle, null, null);
+        }
     }
 
     private record Photo(String url, String title) {

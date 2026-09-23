@@ -64,6 +64,13 @@ public class AttractionService {
 
         List<String> companionTags = readTags(rs.getString("companion_tags"));
         List<String> featureTags = readTags(rs.getString("feature_tags"));
+        String photoUrl = "";
+        try {
+            photoUrl = rs.getString("photo_url");
+        } catch (Exception ignored) {}
+        if (photoUrl == null || "null".equalsIgnoreCase(photoUrl)) {
+            photoUrl = "";
+        }
 
         return Attraction.builder()
                 .id(rs.getString("id"))
@@ -90,6 +97,8 @@ public class AttractionService {
                 .recommendedVisitMinutes((Integer) rs.getObject("recommended_visit_minutes"))
                 .companionTags(companionTags)
                 .featureTags(featureTags)
+                .photoUrl(photoUrl)
+                .image(photoUrl)
                 .build();
     }
 

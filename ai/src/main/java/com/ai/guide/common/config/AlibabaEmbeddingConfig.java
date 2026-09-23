@@ -44,12 +44,12 @@ public class AlibabaEmbeddingConfig {
     }
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private static final String EMBEDDING_URL =
-            "https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding";
+    @Value("${alibabacloud.dashscope.embedding-url:${DASHSCOPE_EMBEDDING_URL:https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding}}")
+    private String embeddingUrl;
 
     @Bean
     public EmbeddingModel embeddingModel() {
-        return new DashScopeEmbeddingModel(apiKey, restTemplate, objectMapper);
+        return new DashScopeEmbeddingModel(apiKey, embeddingUrl, restTemplate, objectMapper);
     }
 
     /** 单文本向量化（供项目内部使用） */
@@ -60,11 +60,13 @@ public class AlibabaEmbeddingConfig {
     /** Spring AI EmbeddingModel 实现 */
     private class DashScopeEmbeddingModel extends AbstractEmbeddingModel {
         private final String apiKey;
+        private final String embeddingUrl;
         private final RestTemplate restTemplate;
         private final ObjectMapper objectMapper;
 
-        DashScopeEmbeddingModel(String apiKey, RestTemplate restTemplate, ObjectMapper objectMapper) {
+        DashScopeEmbeddingModel(String apiKey, String embeddingUrl, RestTemplate restTemplate, ObjectMapper objectMapper) {
             this.apiKey = apiKey;
+            this.embeddingUrl = embeddingUrl;
             this.restTemplate = restTemplate;
             this.objectMapper = objectMapper;
         }
@@ -106,7 +108,7 @@ public class AlibabaEmbeddingConfig {
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
             try {
-                String response = restTemplate.postForObject(EMBEDDING_URL, request, String.class);
+                String response = restTemplate.postForObject(embeddingUrl, request, String.class);
                 return parseResponse(response);
             } catch (Exception e) {
                 log.error("[Embedding] 调用失败: {}", e.getMessage());

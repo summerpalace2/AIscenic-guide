@@ -5,6 +5,7 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.attraction.service.AttractionMediaService;
+import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
 import com.ai.guide.domain.rag.service.ProductionV2FactQueryService;
 import com.ai.guide.domain.trip.service.TripPlanService;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -35,15 +36,18 @@ public class AttractionController {
     private final AttractionMediaService attractionMediaService;
     private final TripPlanService tripPlanService;
     private final ProductionV2FactQueryService productionV2FactQueryService;
+    private final RuntimeAttractionDetailService runtimeAttractionDetailService;
 
     public AttractionController(AttractionService attractionService,
                                 AttractionMediaService attractionMediaService,
                                 TripPlanService tripPlanService,
-                                ProductionV2FactQueryService productionV2FactQueryService) {
+                                ProductionV2FactQueryService productionV2FactQueryService,
+                                RuntimeAttractionDetailService runtimeAttractionDetailService) {
         this.attractionService = attractionService;
         this.attractionMediaService = attractionMediaService;
         this.tripPlanService = tripPlanService;
         this.productionV2FactQueryService = productionV2FactQueryService;
+        this.runtimeAttractionDetailService = runtimeAttractionDetailService;
     }
 
     @GetMapping
@@ -55,7 +59,13 @@ public class AttractionController {
     }
 
     @GetMapping("/{id}")
-    public Result<Attraction> get(@PathVariable String id) {
+    public Result<?> get(@PathVariable String id) {
+        if (id != null && (id.startsWith("amap-") || id.startsWith("runtime-stop-"))) {
+            Map<String, Object> runtimeDetail = runtimeAttractionDetailService.detail(id);
+            return runtimeDetail == null
+                    ? Result.error(404, "高德未返回该动态景点详情")
+                    : Result.success("查询成功", runtimeDetail);
+        }
         Attraction attraction = attractionService.get(id);
         if (attraction == null) {
             return Result.error(404, "景点不存在");
@@ -69,6 +79,12 @@ public class AttractionController {
      */
     @GetMapping("/{id}/facts")
     public Result<Map<String, Object>> getFacts(@PathVariable String id) {
+        if (id != null && (id.startsWith("amap-") || id.startsWith("runtime-stop-"))) {
+            Map<String, Object> runtimeDetail = runtimeAttractionDetailService.detail(id);
+            return runtimeDetail == null
+                    ? Result.error(404, "高德未返回该动态景点详情")
+                    : Result.success("查询成功", runtimeDetail);
+        }
         Map<String, Object> detail = productionV2FactQueryService.detail(id);
         if (detail == null && !UserContext.isAnonymous()) {
             detail = tripPlanService.findAttraction(UserContext.getUserId(), id);

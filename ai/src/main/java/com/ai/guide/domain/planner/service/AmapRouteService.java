@@ -4,11 +4,16 @@ import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.net.SocketTimeoutException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,8 +37,10 @@ import java.util.function.Supplier;
 @Service
 public class AmapRouteService {
 
+    private static final Logger log = LoggerFactory.getLogger(AmapRouteService.class);
+
     public enum OutcomeStatus {
-        SUCCESS, UNAVAILABLE, TIMEOUT, INVALID, UNSUPPORTED, RATE_LIMITED
+        SUCCESS, UNAVAILABLE, TIMEOUT, INVALID, UNSUPPORTED, RATE_LIMITED, AUTH_ERROR, TLS_ERROR
     }
 
     private final AmapWebServiceClient client;
@@ -56,7 +63,7 @@ public class AmapRouteService {
             AmapWebServiceClient client,
             @Value("${amap.web-service.timeout-ms:6000}") int requestTimeoutMs,
             @Value("${amap.web-service.route-timeout-ms:6500}") int routeTimeoutMs,
-            @Value("${amap.web-service.max-concurrency:2}") int maxConcurrency,
+            @Value("${amap.web-service.max-concurrency:4}") int maxConcurrency,
             @Value("${amap.web-service.request-cache.enabled:true}") boolean requestCacheEnabled,
             @Value("${amap.web-service.request-cache.dedup-enabled:true}") boolean requestDedupEnabled,
             @Value("${amap.web-service.request-cache.max-entries:256}") int requestCacheMaxEntries,
@@ -135,6 +142,10 @@ public class AmapRouteService {
     }
 
     public PoiOutcome searchPoi(String keywords, String city) {
+        return searchPoi(keywords, city, null);
+    }
+
+    public PoiOutcome searchPoi(String keywords, String city, String types) {
         if (keywords == null || keywords.isBlank()) {
             return new PoiOutcome(OutcomeStatus.INVALID, List.of(), "POI 关键词为空", Instant.now());
         }
@@ -142,19 +153,91 @@ public class AmapRouteService {
             return new PoiOutcome(OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
         }
         AmapRequestCache.RequestKey key = key("poi-text", "v5/place/text",
-                keywords, city, "business,navi,photos", "true", "10");
+                keywords, city, types == null ? "" : types, "business,navi,photos", "true", "20");
         return requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
-                () -> loadPoi(keywords, city), outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+                () -> loadPoi(keywords, city, types), outcome -> outcome.status() == OutcomeStatus.SUCCESS);
     }
 
-    private PoiOutcome loadPoi(String keywords, String city) {
+    private PoiOutcome loadPoi(String keywords, String city, String types) {
         try {
             JsonNode response = execute(
-                    () -> client.get(client.buildPoiTextRequest(keywords, city, "business,navi,photos")),
+                    () -> client.get(client.buildPoiTextRequest(keywords, city, types, "business,navi,photos")),
                     requestTimeoutMs,
                     1);
             return new PoiOutcome(OutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizePois(response), "", Instant.now());
+        } catch (RuntimeException failure) {
+            ProviderFailure classified = observe(asProviderFailure(failure));
+            return new PoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
+        }
+    }
+
+    public PoiOutcome searchAround(String location, int radiusMeters, String types,
+                                   String keywords, String city) {
+        return searchAround(location, radiusMeters, types, keywords, city, 1);
+    }
+
+    public PoiOutcome searchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
+        if (client == null) {
+            return searchAround(location, radiusMeters, types, keywords, city);
+        }
+        return executeSearchAround(location, radiusMeters, types, keywords, city, pages);
+    }
+
+    private PoiOutcome executeSearchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
+        if (location == null || location.isBlank() || !validCoordinate(location)) {
+            return new PoiOutcome(OutcomeStatus.INVALID, List.of(), "周边搜索坐标无效", Instant.now());
+        }
+        if (!isConfigured()) {
+            return new PoiOutcome(OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
+        }
+        int effectivePages = Math.max(1, Math.min(6, pages));
+        AmapRequestCache.RequestKey key = key("poi-around", "v5/place/around",
+                location, String.valueOf(radiusMeters), types == null ? "" : types,
+                keywords == null ? "" : keywords, city == null ? "" : city, String.valueOf(effectivePages), "weight");
+        return requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+                () -> loadPoiAround(location, radiusMeters, types, keywords, effectivePages),
+                outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+    }
+
+    private PoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords) {
+        return loadPoiAround(location, radiusMeters, types, keywords, 1);
+    }
+
+    private PoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords, int pages) {
+        List<AmapResponseNormalizer.PoiCandidate> allCandidates = new ArrayList<>();
+        Set<String> seenPoiIds = new HashSet<>();
+        try {
+            for (int page = 1; page <= pages; page++) {
+                final int p = page;
+                try {
+                    JsonNode response = execute(
+                            () -> client.get(client.buildPoiAroundRequest(location, radiusMeters, types, keywords, "business,navi,photos", p, "weight")),
+                            requestTimeoutMs,
+                            0);
+                    List<AmapResponseNormalizer.PoiCandidate> pageList = AmapResponseNormalizer.normalizePois(response);
+                    if (pageList == null || pageList.isEmpty()) {
+                        break;
+                    }
+                    for (AmapResponseNormalizer.PoiCandidate c : pageList) {
+                        String id = c.poiId() != null && !c.poiId().isBlank() ? c.poiId() : c.name();
+                        if (id != null && seenPoiIds.add(id)) {
+                            allCandidates.add(c);
+                        }
+                    }
+                    if (pageList.size() < 25) {
+                        break;
+                    }
+                } catch (RuntimeException pageFailure) {
+                    if (!allCandidates.isEmpty()) {
+                        log.warn("高德周边搜索第 {} 页异常 ({})，但前序页面已获取 {} 个有效候选，优雅降级返回已获取候选",
+                                p, pageFailure.getMessage(), allCandidates.size());
+                        break;
+                    }
+                    throw pageFailure;
+                }
+            }
+            return new PoiOutcome(OutcomeStatus.SUCCESS, allCandidates, "", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
             return new PoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
@@ -386,6 +469,9 @@ public class AmapRouteService {
             if (isRateLimited(responseFailure.info(), responseFailure.infocode(), responseFailure.getMessage())) {
                 return new ProviderFailure(OutcomeStatus.RATE_LIMITED, responseFailure.getMessage(), false, false);
             }
+            if (isAuthError(responseFailure.info(), responseFailure.infocode(), responseFailure.getMessage())) {
+                return new ProviderFailure(OutcomeStatus.AUTH_ERROR, responseFailure.getMessage(), false, false);
+            }
             boolean compatibility = isCompatibilityFailure(responseFailure.info(), responseFailure.getMessage());
             return new ProviderFailure(OutcomeStatus.UNAVAILABLE, responseFailure.getMessage(), false, compatibility);
         }
@@ -394,6 +480,13 @@ public class AmapRouteService {
         }
         Throwable cursor = cause;
         while (cursor != null) {
+            if (cursor instanceof javax.net.ssl.SSLException
+                    || cursor instanceof javax.net.ssl.SSLHandshakeException
+                    || String.valueOf(cursor.getMessage()).contains("handshake")
+                    || String.valueOf(cursor.getMessage()).contains("SSL")
+                    || String.valueOf(cursor.getMessage()).contains("TLS")) {
+                return new ProviderFailure(OutcomeStatus.TLS_ERROR, "高德TLS握手失败: " + cursor.getMessage(), true, false);
+            }
             if (cursor instanceof SocketTimeoutException || cursor instanceof TimeoutException
                     || String.valueOf(cursor.getMessage()).toLowerCase().contains("timeout")) {
                 return new ProviderFailure(OutcomeStatus.TIMEOUT, "高德接口超时", true, true);
@@ -401,6 +494,13 @@ public class AmapRouteService {
             cursor = cursor.getCause();
         }
         return new ProviderFailure(OutcomeStatus.UNAVAILABLE, "高德接口暂不可用", true, true);
+    }
+
+    private boolean isAuthError(String info, String infocode, String message) {
+        String text = (String.valueOf(info) + " " + String.valueOf(infocode) + " " + String.valueOf(message))
+                .toUpperCase(java.util.Locale.ROOT);
+        return text.contains("10001") || text.contains("10002") || text.contains("10008")
+                || text.contains("10012") || text.contains("10013");
     }
 
     private boolean isRateLimited(String info, String infocode, String message) {

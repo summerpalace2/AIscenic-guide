@@ -33,15 +33,50 @@ public class AmapWebServiceClient {
     }
 
     public URI buildPoiTextRequest(String keywords, String city) {
-        return buildPoiTextRequest(keywords, city, "navi");
+        return buildPoiTextRequest(keywords, city, null, "navi");
     }
 
     public URI buildPoiTextRequest(String keywords, String city, String showFields) {
+        return buildPoiTextRequest(keywords, city, null, showFields);
+    }
+
+    public URI buildPoiTextRequest(String keywords, String city, String types, String showFields) {
         return request("/v5/place/text")
                 .queryParam("keywords", required(keywords, "keywords"))
                 .queryParamIfPresent("city", optional(city))
                 .queryParam("citylimit", "true")
-                .queryParam("page_size", "10")
+                .queryParam("page_size", "20")
+                .queryParamIfPresent("types", optional(types))
+                .queryParamIfPresent("show_fields", optional(showFields))
+                .build()
+                .toUri();
+    }
+
+    /**
+     * Searches POIs around a resolved coordinate. The caller owns the semantic
+     * query; this client only builds the provider request and does not contain
+     * attraction names or city-specific routing rules.
+     */
+    public URI buildPoiAroundRequest(String location, int radiusMeters, String types,
+                                     String keywords, String showFields) {
+        return buildPoiAroundRequest(location, radiusMeters, types, keywords, showFields, 1, "weight");
+    }
+
+    public URI buildPoiAroundRequest(String location, int radiusMeters, String types,
+                                     String keywords, String showFields, int pageNum) {
+        return buildPoiAroundRequest(location, radiusMeters, types, keywords, showFields, pageNum, "weight");
+    }
+
+    public URI buildPoiAroundRequest(String location, int radiusMeters, String types,
+                                     String keywords, String showFields, int pageNum, String sortrule) {
+        return request("/v5/place/around")
+                .queryParam("location", required(location, "location"))
+                .queryParam("radius", Math.max(1, radiusMeters))
+                .queryParam("sortrule", (sortrule == null || sortrule.isBlank()) ? "weight" : sortrule)
+                .queryParam("page_size", "25")
+                .queryParam("page_num", Math.max(1, pageNum))
+                .queryParamIfPresent("types", optional(types))
+                .queryParamIfPresent("keywords", optional(keywords))
                 .queryParamIfPresent("show_fields", optional(showFields))
                 .build()
                 .toUri();

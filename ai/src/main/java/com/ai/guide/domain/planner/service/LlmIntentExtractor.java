@@ -43,16 +43,20 @@ public class LlmIntentExtractor {
     private static final Pattern EXPLICIT_COUNT_PATTERN = Pattern.compile("少(?:推荐|安排)?\\s*([一二两三四五1234567890]+)\\s*个|少两个|少两个景点");
 
     private static final String SYSTEM_PROMPT = """
-            你是“渝游智策”行程详情页的自然语言意图理解器。
-            根据用户对当前行程的调整诉求或提问，结合给出的行程上下文（天数、站点名与ID、当前选定状态），提取结构化意图 JSON。
+            你是“渝游智策”的自然语言意图理解器（负责首页规划及行程调整）。
+            根据用户的新建行程诉求、行程调整诉求或提问，结合给出的行程上下文（若有），提取结构化意图 JSON。
 
             你必须仅输出一个合法的 JSON 对象，不要包含 Markdown 围栏代码块（```json）或其他解释文字。
 
             JSON 结构与字段定义：
             {
-              "operation": "REPLACE_STOP | ADD_STOP | REMOVE_STOP | REPLAN_DAY | REDUCE_DENSITY | APPLY_REPLACEMENT | QA | UNKNOWN",
-              "intentType": "同 operation 映射值，如 SUGGEST_REPLACEMENTS, ADD_STOP, REMOVE_STOP, REPLAN_DAY, REDUCE_DAY_DENSITY, PLACE_QUESTION, CLARIFICATION, UNKNOWN",
+              "operation": "PLAN | REPLACE_STOP | ADD_STOP | REMOVE_STOP | REPLAN_DAY | REDUCE_DENSITY | APPLY_REPLACEMENT | QA | UNKNOWN",
+              "intentType": "同 operation 映射值，如 PLAN, SUGGEST_REPLACEMENTS, ADD_STOP, REMOVE_STOP, REPLAN_DAY, REDUCE_DAY_DENSITY, PLACE_QUESTION, CLARIFICATION, UNKNOWN",
               "scope": "STOP | DAY | TRIP",
+              "startPlace": "用户明确提到的出发地点或当前所在位置(如 重庆邮电大学、重庆江津、南山、解放碑)或 null",
+              "timeBudgetMinutes": 整数(如3小时填180，半天填240，2小时填120，6小时填360)或 null,
+              "durationDays": 整数(如两天填2，三日游填3)或 null,
+              "targetPlace": "用户提到的目标目的地或片区(如 江津、武隆、南岸区)或 null",
               "targetDayReference": "第二天/明天/首日/8月30日 等原始词或 null",
               "targetDay": 整数(如1, 2, 3)或 null,
               "targetStopReference": "李子坝/这个景点/三峡博物馆 等原始词或 null",
@@ -66,10 +70,15 @@ public class LlmIntentExtractor {
               "requestedReductionCount": 整数或 null,
               "confidence": 0.0 到 1.0 的浮点数,
               "requiresClarification": true 或 false,
-              "clarificationQuestion": "当关键信息缺失导致无法生成确定性调整方案时的单轮澄清问题，否则为 null"
+              "clarificationQuestion": "当关键信息缺失导致无法生成确定性方案时的单轮澄清问题，否则为 null"
             }
 
             意图分类指南：
+            0. PLAN：用户请求生成一份新旅行规划或推荐路线（例如：“我在重庆邮电大学，给我3小时的旅游规划”、“我在江津，给我2小时的旅游规划”、“周末去重庆玩两天，喜欢城市夜景”、“下午想在附近逛逛”）。
+               - 若用户明确表达了在某个地点（如“在重邮”、“人在重庆北站”、“位于解放碑”、“我在江津”），提取 startPlace（如果用户提到的是简称如“重邮”，可标准化为“重庆邮电大学”或保留“重邮”）。注意：startPlace 仅包含纯地点名称，严禁混入后面的时间范围（如“重庆邮电大学 10点到17点”必须提取 startPlace 为“重庆邮电大学”）。
+               - 若用户提供了时间限制（如“3小时”、“半天”、“120分钟”、“6小时”）或时间区间（如“10点到17点”、“9:00-18:00”、“从上午10点至下午5点”），换算为总分钟数填入 timeBudgetMinutes（例如“10点到17点”换算为420分钟），并同时将 durationDays 填入 1。
+               - 若用户提供了多日时间（如“玩两天”、“3日游”），填入 durationDays。
+               - 若用户想要周边规划但完全没有提供出发地点（如“下午想在附近逛逛”、“给我推荐几个附近的景点”），请将 requiresClarification 设为 true，并在 clarificationQuestion 中引导用户提供当前所在位置（如“请问您当前在哪个位置？告诉我您的出发点，我来为您规划附近路线。”）。
             1. REPLACE_STOP (SUGGEST_REPLACEMENTS)：用户想替换、更换某个景点（如“换掉李子坝”、“这个景点不想去，有替换方案吗”）。
             2. ADD_STOP：用户想在某天添加或增加景点（如“第二天加上北仓”、“第1天加个室内景点”）。
             3. REMOVE_STOP：用户想删除或移除某个景点（如“删除李子坝”、“把这个景点去掉”）。
@@ -148,6 +157,10 @@ public class LlmIntentExtractor {
         this.modelExecutor = modelExecutor;
     }
 
+    public LlmIntentExtractionResult extractPlanningIntent(String message) {
+        return extract(message, new PlanPageContext(), null);
+    }
+
     public LlmIntentExtractionResult extract(String message, PlanPageContext context) {
         return extract(message, context, null);
     }
@@ -218,6 +231,10 @@ public class LlmIntentExtractor {
         }
 
         String scope = textValue(root, "scope");
+        String startPlace = textValue(root, "startPlace");
+        Integer timeBudgetMinutes = integerValue(root, "timeBudgetMinutes");
+        Integer durationDays = integerValue(root, "durationDays");
+        String targetPlace = textValue(root, "targetPlace");
         String targetDayRef = textValue(root, "targetDayReference");
         Integer targetDay = integerValue(root, "targetDay");
         String targetStopRef = textValue(root, "targetStopReference");
@@ -252,6 +269,10 @@ public class LlmIntentExtractor {
                 .type(type)
                 .operation(opValue)
                 .scope(scope)
+                .startPlace(startPlace)
+                .timeBudgetMinutes(timeBudgetMinutes)
+                .durationDays(durationDays)
+                .targetPlace(targetPlace)
                 .targetDayReference(targetDayRef)
                 .dayNumber(targetDay)
                 .targetStopReference(targetStopRef)
@@ -279,6 +300,7 @@ public class LlmIntentExtractor {
     private static ConversationIntentType mapOperationToType(String op) {
         String normalized = op.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
+            case "PLAN" -> ConversationIntentType.PLAN;
             case "REPLACE_STOP", "SUGGEST_REPLACEMENTS" -> ConversationIntentType.SUGGEST_REPLACEMENTS;
             case "ADD_STOP" -> ConversationIntentType.ADD_STOP;
             case "REMOVE_STOP" -> ConversationIntentType.REMOVE_STOP;
@@ -324,10 +346,15 @@ public class LlmIntentExtractor {
                 ? deterministic.getTargetStopReference() : llm.getTargetStopReference();
         String targetDayReference = safeText(deterministic.getTargetDayReference()) != null
                 ? deterministic.getTargetDayReference() : llm.getTargetDayReference();
+        String startPlace = safeText(llm.getStartPlace()) != null
+                ? llm.getStartPlace() : safeText(deterministic.getStartPlace());
+        Integer timeBudgetMinutes = llm.getTimeBudgetMinutes() != null
+                ? llm.getTimeBudgetMinutes() : deterministic.getTimeBudgetMinutes();
+        Integer durationDays = llm.getDurationDays() != null
+                ? llm.getDurationDays() : deterministic.getDurationDays();
+        String targetPlace = safeText(llm.getTargetPlace()) != null
+                ? llm.getTargetPlace() : safeText(deterministic.getTargetPlace());
         String selectedStop = safeText(context.getSelectedStopId());
-        String targetStop = safeText(targetAttraction) != null ? null
-                : safeText(deterministic.getTargetStopId()) != null ? deterministic.getTargetStopId()
-                : safeText(llm.getTargetStopId()) != null ? llm.getTargetStopId() : selectedStop;
         String condition = deterministic.getType() == ConversationIntentType.REPLAN_DAY_FOR_CONDITION
                 && safeText(deterministic.getCondition()) != null
                 ? deterministic.getCondition() : llm.getCondition();
@@ -336,33 +363,53 @@ public class LlmIntentExtractor {
         if (condition != null && !condition.isBlank() && !conditions.contains(condition.toUpperCase(Locale.ROOT))) {
             conditions.add(condition.toUpperCase(Locale.ROOT));
         }
+
         boolean deterministicExactReplacement = deterministic.getType() == ConversationIntentType.SUGGEST_REPLACEMENTS
                 && safeText(deterministic.getReplacementPlaceId()) != null;
-        // 页面明确选中站点后请求“同片区/室内/低步行替换候选”时，目标已由 UI
-        // 完整提供。模型可以补充偏好，但不能退化为“请先选择景点”。
+        // 页面明确选中站点或在文案中指明景点名称后请求“同片区/室内/低步行替换候选”时，目标已由 UI
+        // 或自然语言完整提供。模型可以补充偏好，但不能退化为“请先选择景点”。
         boolean deterministicSelectedReplacement = deterministic.getType() == ConversationIntentType.SUGGEST_REPLACEMENTS
-                && safeText(deterministic.getTargetStopId()) != null;
+                && (safeText(deterministic.getTargetStopId()) != null || safeText(deterministic.getTargetStopReference()) != null);
+        boolean deterministicDiningReplacement = deterministic.getType() == ConversationIntentType.SUGGEST_REPLACEMENTS
+                && deterministic.getPreferences() != null && deterministic.getPreferences().contains("FOOD");
         boolean deterministicNarrativeReplan = deterministic.getType() == ConversationIntentType.REPLAN_DAY
                 && "TRIP".equalsIgnoreCase(deterministic.getScope());
-        ConversationIntentType type = deterministicExactReplacement || deterministicSelectedReplacement || deterministicNarrativeReplan
+        boolean deterministicHealthLimitation = deterministic.getType() == ConversationIntentType.REDUCE_DAY_DENSITY
+                && deterministic.getConditions() != null && deterministic.getConditions().contains("ACCESSIBILITY");
+        boolean deterministicConditionReplan = deterministic.getType() == ConversationIntentType.REPLAN_DAY_FOR_CONDITION;
+        boolean deterministicOperationWins = deterministicExactReplacement
+                || deterministicSelectedReplacement
+                || deterministicDiningReplacement
+                || deterministicNarrativeReplan
+                || deterministicHealthLimitation
+                || deterministicConditionReplan;
+        ConversationIntentType type = deterministicOperationWins
                 ? deterministic.getType() : llm.getType();
         if (type == ConversationIntentType.REPLAN_DAY && conditions.contains("RAIN")) {
             type = ConversationIntentType.REPLAN_DAY_FOR_CONDITION;
             condition = "RAIN";
         }
 
+        String targetStop = (type == ConversationIntentType.ADD_STOP && safeText(targetAttraction) != null && safeText(deterministic.getTargetStopId()) == null && safeText(llm.getTargetStopId()) == null)
+                ? null
+                : safeText(deterministic.getTargetStopId()) != null ? deterministic.getTargetStopId()
+                : safeText(llm.getTargetStopId()) != null ? llm.getTargetStopId() : selectedStop;
+
         String optionId = type == ConversationIntentType.APPLY_REPLACEMENT && candidateIndex != null
                 ? "option-" + candidateIndex : llm.getOptionId();
         String proposalId = safeText(context.getActiveProposalId());
         if (proposalId == null) proposalId = llm.getProposalId();
 
-        boolean deterministicOperationWins = deterministicExactReplacement || deterministicSelectedReplacement || deterministicNarrativeReplan;
         return PlanAdjustmentIntent.builder()
                 .type(type)
                 .operation(deterministicOperationWins ? deterministic.getOperation()
                         : (llm.getOperation() != null ? llm.getOperation() : deterministic.getOperation()))
                 .scope(deterministicOperationWins ? deterministic.getScope()
                         : (llm.getScope() != null ? llm.getScope() : deterministic.getScope()))
+                .startPlace(startPlace)
+                .timeBudgetMinutes(timeBudgetMinutes)
+                .durationDays(durationDays)
+                .targetPlace(targetPlace)
                 .targetDayReference(targetDayReference)
                 .dayNumber(day)
                 .targetStopReference(targetStopReference)
@@ -404,6 +451,9 @@ public class LlmIntentExtractor {
     private void validate(PlanAdjustmentIntent intent, PlanPageContext context) {
         if (intent == null || intent.getType() == null || intent.getType() == ConversationIntentType.UNKNOWN) {
             throw new IllegalArgumentException("missing or unknown intent");
+        }
+        if (intent.getType() == ConversationIntentType.PLAN) {
+            return;
         }
         if (intent.getDayNumber() != null && (intent.getDayNumber() < 1 || intent.getDayNumber() > 31)) {
             throw new IllegalArgumentException("invalid target day");
@@ -459,11 +509,18 @@ public class LlmIntentExtractor {
 
     private String buildUserPrompt(String message, PlanPageContext context, Map<String, Object> trip) {
         StringBuilder sb = new StringBuilder();
-        sb.append("页面上下文（仅用于消歧，不是行程数据）：\n");
-        sb.append("activeDay=").append(context.getActiveDay() == null ? "null" : context.getActiveDay()).append("\n");
-        sb.append("selectedStopId=").append(safeContext(context.getSelectedStopId())).append("\n");
-        sb.append("activeProposal=").append(context.getActiveProposalId() == null ? "false" : "true").append("\n");
-        sb.append("pinnedStopCount=").append(safePinned(context).size()).append("\n");
+        boolean hasContext = context.getActiveDay() != null
+                || (context.getSelectedStopId() != null && !context.getSelectedStopId().isBlank())
+                || (context.getActiveProposalId() != null && !context.getActiveProposalId().isBlank())
+                || !safePinned(context).isEmpty();
+
+        if (hasContext) {
+            sb.append("页面上下文（仅用于消歧，不是行程数据）：\n");
+            sb.append("activeDay=").append(context.getActiveDay() == null ? "null" : context.getActiveDay()).append("\n");
+            sb.append("selectedStopId=").append(safeContext(context.getSelectedStopId())).append("\n");
+            sb.append("activeProposal=").append(context.getActiveProposalId() == null ? "false" : "true").append("\n");
+            sb.append("pinnedStopCount=").append(safePinned(context).size()).append("\n");
+        }
 
         if (trip != null) {
             sb.append("\n当前行程结构：\n");

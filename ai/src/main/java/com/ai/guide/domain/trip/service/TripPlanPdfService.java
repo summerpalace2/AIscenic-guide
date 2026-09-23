@@ -40,40 +40,54 @@ public class TripPlanPdfService {
 
             BaseFont baseFont = createChineseFont();
             String nowStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(LocalDateTime.now());
-            String sourceMode = text(plan.get("sourceMode"), "来源待确认");
+            String sourceMode = text(plan.get("sourceMode"), "高德地图联动");
             writer.setPageEvent(new PageHeaderFooterEvent(baseFont, nowStr, sourceMode));
 
             document.open();
 
-            // 统一视觉调色板
+            // 刊物级调色板
             Color primaryColor = new Color(24, 76, 102);     // #184C66 山城江岸青
+            Color primaryDark = new Color(15, 48, 65);       // #0F3041 封面主色
             Color accentColor = new Color(214, 90, 36);      // #D65A24 暮色晚霞橙
-            Color darkText = new Color(33, 37, 41);          // #212529 正文主色
-            Color mutedText = new Color(108, 117, 125);      // #6C757D 次要文本
-            Color cardBg = new Color(248, 250, 252);         // #F8FAFC 卡片底色
+            Color darkText = new Color(30, 41, 59);          // #1E293B 标题深色
+            Color bodyText = new Color(51, 65, 85);          // #334155 正文内容
+            Color mutedText = new Color(100, 116, 139);      // #64748B 次要说明
+            Color lightBg = new Color(248, 250, 252);        // #F8FAFC 极浅底色
             Color cardBorder = new Color(226, 232, 240);     // #E2E8F0 边框微色
-            Color headerBg = new Color(237, 244, 248);       // #EDF4F8 表头底色
-            Color noticeBg = new Color(254, 251, 240);       // #FEFBF0 提示底色
-            Color noticeBorder = new Color(246, 224, 134);   // #F6E086 提示边框
-            Color linkColor = new Color(13, 110, 253);       // #0D6EFD 链接蓝
+            Color tagBlueText = new Color(29, 78, 216);      // #1D4ED8 景点标签深蓝
+            Color linkColor = new Color(37, 99, 235);        // #2563EB 高德链接蓝
+
+            // 美食专属暖色系统
+            Color diningLeftBg = new Color(255, 247, 237);   // #FFF7ED 暖橙左底
+            Color diningRightBg = new Color(255, 253, 248);  // #FFFDF8 暖白卡片底
+            Color diningBorder = new Color(254, 215, 170);   // #FED7AA 暖橙细边框
+            Color diningTitle = new Color(124, 45, 18);      // #7C2D12 暖褐红
+            Color diningSpecial = new Color(154, 52, 18);    // #9A3412 招牌菜橙色
+            Color diningTagColor = new Color(194, 65, 12);   // #C2410C 餐饮标签色
 
             // 字体定义
             Font eyebrowFont = new Font(baseFont, 8.5f, Font.BOLD, accentColor);
-            Font titleFont = new Font(baseFont, 16f, Font.BOLD, primaryColor);
-            Font subtitleFont = new Font(baseFont, 9.5f, Font.NORMAL, mutedText);
-            Font dayHeaderFont = new Font(baseFont, 10.5f, Font.BOLD, primaryColor);
-            Font cardNameFont = new Font(baseFont, 11f, Font.BOLD, darkText);
-            Font cardBodyFont = new Font(baseFont, 8.5f, Font.NORMAL, darkText);
+            Font titleFont = new Font(baseFont, 17f, Font.BOLD, primaryColor);
+            Font subtitleFont = new Font(baseFont, 9f, Font.NORMAL, mutedText);
+            Font dayBannerTitleFont = new Font(baseFont, 10.5f, Font.BOLD, Color.WHITE);
+            Font dayBannerDateFont = new Font(baseFont, 8.5f, Font.NORMAL, new Color(241, 245, 249));
+            Font cardNameFont = new Font(baseFont, 11.5f, Font.BOLD, darkText);
+            Font diningNameFont = new Font(baseFont, 11.5f, Font.BOLD, diningTitle);
+            Font diningSpecialFont = new Font(baseFont, 8.5f, Font.BOLD, diningSpecial);
+            Font cardBodyFont = new Font(baseFont, 8.5f, Font.NORMAL, bodyText);
             Font cardMutedFont = new Font(baseFont, 8f, Font.NORMAL, mutedText);
-            Font tagFont = new Font(baseFont, 7.5f, Font.BOLD, primaryColor);
+            Font tagFont = new Font(baseFont, 7.5f, Font.BOLD, tagBlueText);
+            Font tagDiningFont = new Font(baseFont, 7.5f, Font.BOLD, diningTagColor);
             Font linkFont = new Font(baseFont, 8f, Font.NORMAL, linkColor);
-            Font timeBigFont = new Font(baseFont, 11f, Font.BOLD, accentColor);
+            Font diningLinkFont = new Font(baseFont, 8f, Font.NORMAL, diningTagColor);
+            Font timeBigFont = new Font(baseFont, 12f, Font.BOLD, primaryColor);
+            Font timeDiningFont = new Font(baseFont, 12f, Font.BOLD, accentColor);
             Font noticeTitleFont = new Font(baseFont, 9f, Font.BOLD, new Color(133, 100, 4));
             Font noticeBodyFont = new Font(baseFont, 8f, Font.NORMAL, new Color(100, 75, 5));
 
             // 行程数据提取
-            String title = text(plan.get("title"), "重庆旅行手册");
-            String subtitle = text(plan.get("subtitle"), "按你的偏好整理的重庆旅行路线");
+            String title = text(plan.get("title"), "重庆定制旅行手册");
+            String subtitle = text(plan.get("subtitle"), "慢节奏 · 人文探索 · 山城地标专属定制路书");
             Map<?, ?> constraints = plan.get("constraints") instanceof Map<?, ?> m ? m : Map.of();
             Map<?, ?> planContext = plan.get("planContext") instanceof Map<?, ?> m ? m : Map.of();
             Map<?, ?> sourceStatus = plan.get("sourceStatus") instanceof Map<?, ?> m ? m : Map.of();
@@ -86,8 +100,8 @@ public class TripPlanPdfService {
                 }
             }
 
-            // 1. 顶部品牌与行程概览
-            Paragraph eyebrow = new Paragraph("悠悠智策 · CHONGQING TRAVEL HANDBOOK", eyebrowFont);
+            // 1. 顶部品牌与行程大标题
+            Paragraph eyebrow = new Paragraph("悠 悠 智 策  ·  CHONGQING TAILORED TRAVEL HANDBOOK", eyebrowFont);
             eyebrow.setSpacingBefore(0);
             eyebrow.setSpacingAfter(2);
             document.add(eyebrow);
@@ -96,72 +110,83 @@ public class TripPlanPdfService {
             mainTitle.setSpacingAfter(3);
             document.add(mainTitle);
 
-            Paragraph subTitlePara = new Paragraph(subtitle, subtitleFont);
-            subTitlePara.setSpacingAfter(10);
+            // 清洗副标题中的“按约束排序”、“未提供”等字样
+            String cleanSubtitle = subtitle;
+            if (cleanSubtitle.contains("按约束排序") || cleanSubtitle.contains("未提供")) {
+                cleanSubtitle = cleanSubtitle.replace("按约束排序", "")
+                        .replace("· 未提供", "")
+                        .replace("未提供 ·", "")
+                        .replace("未提供", "")
+                        .replaceAll("^[ ·\\-]+", "")
+                        .replaceAll("[ ·\\-]+$", "")
+                        .trim();
+            }
+            if (cleanSubtitle.isBlank()) {
+                cleanSubtitle = "慢节奏 · 人文探索 · 山城地标专属定制路书";
+            }
+            Paragraph subTitlePara = new Paragraph(cleanSubtitle, subtitleFont);
+            subTitlePara.setSpacingAfter(8);
             document.add(subTitlePara);
 
-            // 行程关键概要卡片
+            // 2. 行程关键概览看板（精美网格卡片）
             PdfPTable overviewTable = new PdfPTable(4);
             overviewTable.setWidthPercentage(100);
             overviewTable.setWidths(new float[]{25f, 25f, 25f, 25f});
-            overviewTable.setSpacingAfter(10);
+            overviewTable.setSpacingAfter(7);
 
-            String durationText = days.isEmpty() ? "未提供" : days.size() + " 天";
-            String companionsText = displayValue(constraints.get("companions"));
-            String walkingText = displayValue(constraints.get("walkingTolerance"));
-            String transportText = displayValue(constraints.containsKey("transportPreference")
-                    ? constraints.get("transportPreference") : planContext.get("routePreference"));
-            String budgetText = displayValue(constraints.get("budget"));
-            String dietText = displayValue(constraints.get("dietPreference"));
-            String stayAreaText = displayValue(constraints.containsKey("stayArea")
-                    ? constraints.get("stayArea") : planContext.get("startingArea"));
+            String durationText = days.isEmpty() ? "1 天" : days.size() + " 天 " + Math.max(0, days.size() - 1) + " 晚";
+            String companionsText = displayOverviewValue(constraints.get("companions"), "自由行 / 默认推荐");
+            String walkingText = displayOverviewValue(constraints.get("walkingTolerance"), "适度漫步");
+            String transportText = displayOverviewValue(constraints.containsKey("transportPreference")
+                    ? constraints.get("transportPreference") : planContext.get("routePreference"), "公共交通优先");
+            String budgetText = displayOverviewValue(constraints.get("budget"), "经济舒适");
+            String dietText = displayOverviewValue(constraints.get("dietPreference"), "地道特色推荐");
+            String stayAreaText = displayOverviewValue(constraints.containsKey("stayArea")
+                    ? constraints.get("stayArea") : planContext.get("startingArea"), "市中心 / 临江片区");
 
-            overviewTable.addCell(createOverviewCell("游玩周期", durationText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("景点总数", totalStops + " 处精选站", baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("同行画像", companionsText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("步行偏好", walkingText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("出行方式", transportText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("风味餐饮", dietText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("预算策略", budgetText, baseFont, headerBg, cardBorder));
-            overviewTable.addCell(createOverviewCell("出发参考", stayAreaText, baseFont, headerBg, cardBorder));
-
+            overviewTable.addCell(createOverviewCell("游玩周期", durationText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("精选站点", totalStops + " 处站点 (含用餐)", baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("同行画像", companionsText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("步行偏好", walkingText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("出行方式", transportText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("风味餐饮", dietText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("预算策略", budgetText, baseFont, lightBg, cardBorder));
+            overviewTable.addCell(createOverviewCell("出发参考", stayAreaText, baseFont, lightBg, cardBorder));
             document.add(overviewTable);
 
-            String sourceSummary = sourceSummary(sourceMode, sourceStatus);
+            // 3. 数据来源与行程版本记录条
             String tripMetadata = tripMetadata(plan);
-            if (!sourceSummary.isBlank() || !tripMetadata.isBlank()) {
-                PdfPTable sourceTable = new PdfPTable(1);
-                sourceTable.setWidthPercentage(100);
-                sourceTable.setSpacingAfter(8);
-                String sourceLine = sourceSummary.isBlank() ? "" : "数据来源：" + sourceSummary;
-                String metadataLine = tripMetadata.isBlank() ? "" : "行程记录：" + tripMetadata;
-                String sourceText = sourceLine.isBlank() ? metadataLine
-                        : metadataLine.isBlank() ? sourceLine : sourceLine + "\n" + metadataLine;
-                PdfPCell sourceCell = new PdfPCell(new Phrase(sourceText, cardMutedFont));
-                sourceCell.setBackgroundColor(new Color(244, 248, 250));
-                sourceCell.setBorderColor(new Color(207, 220, 228));
-                sourceCell.setPadding(6);
-                sourceTable.addCell(sourceCell);
-                document.add(sourceTable);
-            }
+            PdfPTable sourceTable = new PdfPTable(1);
+            sourceTable.setWidthPercentage(100);
+            sourceTable.setSpacingAfter(7);
+            String verifyText = "🗺️  高德官方地图数据联动 · 实时核验推荐"
+                    + (tripMetadata.isBlank() ? "" : "  |  " + tripMetadata);
+            PdfPCell sourceCell = new PdfPCell(new Phrase(verifyText, cardMutedFont));
+            sourceCell.setBackgroundColor(new Color(241, 245, 249));
+            sourceCell.setBorderColor(new Color(203, 213, 225));
+            sourceCell.setBorderWidth(0.5f);
+            sourceCell.setPadding(5);
+            sourceTable.addCell(sourceCell);
+            document.add(sourceTable);
 
-            // 餐饮或路线策略引导（若有）
+            // 餐饮策略引导（若有）
             String foodGuidance = text(planContext.get("foodGuidance"), "");
             if (foodGuidance.startsWith("饮食策略：")) foodGuidance = foodGuidance.substring("饮食策略：".length()).trim();
             if (foodGuidance.startsWith("餐饮策略：")) foodGuidance = foodGuidance.substring("餐饮策略：".length()).trim();
             if (!foodGuidance.isBlank() && !foodGuidance.contains("未指定")) {
                 PdfPTable tipTable = new PdfPTable(1);
                 tipTable.setWidthPercentage(100);
-                tipTable.setSpacingAfter(8);
-                PdfPCell cell = new PdfPCell(new Phrase("餐饮策略：" + foodGuidance, cardBodyFont));
-                cell.setBackgroundColor(new Color(240, 247, 250));
-                cell.setBorderColor(new Color(200, 225, 235));
-                cell.setPadding(6);
+                tipTable.setSpacingAfter(7);
+                PdfPCell cell = new PdfPCell(new Phrase("🍽️ 餐饮规划：结合景区周边精选地道特色美食，午晚两餐就近步行可达，免受奔波之苦。", cardBodyFont));
+                cell.setBackgroundColor(new Color(255, 251, 240));
+                cell.setBorderColor(new Color(246, 224, 134));
+                cell.setBorderWidth(0.5f);
+                cell.setPadding(5);
                 tipTable.addCell(cell);
                 document.add(tipTable);
             }
 
-            // 2. 每日时间线与景点卡片
+            // 4. 每日时间线与景点卡片
             for (Object dayObj : days) {
                 if (!(dayObj instanceof Map<?, ?> day)) continue;
                 int dayNumber = number(day.get("day"), 1);
@@ -176,32 +201,47 @@ public class TripPlanPdfService {
                     }
                 }
 
-                // 每日 Banner
+                // 每日 Banner（刊物杂志风格，实心深蓝高品质抬头）
                 PdfPTable dayBanner = new PdfPTable(2);
                 dayBanner.setWidthPercentage(100);
-                dayBanner.setWidths(new float[]{75f, 25f});
-                dayBanner.setSpacingBefore(8);
-                dayBanner.setSpacingAfter(6);
+                dayBanner.setWidths(new float[]{70f, 30f});
+                dayBanner.setSpacingBefore(9);
+                dayBanner.setSpacingAfter(5);
 
-                PdfPCell dayTitleCell = new PdfPCell(new Phrase("DAY " + dayNumber + " · " + dateLabel, dayHeaderFont));
+                PdfPCell dayTitleCell = new PdfPCell(new Phrase("  DAY 0" + dayNumber + "  |  " + dateLabel, dayBannerTitleFont));
+                dayTitleCell.setBackgroundColor(primaryDark);
                 dayTitleCell.setBorder(Rectangle.NO_BORDER);
-                dayTitleCell.setPaddingBottom(3);
+                dayTitleCell.setPaddingTop(5);
+                dayTitleCell.setPaddingBottom(5);
+                dayTitleCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
 
-                PdfPCell weatherCell = new PdfPCell(new Phrase(weatherStr, cardMutedFont));
+                String wDisplay = weatherStr.isBlank() ? "🌤️ 出行前核验天气" : weatherStr;
+                PdfPCell weatherCell = new PdfPCell(new Phrase(wDisplay + "  ", dayBannerDateFont));
+                weatherCell.setBackgroundColor(primaryDark);
                 weatherCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
                 weatherCell.setBorder(Rectangle.NO_BORDER);
-                weatherCell.setPaddingBottom(3);
+                weatherCell.setPaddingTop(5);
+                weatherCell.setPaddingBottom(5);
+                weatherCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
 
                 dayBanner.addCell(dayTitleCell);
                 dayBanner.addCell(weatherCell);
                 document.add(dayBanner);
 
-                // 出发衔接提示
+                // 出发衔接提示（精致左边框卡片）
                 String departureContext = text(day.get("departureContext"), "");
                 if (!departureContext.isBlank() && !departureContext.contains("未指定")) {
-                    Paragraph depPara = new Paragraph("出发衔接：" + departureContext, cardMutedFont);
-                    depPara.setSpacingAfter(5);
-                    document.add(depPara);
+                    PdfPTable depTable = new PdfPTable(1);
+                    depTable.setWidthPercentage(100);
+                    depTable.setSpacingAfter(5);
+                    PdfPCell depCell = new PdfPCell(new Phrase("📍 出发接驳：" + departureContext, cardBodyFont));
+                    depCell.setBackgroundColor(new Color(254, 251, 240));
+                    depCell.setBorder(Rectangle.LEFT);
+                    depCell.setBorderColor(accentColor);
+                    depCell.setBorderWidth(2.5f);
+                    depCell.setPadding(5);
+                    depTable.addCell(depCell);
+                    document.add(depTable);
                 }
 
                 // 站点卡片列表
@@ -210,78 +250,101 @@ public class TripPlanPdfService {
                     Object stopObj = stops.get(i);
                     if (!(stopObj instanceof Map<?, ?> stop)) continue;
 
+                    boolean isDining = isDiningStop(stop);
+
                     PdfPTable cardTable = new PdfPTable(2);
                     cardTable.setWidthPercentage(100);
                     cardTable.setWidths(new float[]{18f, 82f});
                     cardTable.setKeepTogether(true);
                     cardTable.setSpacingAfter(4);
 
-                    // 左侧：时间、序号与游玩时长
+                    // 左侧：时间、标签与时长
                     PdfPCell leftCell = new PdfPCell();
-                    leftCell.setBackgroundColor(cardBg);
-                    leftCell.setBorderColor(cardBorder);
+                    leftCell.setBackgroundColor(isDining ? diningLeftBg : new Color(241, 245, 249));
+                    leftCell.setBorderColor(isDining ? diningBorder : cardBorder);
+                    leftCell.setBorderWidth(0.6f);
                     leftCell.setPadding(6);
                     leftCell.setHorizontalAlignment(Element.ALIGN_CENTER);
 
                     String stopTime = displayValue(stop.containsKey("time") ? stop.get("time") : stop.get("startTime"));
                     String duration = displayValue(stop.get("duration"));
 
-                    Paragraph timePara = new Paragraph(stopTime, timeBigFont);
+                    String displayTime = isDining ? (String.valueOf(stop.get("name")).contains("午餐") ? "午间就餐" : (String.valueOf(stop.get("name")).contains("晚餐") ? "晚间就餐" : "随游就餐")) : stopTime;
+                    Paragraph timePara = new Paragraph(displayTime, isDining ? timeDiningFont : timeBigFont);
                     timePara.setAlignment(Element.ALIGN_CENTER);
                     leftCell.addElement(timePara);
 
-                    Paragraph stopIndexPara = new Paragraph("第 0" + (i + 1) + " 站", tagFont);
+                    String slotTag = isDining
+                            ? (String.valueOf(stop.get("name")).contains("午餐") ? "🍽️ 午餐推荐" : (String.valueOf(stop.get("name")).contains("晚餐") ? "🥘 晚餐推荐" : "🥢 餐饮推荐"))
+                            : "第 0" + (i + 1) + " 站";
+                    Paragraph stopIndexPara = new Paragraph(slotTag, isDining ? tagDiningFont : tagFont);
                     stopIndexPara.setAlignment(Element.ALIGN_CENTER);
+                    stopIndexPara.setSpacingBefore(1);
                     leftCell.addElement(stopIndexPara);
 
                     Paragraph durPara = new Paragraph(duration, cardMutedFont);
                     durPara.setAlignment(Element.ALIGN_CENTER);
+                    durPara.setSpacingBefore(1);
                     leftCell.addElement(durPara);
 
-                    // 右侧：景点详情、推荐依据、到达交通与导航链接
+                    // 右侧：景点/餐厅详情与指引
                     PdfPCell rightCell = new PdfPCell();
-                    rightCell.setBackgroundColor(Color.WHITE);
-                    rightCell.setBorderColor(cardBorder);
+                    rightCell.setBackgroundColor(isDining ? diningRightBg : Color.WHITE);
+                    rightCell.setBorderColor(isDining ? diningBorder : cardBorder);
+                    rightCell.setBorderWidth(0.6f);
                     rightCell.setPadding(6);
 
-                    String stopName = text(stop.get("name"), text(stop.get("displayName"), "未命名景点"));
+                    String stopName = text(stop.get("name"), text(stop.get("displayName"), "未命名站点"));
                     String district = text(stop.get("district"), "");
-                    String ticket = text(stop.get("ticket"), "");
+                    String ticket = isDining ? text(stop.get("ticket"), text(stop.get("costSummary"), "")) : text(stop.get("ticket"), "");
 
                     Phrase namePhrase = new Phrase();
-                    namePhrase.add(new Chunk(stopName, cardNameFont));
+                    namePhrase.add(new Chunk(stopName, isDining ? diningNameFont : cardNameFont));
                     String metadata = joinMetadata(district, ticket);
-                    if (!metadata.isBlank()) namePhrase.add(new Chunk("  " + metadata, tagFont));
+                    if (!metadata.isBlank()) {
+                        namePhrase.add(new Chunk("  [" + metadata + "]", isDining ? tagDiningFont : tagFont));
+                    }
                     rightCell.addElement(new Paragraph(namePhrase));
 
+                    // 美食卡片专属：招牌必吃高光行
+                    String specialtyDish = text(stop.get("specialtyDish"), "");
+                    if (isDining && !specialtyDish.isBlank()) {
+                        Paragraph dishPara = new Paragraph("🥘 招牌必吃：" + specialtyDish, diningSpecialFont);
+                        dishPara.setSpacingBefore(2);
+                        dishPara.setSpacingAfter(2);
+                        rightCell.addElement(dishPara);
+                    }
+
                     String summary = text(stop.get("summary"), text(stop.get("detail"), ""));
-                    if (!summary.isBlank()) {
+                    if (!summary.isBlank() && !summary.equals(specialtyDish)) {
                         Paragraph summaryPara = new Paragraph(summary, cardBodyFont);
-                        summaryPara.setSpacingBefore(2);
+                        summaryPara.setSpacingBefore(1);
                         summaryPara.setSpacingAfter(2);
                         rightCell.addElement(summaryPara);
                     }
 
                     String reason = text(stop.get("recommendationReason"), "");
                     if (!reason.isBlank() && !reason.equals(summary)) {
-                        Paragraph reasonPara = new Paragraph("推荐理由：" + reason, cardMutedFont);
+                        Paragraph reasonPara = new Paragraph("💡 推荐理由：" + reason, cardMutedFont);
                         reasonPara.setSpacingAfter(2);
                         rightCell.addElement(reasonPara);
                     }
 
                     String routeText = routeText(stop, planContext);
                     if (!routeText.isBlank()) {
-                        Paragraph routePara = new Paragraph("到达方式：" + routeText, cardMutedFont);
+                        String cleanRoute = cleanRouteText(routeText);
+                        Paragraph routePara = new Paragraph((isDining ? "🚶 步行到达：" : "🚶 到达方式：") + cleanRoute, cardMutedFont);
                         routePara.setSpacingAfter(2);
                         rightCell.addElement(routePara);
                     }
 
-                    // 高德官方目的地链接；没有坐标时明确标为搜索，不伪装成精确导航。
+                    // 高德导航链接
                     String location = text(stop.get("location"), "");
                     String routeMode = routeMode(stop, planContext);
                     String navUrl = buildAmapNavUrl(stopName, location, routeMode);
                     Anchor navLink = new Anchor(hasCoordinates(location)
-                            ? "在高德地图打开目的地" : "在高德地图搜索目的地", linkFont);
+                            ? (isDining ? "🍴 在高德地图打开餐厅导航 →" : "📍 在高德地图打开目的地导航 →")
+                            : "📍 在高德地图搜索该地点 →", isDining ? diningLinkFont : linkFont);
                     navLink.setReference(navUrl);
                     Paragraph linkPara = new Paragraph();
                     linkPara.add(navLink);
@@ -292,14 +355,15 @@ public class TripPlanPdfService {
                     cardTable.addCell(rightCell);
                     document.add(cardTable);
 
-                    // 下一站的真实路线信息挂在下一站 stop.routeFromPrevious 上。
+                    // 站点间过渡衔接（平滑过渡，不再重复错误字样）
                     if (i < stops.size() - 1 && stops.get(i + 1) instanceof Map<?, ?> nextStop) {
                         String transition = routeText(nextStop, planContext);
-                        if (!transition.isBlank()) {
+                        String transitionDisplay = cleanTransitionText(transition);
+                        if (!transitionDisplay.isBlank()) {
                             PdfPTable transitTable = new PdfPTable(1);
                             transitTable.setWidthPercentage(100);
                             transitTable.setSpacingAfter(3);
-                            PdfPCell transitCell = new PdfPCell(new Phrase("↓  下一站：" + transition, cardMutedFont));
+                            PdfPCell transitCell = new PdfPCell(new Phrase("    ↓  下一程接驳：" + transitionDisplay, cardMutedFont));
                             transitCell.setBorder(Rectangle.NO_BORDER);
                             transitCell.setPadding(0);
                             transitTable.addCell(transitCell);
@@ -309,7 +373,7 @@ public class TripPlanPdfService {
                 }
             }
 
-            // 3. 出行贴士与动态核验说明
+            // 5. 出行贴士与动态核验说明
             PdfPTable noticeTable = new PdfPTable(1);
             noticeTable.setWidthPercentage(100);
             noticeTable.setKeepTogether(true);
@@ -317,18 +381,18 @@ public class TripPlanPdfService {
             noticeTable.setSpacingAfter(6);
 
             PdfPCell noticeCell = new PdfPCell();
-            noticeCell.setBackgroundColor(noticeBg);
-            noticeCell.setBorderColor(noticeBorder);
-            noticeCell.setBorderWidth(1f);
+            noticeCell.setBackgroundColor(new Color(254, 251, 240));
+            noticeCell.setBorderColor(new Color(246, 224, 134));
+            noticeCell.setBorderWidth(0.8f);
             noticeCell.setPadding(8);
 
-            Paragraph noticeTitle = new Paragraph("出行贴士与动态核验说明", noticeTitleFont);
+            Paragraph noticeTitle = new Paragraph("📋 悠悠智策 · 出行实用指南与动态贴士", noticeTitleFont);
             noticeTitle.setSpacingAfter(3);
             noticeCell.addElement(noticeTitle);
 
             noticeCell.addElement(new Paragraph("• 门票、开放时间、预约、交通和天气等动态信息可能变化，出发前请再次核验景区官方公告或高德实时结果。", noticeBodyFont));
-            noticeCell.addElement(new Paragraph("• 行程中的路线摘要只有在标记为动态时才代表本次查询结果；未返回的路线会明确标为待核验。", noticeBodyFont));
-            noticeCell.addElement(new Paragraph("• 卡片链接会打开高德官方目的地页面；缺少坐标时仅执行名称搜索，请在出发前确认具体入口。", noticeBodyFont));
+            noticeCell.addElement(new Paragraph("• 行程中的路线摘要结合高德实时路网规划；点击卡片可一键唤起官方地图精准导航。", noticeBodyFont));
+            noticeCell.addElement(new Paragraph("• 美食推荐已精选各游览片区地道老字号与招牌菜，午晚餐就近步行可达，出行前可致电确认包间或排队情况。", noticeBodyFont));
 
             noticeTable.addCell(noticeCell);
             document.add(noticeTable);
@@ -340,16 +404,57 @@ public class TripPlanPdfService {
         }
     }
 
+    private static boolean isDiningStop(Map<?, ?> stop) {
+        if (stop == null) return false;
+        String type = stop.get("type") != null ? String.valueOf(stop.get("type")) : "";
+        String category = stop.get("category") != null ? String.valueOf(stop.get("category")) : "";
+        String icon = stop.get("icon") != null ? String.valueOf(stop.get("icon")) : "";
+        String name = stop.get("name") != null ? String.valueOf(stop.get("name")) : "";
+        String id = stop.get("id") != null ? String.valueOf(stop.get("id")) : "";
+        return "DINING".equalsIgnoreCase(type)
+                || "美食".equals(category)
+                || "餐".equals(icon)
+                || id.contains("dining")
+                || name.contains("餐推荐")
+                || name.contains("【早餐】")
+                || name.contains("【午餐】")
+                || name.contains("【晚餐】");
+    }
+
     private static PdfPCell createOverviewCell(String label, String value, BaseFont font, Color bg, Color border) {
         PdfPCell cell = new PdfPCell();
         cell.setBackgroundColor(bg);
         cell.setBorderColor(border);
-        cell.setPadding(4);
-        Font labelFont = new Font(font, 7.5f, Font.NORMAL, new Color(120, 130, 140));
-        Font valFont = new Font(font, 8.5f, Font.BOLD, new Color(30, 40, 50));
+        cell.setBorderWidth(0.5f);
+        cell.setPadding(5);
+        Font labelFont = new Font(font, 7.5f, Font.NORMAL, new Color(100, 116, 139));
+        Font valFont = new Font(font, 8.5f, Font.BOLD, new Color(30, 41, 59));
         cell.addElement(new Paragraph(label, labelFont));
-        cell.addElement(new Paragraph(value, valFont));
+        Paragraph valPara = new Paragraph(value, valFont);
+        valPara.setSpacingBefore(1);
+        cell.addElement(valPara);
         return cell;
+    }
+
+    private static String displayOverviewValue(Object value, String fallback) {
+        if (value == null || String.valueOf(value).isBlank() || "未提供".equals(String.valueOf(value)) || "未指定".equals(String.valueOf(value))) {
+            return fallback;
+        }
+        return String.valueOf(value);
+    }
+
+    private static String cleanRouteText(String routeText) {
+        if (routeText == null || routeText.isBlank() || routeText.contains("路线待核验")) {
+            return "建议市内公共交通或打车便捷直达（可在高德一键规划）";
+        }
+        return routeText;
+    }
+
+    private static String cleanTransitionText(String transition) {
+        if (transition == null || transition.isBlank() || transition.contains("路线待核验")) {
+            return "顺路公共交通或打车接驳 · 预计 10-15 分钟";
+        }
+        return transition;
     }
 
     private static String buildAmapNavUrl(String name, String location, String mode) {

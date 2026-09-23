@@ -1,5 +1,6 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
 import com.ai.guide.domain.attraction.model.Attraction;
@@ -34,6 +35,8 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     private final AttractionService attractionService;
     private final int maxPoiKeywords;
     private final Executor hydrationExecutor;
+    @Autowired(required = false)
+    private RuntimeLocationPlanner runtimeLocationPlanner;
 
     @Autowired
     public AmapPlannerGateway(AmapRouteService routeService,
@@ -44,6 +47,30 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         this.attractionService = attractionService;
         this.maxPoiKeywords = Math.max(1, maxPoiKeywords);
         this.hydrationExecutor = hydrationExecutor;
+    }
+
+    @Autowired(required = false)
+    public void setRuntimeLocationPlanner(RuntimeLocationPlanner runtimeLocationPlanner) {
+        this.runtimeLocationPlanner = runtimeLocationPlanner;
+    }
+
+    public AmapPlannerGateway(AmapRouteService routeService,
+                              AttractionService attractionService,
+                              RuntimeLocationPlanner runtimeLocationPlanner,
+                              Executor hydrationExecutor,
+                              int maxPoiKeywords) {
+        this.routeService = routeService;
+        this.attractionService = attractionService;
+        this.runtimeLocationPlanner = runtimeLocationPlanner;
+        this.hydrationExecutor = hydrationExecutor != null ? hydrationExecutor : Runnable::run;
+        this.maxPoiKeywords = Math.max(1, maxPoiKeywords);
+    }
+
+    public AmapPlannerGateway(AmapRouteService routeService,
+                              AttractionService attractionService,
+                              RuntimeLocationPlanner runtimeLocationPlanner,
+                              int maxPoiKeywords) {
+        this(routeService, attractionService, runtimeLocationPlanner, Runnable::run, maxPoiKeywords);
     }
 
     /** Compatibility constructor for focused tests and older callers. */
@@ -106,6 +133,22 @@ public class AmapPlannerGateway implements RouteGatewayPort {
                 : hasDynamicResult ? "高德接口部分可用" : "演示回退模式";
         trip.put("sourceMode", mode);
         return new HydrationResult(mode, poiSuccess, routeSuccess, weatherSuccess, fallback);
+    }
+
+    @Override
+    public Map<String, Object> planFromLocation(TravelConstraints constraints, int version) {
+        if (runtimeLocationPlanner == null) return null;
+        Map<String, Object> trip = runtimeLocationPlanner.plan(constraints, version);
+        if (trip != null && !trip.isEmpty() && !Boolean.TRUE.equals(trip.get("degraded"))) {
+            int weatherSuccess = hydrateWeather(trip);
+            Map<String, Object> status = mutableMap(trip.get("sourceStatus"));
+            status.put("weather", weatherSuccess > 0 ? "已查询" : "待确认");
+            status.put("weatherAvailable", weatherSuccess > 0);
+            status.put("weatherDaysResolved", weatherSuccess);
+            status.put("weatherDaysTotal", dayMaps(trip).size());
+            trip.put("sourceStatus", status);
+        }
+        return trip;
     }
 
     private int hydratePois(Map<String, Object> trip) {

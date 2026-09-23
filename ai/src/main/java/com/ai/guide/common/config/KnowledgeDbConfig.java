@@ -258,14 +258,36 @@ public class KnowledgeDbConfig {
                 "environment " + varchar + " DEFAULT ''," +
                 "recommended_visit_minutes INTEGER," +
                 "companion_tags TEXT DEFAULT '[]'," +
-                "feature_tags TEXT DEFAULT '[]'" +
+                "feature_tags TEXT DEFAULT '[]'," +
+                "photo_url TEXT DEFAULT ''" +
                 ")");
         ensureColumn(jdbcTemplate, "attraction", "accessibility " + varchar + " DEFAULT ''");
         ensureColumn(jdbcTemplate, "attraction", "environment " + varchar + " DEFAULT ''");
         ensureColumn(jdbcTemplate, "attraction", "recommended_visit_minutes INTEGER");
         ensureColumn(jdbcTemplate, "attraction", "companion_tags TEXT DEFAULT '[]'");
         ensureColumn(jdbcTemplate, "attraction", "feature_tags TEXT DEFAULT '[]'");
+        ensureColumn(jdbcTemplate, "attraction", "photo_url TEXT DEFAULT ''");
         log.info("[KnowledgeDB] attraction 表已就绪");
+
+        jdbcTemplate.update("CREATE TABLE IF NOT EXISTS dining_venue (" +
+                "id " + idType + " PRIMARY KEY," +
+                "name " + varchar + " NOT NULL," +
+                "district " + varchar + " NOT NULL DEFAULT ''," +
+                "category " + varchar + " NOT NULL DEFAULT ''," +
+                "meal_types " + varchar + " NOT NULL DEFAULT '[]'," +
+                "location VARCHAR(64) DEFAULT ''," +
+                "specialty_dish " + varchar + " DEFAULT ''," +
+                "average_cost " + varchar + " DEFAULT ''," +
+                "duration " + varchar + " DEFAULT ''," +
+                "distance_desc " + varchar + " DEFAULT ''," +
+                "summary TEXT DEFAULT ''," +
+                "recommendation_reason TEXT DEFAULT ''," +
+                "spiciness_level VARCHAR(32) DEFAULT 'MODERATE'," +
+                "elder_friendly BOOLEAN DEFAULT " + (sqlite ? "1" : "TRUE") + "," +
+                "tone VARCHAR(32) DEFAULT 'gold'," +
+                "tags TEXT DEFAULT '[]'" +
+                ")");
+        log.info("[KnowledgeDB] dining_venue 表已就绪");
 
         jdbcTemplate.update("CREATE TABLE IF NOT EXISTS planner_session (" +
                 "session_id " + idType + " PRIMARY KEY," +
@@ -302,6 +324,7 @@ public class KnowledgeDbConfig {
 
         applyVersionedMigrations(jdbcTemplate);
         initAttractions(jdbcTemplate);
+        initDiningVenues(jdbcTemplate);
         initKnowledgeDocuments(jdbcTemplate);
     }
 
@@ -562,13 +585,14 @@ public class KnowledgeDbConfig {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 List<Map<String, Object>> list = mapper.readValue(is, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
 
-                String sql = "INSERT INTO attraction (id, name, display_name, district, category, tags, icon, tone, location, summary, walk, duration, indoor, walk_difficulty, ticket, best_time, amap_query, intro, fit, accessibility, environment, recommended_visit_minutes, companion_tags, feature_tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING";
+                String sql = "INSERT INTO attraction (id, name, display_name, district, category, tags, icon, tone, location, summary, walk, duration, indoor, walk_difficulty, ticket, best_time, amap_query, intro, fit, accessibility, environment, recommended_visit_minutes, companion_tags, feature_tags, photo_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING";
                 int inserted = 0;
                 for (Map<String, Object> map : list) {
                     boolean indoor = Boolean.TRUE.equals(map.get("indoor"));
                     // JDBC 将 Integer 1/0 直接写入 PostgreSQL BOOLEAN 会被拒绝；
                     // SQLite 则以整数布尔值保存，因此在数据边界按数据库方言转换。
                     Object indoorValue = databaseSettings.sqlite() ? (indoor ? 1 : 0) : indoor;
+                    String photoUrl = String.valueOf(map.getOrDefault("photoUrl", ""));
                     inserted += jdbcTemplate.update(sql,
                             map.get("id"),
                             map.get("name"),
@@ -593,8 +617,12 @@ public class KnowledgeDbConfig {
                             map.getOrDefault("environment", ""),
                             map.get("recommendedVisitMinutes"),
                             mapper.writeValueAsString(map.getOrDefault("companionTags", Collections.emptyList())),
-                            mapper.writeValueAsString(map.getOrDefault("featureTags", Collections.emptyList()))
+                            mapper.writeValueAsString(map.getOrDefault("featureTags", Collections.emptyList())),
+                            photoUrl
                     );
+                    if (photoUrl != null && !photoUrl.isBlank() && !"null".equals(photoUrl)) {
+                        jdbcTemplate.update("UPDATE attraction SET photo_url = ? WHERE id = ?", photoUrl, map.get("id"));
+                    }
                 }
                 log.info("[KnowledgeDB] 景点目录已核对：资源 {} 条，本次新增 {} 条", list.size(), inserted);
             }
@@ -603,14 +631,50 @@ public class KnowledgeDbConfig {
         }
     }
 
+    private void initDiningVenues(JdbcTemplate jdbcTemplate) {
+        try {
+            try (InputStream is = getClass().getClassLoader().getResourceAsStream("dining_venues.json")) {
+                if (is == null) {
+                    log.warn("[KnowledgeDB] 未找到 dining_venues.json 资源文件，跳过美食餐厅初始化");
+                    return;
+                }
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                List<Map<String, Object>> list = mapper.readValue(is, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+
+                String sql = "INSERT INTO dining_venue (id, name, district, category, meal_types, location, specialty_dish, average_cost, duration, distance_desc, summary, recommendation_reason, spiciness_level, elder_friendly, tone, tags) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING";
+                int inserted = 0;
+                for (Map<String, Object> map : list) {
+                    boolean elder = !Boolean.FALSE.equals(map.get("elderFriendly"));
+                    Object elderValue = databaseSettings.sqlite() ? (elder ? 1 : 0) : elder;
+                    inserted += jdbcTemplate.update(sql,
+                            map.get("id"),
+                            map.get("name"),
+                            map.getOrDefault("district", ""),
+                            map.getOrDefault("category", ""),
+                            mapper.writeValueAsString(map.getOrDefault("mealTypes", Collections.emptyList())),
+                            map.getOrDefault("location", ""),
+                            map.getOrDefault("specialtyDish", ""),
+                            map.getOrDefault("averageCost", ""),
+                            map.getOrDefault("duration", ""),
+                            map.getOrDefault("distanceDesc", ""),
+                            map.getOrDefault("summary", ""),
+                            map.getOrDefault("recommendationReason", ""),
+                            map.getOrDefault("spicinessLevel", "MILD"),
+                            elderValue,
+                            map.getOrDefault("tone", "gold"),
+                            mapper.writeValueAsString(map.getOrDefault("tags", Collections.emptyList()))
+                    );
+                }
+                log.info("[KnowledgeDB] 美食餐厅目录已核对：资源 {} 条，本次新增 {} 条", list.size(), inserted);
+            }
+        } catch (Exception e) {
+            log.error("[KnowledgeDB] 初始化美食餐厅数据失败: {}", e.getMessage(), e);
+        }
+    }
+
     private void initKnowledgeDocuments(JdbcTemplate jdbcTemplate) {
         try {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM kb_document WHERE (status IS NULL OR status <> 'archived')", Integer.class);
-            if (count != null && count > 0) {
-                log.info("[KnowledgeDB] kb_document 表已有 {} 条记录，跳过初始化数据", count);
-                return;
-            }
             try (InputStream is = getClass().getClassLoader().getResourceAsStream("knowledge_documents.jsonl")) {
                 if (is == null) {
                     log.warn("[KnowledgeDB] 未找到 knowledge_documents.jsonl 资源文件，跳过知识文档初始化");
@@ -621,7 +685,7 @@ public class KnowledgeDbConfig {
                 String line;
                 String now = LocalDateTime.now().format(DT_FMT);
                 String sql = "INSERT INTO kb_document (id, title, category, content, tags, file_url, file_md5, source_name, status, vector_status, chunk_count, created_by, created_at, updated_at) " +
-                        "VALUES (?, ?, ?, ?, ?, '', '', ?, 'active', 'pending', 0, 'system-init', ?, ?)";
+                        "VALUES (?, ?, ?, ?, ?, '', '', ?, 'active', 'pending', 0, 'system-init', ?, ?) ON CONFLICT(id) DO NOTHING";
                 int inserted = 0;
                 while ((line = reader.readLine()) != null) {
                     if (line.isBlank()) continue;
@@ -633,10 +697,9 @@ public class KnowledgeDbConfig {
                     List<?> keywords = (List<?>) doc.get("keywords");
                     String tags = mapper.writeValueAsString(keywords != null ? keywords : List.of());
                     String sourceName = String.valueOf(doc.getOrDefault("entityName", "chongqing-knowledge"));
-                    jdbcTemplate.update(sql, id, title, category, content, tags, sourceName, now, now);
-                    inserted++;
+                    inserted += jdbcTemplate.update(sql, id, title, category, content, tags, sourceName, now, now);
                 }
-                log.info("[KnowledgeDB] 成功初始化 {} 条重庆知识库文档", inserted);
+                log.info("[KnowledgeDB] 知识文档已核对：本次新增 {} 条记录", inserted);
             }
         } catch (Exception e) {
             log.error("[KnowledgeDB] 初始化知识文档失败: {}", e.getMessage(), e);

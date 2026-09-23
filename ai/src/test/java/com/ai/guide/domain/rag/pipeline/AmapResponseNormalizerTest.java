@@ -49,4 +49,29 @@ class AmapResponseNormalizerTest {
         assertNull(candidate.photoUrl());
         assertNull(candidate.photoTitle());
     }
+
+    @Test
+    void preservesRatingAndHeatTagsFromBusinessMetadata() throws Exception {
+        var response = objectMapper.readTree("""
+                {
+                  "status":"1",
+                  "pois":[{
+                    "id":"poi-ciqikou",
+                    "name":"磁器口古镇",
+                    "location":"106.44,29.58",
+                    "business":{
+                      "rating":"4.7",
+                      "rectag":"新巴渝十二景",
+                      "keytag":"文物古迹",
+                      "tag":"著名古镇"
+                    }
+                  }]
+                }
+                """);
+
+        var candidate = AmapResponseNormalizer.normalizePois(response).get(0);
+
+        assertEquals(4.7, candidate.rating());
+        assertEquals("新巴渝十二景;文物古迹;著名古镇", candidate.heatTag());
+    }
 }
