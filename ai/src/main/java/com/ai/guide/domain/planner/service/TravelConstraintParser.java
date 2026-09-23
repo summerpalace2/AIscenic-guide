@@ -30,9 +30,11 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
     private static final Pattern TIME_INTERVAL = Pattern.compile(
             "(?:从)?\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?\\s*(?:到|至|\\-|~|——|—)\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?");
     private static final Pattern EXPLICIT_START_PLACE = Pattern.compile(
-            "(?:我在|我人在|人在|现在在|目前在|我目前在|位于|定位在|位置在|坐标(?:是|为)?|地址(?:是|在)?|从|以|(?:(?:今天|今日|现在|目前|上午|中午|下午|傍晚|晚上|夜间)?在))\\s*([^，。；;\\n]+?)(?=\\s*(?:为我|给我|帮我|请|想|要|需要|做|做个|来个|整点)?\\s*(?:规划|推荐|安排|方案|路线|旅游|出行)|\\s*(?:从)?(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*\\d{1,2}(?::\\d{2})?(?:点|时)?(?:半)?\\s*(?:到|至|\\-|~|——|—)|\\s*(?:给我|帮我|请|想|要|需要|规划|安排|推荐|限定|限时|只|有|剩|用|花|玩|游玩|的)?\\s*(?:半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟|天))|[，。；;\\n]|$)");
+            "(?:我在|我人在|人在|现在在|目前在|我目前在|位于|定位在|位置在|坐标(?:是|为)?|地址(?:是|在)?|(?:(?:今天|今日|现在|目前|上午|中午|下午|傍晚|晚上|夜间)?在))\\s*([^，。；;\\n]+?)(?=\\s*(?:为我|给我|帮我|请|想|要|需要|做|做个|来个|整点)?\\s*(?:规划|推荐|安排|方案|路线|旅游|出行)|\\s*(?:从)?(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*\\d{1,2}(?::\\d{2})?(?:点|时)?(?:半)?\\s*(?:到|至|\\-|~|——|—)|\\s*(?:给我|帮我|请|想|要|需要|规划|安排|推荐|限定|限时|只|有|剩|用|花|玩|游玩|的)?\\s*(?:半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟|天))|[，。；;\\n]|$)");
+    private static final Pattern DEPARTURE_FROM_PLACE = Pattern.compile(
+            "从(?!容|来|小|事|前|而|早|头|不|简|新|此|中)\\s*([^，。；;\\n]+?)(?=\\s*(?:出发|起步|开始|动身|到|至|为我|给我|帮我|请|想|要|需要|做|做个|来个|整点|规划|推荐|安排|方案|路线|玩|游玩|\\d|半天))");
     private static final Pattern SUFFIX_START_PLACE = Pattern.compile(
-            "(?:从|以)?\\s*([^，。；;\\n\\s]+?)(?:出发|起步|作为起点)(?=[，。；;\\n\\s]|$)");
+            "(?:从|以)?\\s*([^，。；;\\n\\s]+?)(?:出发|起步|作为起点|开始|动身)(?=[，。；;\\n\\s]|$)");
     private static final Pattern AMOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*元");
     private static final Pattern STAY = Pattern.compile("(?:住在|住宿|酒店在)\\s*([^，。；;]+)");
     private static final Pattern MUST_VISIT = Pattern.compile("(?:必须|一定要|务必)(?:去|看|逛|体验)?\\s*([^，。；;]+)");
@@ -68,13 +70,15 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     public TravelConstraints parse(String prompt) {
         String source = prompt == null ? "" : prompt.trim();
-        Matcher arrival = ARRIVAL.matcher(source);
-        Matcher departure = DEPARTURE.matcher(source);
-        Matcher days = DAYS.matcher(source);
-        Matcher amount = AMOUNT.matcher(source);
-        Matcher stay = STAY.matcher(source);
-        Matcher timeBudget = TIME_BUDGET.matcher(source);
-        Matcher startPlace = EXPLICIT_START_PLACE.matcher(source);
+        String activeSource = extractActiveUserPrompt(source);
+
+        Matcher arrival = ARRIVAL.matcher(activeSource);
+        Matcher departure = DEPARTURE.matcher(activeSource);
+        Matcher days = DAYS.matcher(activeSource);
+        Matcher amount = AMOUNT.matcher(activeSource);
+        Matcher stay = STAY.matcher(activeSource);
+        Matcher timeBudget = TIME_BUDGET.matcher(activeSource);
+        Matcher startPlace = EXPLICIT_START_PLACE.matcher(activeSource);
 
         boolean arrivalFound = arrival.find();
         boolean departureFound = departure.find();
@@ -82,27 +86,47 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         boolean amountFound = amount.find();
         boolean stayFound = stay.find();
         boolean timeBudgetFound = timeBudget.find();
-        boolean startPlaceFound = startPlace.find();
-        String extractedStartPlace;
-        if (startPlaceFound) {
-            extractedStartPlace = normalizeStartPlace(startPlace.group(1));
-        } else {
-            Matcher suffixStart = SUFFIX_START_PLACE.matcher(source);
-            boolean suffixFound = false;
-            String foundPlace = "未提供";
-            while (suffixStart.find()) {
-                String candidate = suffixStart.group(1).trim();
-                if (!isTemporalWord(candidate) && candidate.length() >= 2) {
-                    suffixFound = true;
-                    foundPlace = normalizeStartPlace(candidate);
+
+        boolean startPlaceFound = false;
+        String extractedStartPlace = "未提供";
+
+        // 1. Try explicit "我在/定位在/位于..." on activeSource
+        while (startPlace.find()) {
+            String candidate = normalizeStartPlace(startPlace.group(1));
+            if (!"未提供".equals(candidate) && !isTemporalWord(candidate) && !isInvalidStartPlace(candidate)) {
+                startPlaceFound = true;
+                extractedStartPlace = candidate;
+                break;
+            }
+        }
+
+        // 2. Try "从(?!容...)...出发/规划" on activeSource
+        if (!startPlaceFound) {
+            Matcher depFrom = DEPARTURE_FROM_PLACE.matcher(activeSource);
+            while (depFrom.find()) {
+                String candidate = normalizeStartPlace(depFrom.group(1));
+                if (!"未提供".equals(candidate) && !isTemporalWord(candidate) && !isInvalidStartPlace(candidate)) {
+                    startPlaceFound = true;
+                    extractedStartPlace = candidate;
                     break;
                 }
             }
-            startPlaceFound = suffixFound;
-            extractedStartPlace = foundPlace;
         }
 
-        Matcher timeInterval = TIME_INTERVAL.matcher(source);
+        // 3. Try suffix "...出发/起步/作为起点" on activeSource
+        if (!startPlaceFound) {
+            Matcher suffixStart = SUFFIX_START_PLACE.matcher(activeSource);
+            while (suffixStart.find()) {
+                String candidate = normalizeStartPlace(suffixStart.group(1));
+                if (!"未提供".equals(candidate) && !isTemporalWord(candidate) && !isInvalidStartPlace(candidate)) {
+                    startPlaceFound = true;
+                    extractedStartPlace = candidate;
+                    break;
+                }
+            }
+        }
+
+        Matcher timeInterval = TIME_INTERVAL.matcher(activeSource);
         boolean timeIntervalFound = timeInterval.find();
         int intervalBudgetMinutes = 0;
         String intervalArrival = null;
@@ -499,7 +523,45 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
                 .replaceAll("\\s*(?:从)?(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*\\d{1,2}(?::\\d{2})?(?:点|时)?(?:半)?\\s*(?:到|至|\\-|~|——|—).*", "")
                 .replaceFirst("(?:为我|给我|帮我|请|想|要)?(?:规划|安排|推荐|玩玩|玩耍|旅游|出行).*$", "")
                 .trim();
+        if (isInvalidStartPlace(normalized)) {
+            return "未提供";
+        }
         return normalized.isBlank() ? "未提供" : normalized;
+    }
+
+    private boolean isInvalidStartPlace(String place) {
+        if (place == null || place.isBlank()) return true;
+        String p = place.trim();
+        if (p.length() < 2) return true;
+        if (p.matches(".*(从容|容休闲|慢节奏|慢生活|休闲|偏好|作息|饮食|画像|喜好|口味|要求|习惯).*")) {
+            return true;
+        }
+        if (p.matches("^(?:旅游|旅行|规划|方案|行程|推荐|安排|出行|游玩|玩耍|打卡)$")) {
+            return true;
+        }
+        return false;
+    }
+
+    public static String extractActiveUserPrompt(String source) {
+        if (source == null || source.isBlank()) return "";
+        if (!source.contains("【用户专属") && !source.contains("【专属偏好") && !source.contains("【用户偏好")) {
+            return source;
+        }
+        String[] lines = source.split("\r?\n");
+        StringBuilder active = new StringBuilder();
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            if (trimmed.startsWith("【") && (trimmed.contains("画像】") || trimmed.contains("偏好】") || trimmed.contains("档案】"))) {
+                continue;
+            }
+            if (trimmed.startsWith("•") || trimmed.startsWith("-") || trimmed.startsWith("*")) continue;
+            if (trimmed.startsWith("（") && (trimmed.contains("严格遵循") || trimmed.contains("偏好约束"))) continue;
+            if (active.length() > 0) active.append("\n");
+            active.append(line);
+        }
+        String result = active.toString().trim();
+        return result.isBlank() ? source : result;
     }
 
     private boolean isTemporalWord(String word) {
