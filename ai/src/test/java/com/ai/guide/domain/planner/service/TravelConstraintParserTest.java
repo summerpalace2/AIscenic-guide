@@ -137,4 +137,45 @@ class TravelConstraintParserTest {
         assertEquals("17:00", constraints.getDepartureAt());
         assertTrue(constraints.hasExplicitSpatialRequest());
     }
+
+    @Test
+    void prependedProfilePromptDoesNotCorruptUniversityStartPlaceAndBudget() {
+        String input = """
+                【用户专属旅行偏好画像】
+                • 饮食喜好：饮食偏好麻辣浓郁与地道火锅、特色老茶馆与品茗、特色咖啡与下午茶；
+                • 体力与作息：偏好慢节奏从容休闲；
+                我在重庆邮电大学 为我推荐6小时旅游规划
+                """;
+        TravelConstraints constraints = parser.parse(input);
+
+        assertEquals("重庆邮电大学", constraints.getStartPlace());
+        assertEquals(360, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+        assertTrue(constraints.getInterests().contains("休闲"));
+        assertEquals("重庆火锅", constraints.getDietPreference());
+    }
+
+    @Test
+    void leisurePaceDoesNotMisidentifyStartPlace() {
+        TravelConstraints constraints = parser.parse("偏好慢节奏从容休闲，我在重庆邮电大学 为我推荐6小时旅游规划");
+
+        assertEquals("重庆邮电大学", constraints.getStartPlace());
+        assertEquals(360, constraints.getTimeBudgetMinutes());
+        assertEquals(1, constraints.getDurationDays());
+        assertTrue(constraints.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void departureFromPlacePatternWorksForChongqing() {
+        TravelConstraints c1 = parser.parse("从重庆邮电大学出发，玩6小时");
+        assertEquals("重庆邮电大学", c1.getStartPlace());
+        assertEquals(360, c1.getTimeBudgetMinutes());
+        assertTrue(c1.hasExplicitSpatialRequest());
+
+        TravelConstraints c2 = parser.parse("从重庆邮电大学 给我推荐6小时路线");
+        assertEquals("重庆邮电大学", c2.getStartPlace());
+        assertEquals(360, c2.getTimeBudgetMinutes());
+        assertTrue(c2.hasExplicitSpatialRequest());
+    }
 }

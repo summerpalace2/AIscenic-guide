@@ -73,7 +73,7 @@ public class RuntimeLocationPlanner {
         }
 
         AmapRouteService.PoiOutcome startOutcome = routeService.searchPoi(requestedPlace, city(constraints));
-        AmapResponseNormalizer.PoiCandidate start = chooseStart(startOutcome.candidates());
+        AmapResponseNormalizer.PoiCandidate start = chooseStart(startOutcome.candidates(), requestedPlace);
         if (start == null || start.coordinate() == null) {
             String reason = startOutcome.reason() == null || startOutcome.reason().isBlank()
                     ? "高德没有返回可定位的起点。" : startOutcome.reason();
@@ -1386,7 +1386,29 @@ public class RuntimeLocationPlanner {
     }
 
     private AmapResponseNormalizer.PoiCandidate chooseStart(List<AmapResponseNormalizer.PoiCandidate> values) {
-        if (values == null) return null;
+        return chooseStart(values, null);
+    }
+
+    private AmapResponseNormalizer.PoiCandidate chooseStart(List<AmapResponseNormalizer.PoiCandidate> values, String requestedPlace) {
+        if (values == null || values.isEmpty()) return null;
+        if (requestedPlace != null && !requestedPlace.isBlank()) {
+            String clean = requestedPlace.trim();
+            // 1. Exact or contains match
+            for (AmapResponseNormalizer.PoiCandidate item : values) {
+                if (item != null && item.coordinate() != null && safeName(item).contains(clean)) {
+                    return item;
+                }
+            }
+            // 2. Token overlap match (e.g. "邮电大学" in "重庆邮电大学")
+            for (AmapResponseNormalizer.PoiCandidate item : values) {
+                if (item != null && item.coordinate() != null) {
+                    String name = safeName(item);
+                    if (clean.length() >= 4 && name.contains(clean.substring(2))) {
+                        return item;
+                    }
+                }
+            }
+        }
         return values.stream()
                 .filter(item -> item != null && item.coordinate() != null && !safeName(item).isBlank())
                 .findFirst().orElse(null);
