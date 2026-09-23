@@ -73,8 +73,14 @@ public class KnowledgeDbConfig {
     @Value("${POSTGRES_PORT:5432}")
     private String postgresPort;
 
-    @Value("${POSTGRES_DB:}")
+    @Value("${POSTGRES_DATABASE:}")
     private String postgresDatabase;
+
+    @Value("${POSTGRES_DB:}")
+    private String legacyPostgresDatabase;
+
+    @Value("${POSTGRES_USERNAME:}")
+    private String postgresUsername;
 
     @Value("${POSTGRES_USER:}")
     private String postgresUser;
@@ -868,11 +874,17 @@ public class KnowledgeDbConfig {
 
         if (url.isBlank() && !postgresHost.isBlank()) {
             type = "postgresql";
-            url = "jdbc:postgresql://" + postgresHost + ":" + postgresPort + "/" + postgresDatabase;
-            username = firstNonBlank(username, postgresUser);
+            url = "jdbc:postgresql://" + postgresHost + ":" + postgresPort + "/"
+                    + firstNonBlank(postgresDatabase, legacyPostgresDatabase);
+            username = firstNonBlank(username, postgresUsername, postgresUser);
             password = firstNonBlank(password, postgresPassword);
         }
-        if (url.isBlank()) return new DatabaseSettings("sqlite", SQLITE_URL, "org.sqlite.JDBC", "", "");
+        if (url.isBlank()) {
+            if (type.equals("postgres") || type.equals("postgresql")) {
+                throw new IllegalStateException("PostgreSQL was selected but no connection URL or POSTGRES_HOST was provided");
+            }
+            return new DatabaseSettings("sqlite", SQLITE_URL, "org.sqlite.JDBC", "", "");
+        }
 
         url = normalizeUrl(url);
         if (type.equals("postgres") || type.equals("postgresql") || url.startsWith("jdbc:postgresql:")) {
