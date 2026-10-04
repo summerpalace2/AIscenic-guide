@@ -1,53 +1,43 @@
-package com.ai.guide.domain.rag.api;
+package com.ai.guide.application.rag;
 
 import com.ai.guide.common.context.UserContext;
-import com.ai.guide.domain.rag.model.KnowledgeDocument;
 import com.ai.guide.common.model.Result;
+import com.ai.guide.domain.rag.model.KnowledgeDocument;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
 import com.ai.guide.domain.rag.service.RagRetrievalService;
 import com.ai.guide.domain.rag.service.RerankService;
 import com.ai.guide.domain.rag.service.ScenicDataImportService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * RAG 知识检索增强与知识库碎片管理控制器
- *
- * 所属领域：domain.rag（文旅知识与检索增强域）
- * 架构职责：封装文旅知识的向量语义召回、百炼 Rerank 重排打分、知识库健康指标监控以及知识碎片的维护。
- *
- * 核心对外接口与关键方法：
- * 1. retrieve：执行多维度 RAG 知识检索（结合 Qdrant 向量检索与三级重排缓存）
- *    - 参数 body：包含 query（查询语句/Prompt）、city（目标城市，默认重庆）、constraints（偏好约束字典）、deep（是否深度检索）
- *    - 返回值：结构化事实列表、核验状态与引文溯源
- * 2. getStats：获取向量库碎片总数、多级重排缓存命中率以及向量检索健康状态
- * 3. updateKnowledge：管理员更新指定知识文档的内容与标签
- * 4. getFragments：管理员分页浏览向量碎片列表
- * 5. updateFragment：管理员修改单个向量碎片文本
- * 6. deleteFragment：管理员删除指定向量碎片
- * 7. clearCache：清空重排三级缓存
+ * RAG 知识检索与缓存管理应用服务实现
  */
-@RestController
-@RequestMapping("/ai")
-public class RagController {
+@Service
+public class RagApplicationServiceImpl implements RagApplicationService {
+
+    private final ScenicDataImportService scenicDataImportService;
+    private final RerankService rerankService;
+    private final RagRetrievalService ragRetrievalService;
+    private final KnowledgeDocumentService knowledgeDocumentService;
 
     @Autowired
-    private ScenicDataImportService scenicDataImportService;
+    public RagApplicationServiceImpl(ScenicDataImportService scenicDataImportService,
+                                     RerankService rerankService,
+                                     RagRetrievalService ragRetrievalService,
+                                     KnowledgeDocumentService knowledgeDocumentService) {
+        this.scenicDataImportService = scenicDataImportService;
+        this.rerankService = rerankService;
+        this.ragRetrievalService = ragRetrievalService;
+        this.knowledgeDocumentService = knowledgeDocumentService;
+    }
 
-    @Autowired
-    private RerankService rerankService;
-
-    @Autowired
-    private RagRetrievalService ragRetrievalService;
-
-    @Autowired
-    private KnowledgeDocumentService knowledgeDocumentService;
-
-    @PostMapping("/rag/retrieve")
-    public Result<Map<String, Object>> retrieve(@RequestBody(required = false) Map<String, Object> body) {
+    @Override
+    public Result<Map<String, Object>> retrieve(Map<String, Object> body) {
         Map<String, Object> input = body == null ? Map.of() : body;
         String query = String.valueOf(input.getOrDefault("query", input.getOrDefault("prompt", "")));
         String city = String.valueOf(input.getOrDefault("city", "重庆"));
@@ -64,7 +54,7 @@ public class RagController {
         }
     }
 
-    @GetMapping("/rag/stats")
+    @Override
     public Result<Map<String, Object>> getStats() {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
@@ -79,9 +69,8 @@ public class RagController {
         }
     }
 
-    @PutMapping("/rag/knowledge/{id}")
-    public Result<Map<String, Object>> updateKnowledge(@PathVariable String id,
-                                                        @RequestBody(required = false) Map<String, Object> body) {
+    @Override
+    public Result<Map<String, Object>> updateKnowledge(String id, Map<String, Object> body) {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         Map<String, Object> input = body == null ? Map.of() : body;
         try {
@@ -100,11 +89,8 @@ public class RagController {
         }
     }
 
-    @GetMapping("/rag/document/fragments")
-    public Result<Map<String, Object>> getFragments(
-            @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String keyword) {
+    @Override
+    public Result<Map<String, Object>> getFragments(int page, int size, String keyword) {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
             return Result.success("查询成功", scenicDataImportService.listFragments(page, size, keyword));
@@ -113,11 +99,11 @@ public class RagController {
         }
     }
 
-    @PutMapping("/rag/document/fragments/{id}")
-    public Result<String> updateFragment(@PathVariable String id, @RequestBody Map<String, String> body) {
+    @Override
+    public Result<String> updateFragment(String id, Map<String, String> body) {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
-            scenicDataImportService.updateFragment(id, body.get("content"));
+            scenicDataImportService.updateFragment(id, body != null ? body.get("content") : null);
             return Result.success("更新成功", "碎片文本已更新");
         } catch (IllegalArgumentException e) {
             return Result.error(400, e.getMessage());
@@ -126,8 +112,8 @@ public class RagController {
         }
     }
 
-    @DeleteMapping("/rag/document/fragments/{id}")
-    public Result<String> deleteFragment(@PathVariable String id) {
+    @Override
+    public Result<String> deleteFragment(String id) {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
             scenicDataImportService.deleteFragment(id);
@@ -139,7 +125,7 @@ public class RagController {
         }
     }
 
-    @DeleteMapping("/rag/document/all")
+    @Override
     public Result<String> deleteAllDocuments() {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
@@ -150,12 +136,62 @@ public class RagController {
         }
     }
 
-    @PostMapping("/admin/cache/clear")
+    @Override
     public Result<String> clearCache() {
         if (!UserContext.isAdmin()) return Result.error(403, "无管理员权限");
         try {
             rerankService.clearCache();
             return Result.success("缓存已清空", "L1/L2/L3 全部重置");
+        } catch (Exception e) {
+            return Result.error(500, "清空失败，请稍后重试");
+        }
+    }
+
+    @Override
+    public Result<String> importFile(MultipartFile file) {
+        if (!UserContext.isAdmin()) {
+            return Result.error(403, "需要管理员权限");
+        }
+        try {
+            if (file == null || file.isEmpty()) {
+                return Result.error(400, "上传失败：文件为空");
+            }
+            String filename = file.getOriginalFilename();
+            String title = filename == null || filename.isBlank() ? "未命名文档" : filename;
+            knowledgeDocumentService.createDocument(
+                    title,
+                    "other",
+                    null,
+                    "[]",
+                    file,
+                    UserContext.getUserId());
+            return Result.success("文件导入成功: " + filename, filename);
+        } catch (Exception e) {
+            return Result.error(500, "导入失败，请稍后重试");
+        }
+    }
+
+    @Override
+    public Result<Map<String, Object>> getCacheStats() {
+        if (!UserContext.isAdmin()) {
+            return Result.error(403, "需要管理员权限");
+        }
+        try {
+            Map<String, Object> stats = rerankService.getCacheStats();
+            return Result.success("查询成功", stats);
+        } catch (Exception e) {
+            return Result.error(500, "查询失败，请稍后重试");
+        }
+    }
+
+    @Override
+    public Result<Void> clearImportCache() {
+        if (!UserContext.isAdmin()) {
+            return Result.error(403, "需要管理员权限");
+        }
+        try {
+            rerankService.clearCache();
+            return Result.success("Rerank 三级缓存已清空（L1/L2/L3 全部重置）", null);
         } catch (Exception e) {
             return Result.error(500, "清空失败，请稍后重试");
         }

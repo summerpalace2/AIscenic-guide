@@ -11,43 +11,45 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 4: Planner 规划引擎域 (适配层迁移、应用层编排、路线网关端口纯净化与高德/仓储基础设施下沉)** |
-| **当前推进状态** | **阶段 2·第五步：独立质检子智能体验收通过 (APPROVED)，准予集成提交** |
-| **独立审查结论** | **0 回归差异、0 尚未核实、10 项已验证一致、4 项明确获准的变化 (APPROVED)** |
-| **最后更新时间** | 2026-10-04 18:48 |
+| **当前重构切片** | **Slice 5: RAG 知识检索增强域 (适配层控制器迁移、应用层用例编排、高德Web与Qdrant导入器基础设施下沉)** |
+| **当前推进状态** | **阶段 2·第五步：独立质检子智能体待验收 (Pending Adversarial Review)** |
+| **全量自动化测试结果** | **386 passed / 0 failed / 0 error / 10 skipped (21.1s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 20:14 |
 
 ---
 
-## 一、 当前切片核验项清单 (Planner 规划引擎域)
+## 一、 当前切片核验项清单 (RAG 知识检索增强域)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-PLAN-01 | `POST /ai/planner/v1/plan`<br/>多天初始行程排程 | 接收自由 prompt、天数、同行人等；支持 `X-Plan-Session-Token` 请求头提取；请求体为 null 时自动回退默认对象并补全 token；调用应用服务并返回包含会话状态的 ResponseEntity。 | `PlannerController` 迁移至适配层，保留完全相同的 token 回退与默认请求补全逻辑，委派 `PlanningApplicationService`。 | `PlannerControllerTest.planDelegatesToApplicationServiceAndInjectsToken` | `[已验证一致]` |
-| V-PLAN-02 | `POST /ai/planner/v1/shadow` 系列<br/>无状态候选规划与编辑 | 包含 `/shadow`, `/shadow/replan`, `/shadow/stops`；专供前端 Shadow 流程使用，绝不产生持久化 Session 或 formal Trip。 | 控制器端点路径、入参 RequestBody 与委派方法完全一致。 | `PlannerControllerTest.shadow*` | `[已验证一致]` |
-| V-PLAN-03 | `POST /ai/planner/v1/trips/{tripId}/open`<br/>正式行程反向解构为草稿 | 校验登录态；将已固化的 Trip 解构并在规划引擎中重新载入草稿工作区。 | 路径映射与异常状态码完全一致。 | `PlannerControllerTest.openFormalTripDelegatesToApplicationService` | `[已验证一致]` |
-| V-PLAN-04 | `GET /ai/planner/v1/sessions` 与 `GET /sessions/{sessionId}` | 查询当前用户会话列表或指定会话详情；路径参数与 `X-Plan-Session-Token` 透传鉴权；支持匿名能力凭证校验。 | 保持完全一致的路径契约与 Header 读取。 | `PlannerControllerTest.getSessionPassesToken` | `[已验证一致]` |
-| V-PLAN-05 | `POST /ai/planner/v1/sessions/{sessionId}/dynamic-refresh` | 触发指定会话的高德路线/天气/POI水化刷新；透传 Session Token。 | 保持完全一致的路径契约与 Header 读取。 | `PlannerControllerTest.refreshDynamicDataPassesToken` | `[已验证一致]` |
-| V-PLAN-06 | `POST /sessions/{sessionId}/replan` 与 `/stops` | 针对具体某天某景点的局部重规划或原子增删替换；请求体为 null 时自动初始化并补全 `sessionAccessToken`；触发 CAS 乐观锁版本并发控制。 | 保持完全一致的空请求体防御与 token 回退逻辑。 | `PlannerControllerTest.replanInjectsTokenWhenNull` + `stopsInjectsTokenWhenNull` | `[已验证一致]` |
-| V-PLAN-07 | `POST /ai/planner/v1/sessions/{sessionId}/save` | 将满意规划草稿转正持久化为正式行程 (Trip)。 | 透传 token，委派保存用例。 | `PlannerControllerTest.saveDelegatesToApplicationService` | `[已验证一致]` |
-| V-PLAN-08 | `POST /sessions/{sessionId}/conversation`, `/adjust/preview`, `/adjust/apply` | 对话式意图提取、1~3 个调整方案预览与草稿确认升版；透传 Header Token。 | 保持完全一致的端点、入参 DTO 与应用服务编排。 | `PlannerControllerTest.converse*`, `previewAdjustment*`, `applyAdjustment*` | `[已验证一致]` |
-| V-PLAN-09 | 适配层重构 (Adapter) | 原 `PlannerController` 位于 `domain.planner.api`，混合领域层代码。 | `PlannerController` 迁移至 `com.ai.guide.adapter.planner.web`，彻底删除旧 api 包。 | 架构包扫描校验 | `[明确获准的变化]` |
-| V-PLAN-10 | 应用层门面与用例编排 (Application) | 领域层服务直接作为门面，接口与 DTO 散落在领域层。 | 抽取 `com.ai.guide.application.planner.PlanningApplicationService` 门面接口，由 `PlannerApplicationService` 统筹编排用例；8 个 Request DTO 迁入 `application.planner.dto`。 | 架构分层校验 | `[明确获准的变化]` |
-| V-PLAN-11 | 路线网关端口纯净化 (DIP) | 原 `RouteGatewayPort.java:13` 直接依赖实现类 `AmapPlannerGateway.HydrationResult`，存在典型依赖倒置反例。 | 提取纯领域模型 `com.ai.guide.domain.planner.model.HydrationResult`，使领域网关接口 `RouteGatewayPort` 完全纯净。 | 依赖图检查通过 | `[明确获准的变化]` |
-| V-PLAN-12 | 规划会话仓储端口纯净化与下沉 | 原 `PlannerSessionRepositoryPort` 依赖具体实现类中的内部 `StoredSession`、`CreateResult`、`MutationResult`。 | 规范化 `domain.planner.gateway.PlannerSessionRepositoryPort` 端口契约；具体 JDBC 持久化实现 `PlannerSessionRepository` 下沉至 `infrastructure.planner.repository`。 | 依赖图检查通过 | `[明确获准的变化]` |
-| V-PLAN-13 | 高德地图第三方集成下沉 | `AmapPlannerGateway`, `AmapRouteService`, `AmapRequestCache`, `AmapPlannerConfig` 混杂在领域层。 | 统一下沉至 `com.ai.guide.infrastructure.planner.amap`，彻底消除领域层对外部高德 Web Service 的直接技术耦合。 | 依赖图检查通过 | `[明确获准的变化]` |
-| V-PLAN-14 | 测试套件与回归安全核验 | 保证全量单元测试与规划领域算法全绿通过。 | 规划引擎相关 197 个测试 100% 绿灯（含新增 15 个 Controller 适配器测试）；全工程 353 个测试全部绿灯通过（0 errors, 0 failures, 10 skipped）。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-RAG-01 | `POST /ai/rag/retrieve`<br/>多路语义召回与重排核验 | 接收可选 `body` Map，提取 query/prompt、city（默认重庆）、deep（默认 false）以及 constraints 偏好字典；委派检索服务，异常捕获返回 500。 | `RagController` 迁入适配层，委派 `RagApplicationService`，参数提取、默认值逻辑及 500 回退完全一致。 | `RagControllerTest.testRetrieveSuccess` + `RagApplicationServiceImplTest.testRetrieveSuccessAndNullFallback` | `[已验证一致]` |
+| V-RAG-02 | `GET /ai/rag/stats`<br/>知识库健康与缓存统计 | 校验 `UserContext.isAdmin()`，非管理员返回 403（"无管理员权限"）；返回 totalChunks, cacheStats, sourceCount, retrieval 监控指标。 | 保持完全一致的鉴权文案与状态指标字典映射。 | `RagControllerTest.testGetStats` + `RagApplicationServiceImplTest.testGetStatsAdminCheck` | `[已验证一致]` |
+| V-RAG-03 | `PUT /ai/rag/knowledge/{id}`<br/>文档元数据更新 | 校验管理员权限（403）；提取 title, category, content, tags；捕获 `IllegalArgumentException` 返回 404，其他异常返回 500。 | 保持完全一致的状态码分支（403/404/500/200）。 | `RagControllerTest.testUpdateKnowledge` + `RagApplicationServiceImplTest.testUpdateKnowledge` | `[已验证一致]` |
+| V-RAG-04 | 碎片管理 REST 端点<br/>(`/rag/document/fragments*`) | 包含 `GET /fragments` (page 默认1, size 默认20, keyword), `PUT /fragments/{id}` (400 校验), `DELETE /fragments/{id}` (400 校验), `DELETE /document/all`；全部要求管理员权限。 | 保持完全一致的路径、默认分页值、异常 400 映射与文案。 | `RagControllerTest.test*Fragment*` + `RagApplicationServiceImplTest.testFragmentOperations` | `[已验证一致]` |
+| V-RAG-05 | 缓存清理端点<br/>(`POST /ai/admin/cache/clear`) | 管理员校验 403；触发百炼 Rerank 三级缓存（L1 精确 / L2 归一化 / L3 SimHash）全部清空，返回 200。 | 保持完全一致的方法与响应载荷。 | `RagControllerTest.testClearCache` + `RagApplicationServiceImplTest.testCacheOperations` | `[已验证一致]` |
+| V-RAG-06 | `GET /ai/knowledge` 系列<br/>知识文档列表/分类/详情 | `GET /knowledge`（category, keyword, page=1, size=20）；`GET /categories` 分布统计；`GET /{docId}`（不存在返回 404）；公开查询不要求管理员权限。 | 保持完全一致的路径映射、查询入参及 404 分支。 | `KnowledgeControllerTest.testList*`, `testGet*` + `KnowledgeApplicationServiceImplTest.test*` | `[已验证一致]` |
+| V-RAG-07 | `POST /ai/knowledge` 与 `PUT /ai/knowledge/{docId}`<br/>文档创建与更新 | 统一校验管理员权限（非管理员返回 403 "需要管理员权限"）；支持纯文本与 MultipartFile 文件上传；参数校验失败返回 400，不存在返回 404。 | 保持完全一致的鉴权文案、MultipartFile 支持与 400/404 状态码映射。 | `KnowledgeControllerTest.testCreate*`, `testUpdate*` + `KnowledgeApplicationServiceImplTest.test*` | `[已验证一致]` |
+| V-RAG-08 | `DELETE /ai/knowledge/{docId}` 与同步端点 | 管理员鉴权 403；`DELETE /{docId}` 软删除；`POST /{docId}/sync` 手动切片同步（404 捕获）；`POST /backfill` 历史 Qdrant 碎片元数据回填。 | 保持完全一致的鉴权、状态码与回填委托。 | `KnowledgeControllerTest.testDelete*`, `testSync*`, `testBackfill*` | `[已验证一致]` |
+| V-RAG-09 | 文件导入与缓存管理<br/>(`POST /ai/import`, `GET /ai/cache/stats`, `POST /ai/cache/clear`) | 管理员鉴权 403（"需要管理员权限"）；空文件拦截 400；文件名自动解析提取；Rerank 缓存指标与重置操作。 | 保持完全一致的端点、400 空文件防御与缓存统计契约。 | `ImportControllerTest.test*` + `RagApplicationServiceImplTest.testImportFile` | `[已验证一致]` |
+| V-RAG-10 | 适配层重构 (Adapter) | 原 3 个 Controller 位于 `domain.rag.api`，混合领域层代码。 | `RagController`, `KnowledgeController`, `ImportController` 迁移至 `com.ai.guide.adapter.rag.web`，彻底物理清理旧 api 目录。 | 架构包扫描校验 | `[明确获准的变化]` |
+| V-RAG-11 | 应用层编排提炼 (Application) | 领域层服务直接作为外部门面，无统一用例接口。 | 提炼 `RagApplicationService` 与 `KnowledgeApplicationService` 应用层接口及对应实现类，隔离事务、鉴权上下文与领域对象响应转换。 | 架构分层校验 | `[明确获准的变化]` |
+| V-RAG-12 | 第三方技术设施下沉 (Infrastructure) | `ProductionV2QdrantImporter`（Qdrant GRPC 客户端）与 `AmapWebServiceClient`（高德 Web API 客户端）原混杂在 `domain.rag.pipeline` 中。 | 分别下沉至 `com.ai.guide.infrastructure.rag.qdrant` 与 `com.ai.guide.infrastructure.rag.amap`，单元测试同步镜像迁移至基础设施测试包，领域层不再直接耦合底层 GRPC 与第三方 HTTP 客户端。 | 架构依赖图检查 | `[明确获准的变化]` |
+| V-RAG-13 | 全量回归与测试安全基线 | 确保 Chat、Preferences、Trip、Planner 及 RAG 全链路 100% 绿灯。 | 全工程 386 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 27 项控制器与应用服务自动化用例。 | `mvn test` 自动化验证 | `[已验证一致]` |
 
 ---
 
 ## 二、 历史切片核验项清单
 
-### 1. Trip 行程生命周期域 (Slice 3)
+### 1. Planner 规划引擎域 (Slice 4)
+- V-PLAN-01 ~ V-PLAN-14：14 个 REST 端点、X-Plan-Session-Token 请求头自动注入、空 Body 兜底、DIP 纯净化 `RouteGatewayPort`/`HydrationResult`、高德与会话仓储下沉全部通过验收（Commit `9b6fefd`）。
+
+### 2. Trip 行程生命周期域 (Slice 3)
 - V-TRIP-01 ~ V-TRIP-12：9 大 REST 动词、401/404/409 异常映射、局部重规划数据外露、PDF 导出、CAS 并发控制、仓储与 PDF 基础设施下沉全部通过验收（Commit `2afbe66`）。
 
-### 2. Preferences 偏好画像域 (Slice 2)
+### 3. Preferences 偏好画像域 (Slice 2)
 - V-PREF-01 ~ V-PREF-09：5 大 REST 动词、401 鉴权拦截、409 OCC 冲突结构、400 校验、200/201 状态码、仓储端口依赖倒置全部通过验收（Commit `bfbb2ef`）。
 
-### 3. Chat 对话流试点 (Slice 1)
+### 4. Chat 对话流试点 (Slice 1)
 - V-CHAT-01 ~ V-CHAT-08：10 参数流式契约、槽位隔离、情绪分流、双层超时容灾、RedisChatMemory 基础设施下沉全部通过验收（Commit `eda0277`）。
 
 ---
@@ -61,6 +63,7 @@
 | ISSUE-02 | GET `/ai/preferences`<br/>(异常转译状态码) | 原 `PreferencesController.java` [L55-56] 在捕获 `IllegalArgumentException` 时返回 401（未登录文案），而写操作捕获同类型异常返回 400。 | A/B 完全保留现状 | 无凭证直接调用 GET `/ai/preferences` | 属于既有契约边界，忠实保留 |
 | ISSUE-03 | DELETE `/ai/trips/{tripId}`<br/>(物理级联删除) | 原系统未提供回收站/软删除机制，一旦验证 `expectedVersion` 成功，物理直接删除 `trip`、`trip_version` 与 `trip_idempotency`。 | A/B 完全保留现状 | DELETE 请求成功后查询数据库对应主键记录均被物理抹去 | 属于既有 Phase 4 契约，原样保留 |
 | ISSUE-04 | POST `/ai/planner/v1/sessions/{sessionId}/save`<br/>(匿名会话转正限制) | 匿名用户调用 `/save` 时返回 401“请先登录后保存行程”，草稿不会丢失，需带 Token 在登录后由同一用户调用 `/open` 重新绑定。 | A/B 完全保留现状 | 匿名用户创建会话后直接调用 `/save` | 属于既有鉴权契约，原样保留 |
+| ISSUE-05 | 管理员鉴权拦截文案微小差异<br/>(`/ai/rag/*` vs `/ai/knowledge/*`) | 原工程中 `RagController` 的鉴权拦截文案为 `"无管理员权限"`，而 `KnowledgeController` 与 `ImportController` 的鉴权拦截文案为 `"需要管理员权限"`。 | A/B 完全保留现状 | 分别以非管理员身份请求 `/ai/rag/stats` 与 `/ai/knowledge` 创建端点，验证文案分毫不差 | 属于切斯特顿围栏保护范畴，严格分别保留原样 |
 
 ---
 
@@ -68,11 +71,11 @@
 - `2026-10-04 (Slice 1 - Chat 域)`: 拆分 `ChatApplicationService`，下沉 `RedisChatMemory` 至 `infrastructure.chat.memory`。
 - `2026-10-04 (Slice 2 - Preferences 域)`: 抽取 `PreferencesRepositoryPort`，下沉 `PreferencesRepository`，规范化 `UserPreferencesPatch` 领域模型。
 - `2026-10-04 (Slice 3 - Trip 域)`: 拆分 `TripApplicationService`，抽象 `TripRepositoryPort` 与 `TripPlanPdfExportPort`，下沉仓储持久化与 PDF 手册生成。
-- `2026-10-04 (Slice 4 - Planner 域)`:
-  - `com.ai.guide.adapter.planner.web`: 承接 `PlannerController`，纯净处理 14 个 REST 端点、X-Plan-Session-Token 请求头提取与 HTTP 状态码映射。
-  - `com.ai.guide.application.planner`: 新增 `PlanningApplicationService` 门面与 `PlannerApplicationService` 实现，统筹多天规划、草稿会话、局部重排与方案提案用例；DTO 迁入 `dto` 子包。
-  - `com.ai.guide.domain.planner.gateway`: 抽象 `RouteGatewayPort` 与 `PlannerSessionRepositoryPort`，彻底消除对高德 SDK 及具体持久化类的反向依赖。
-  - `com.ai.guide.domain.planner.model`: 提取 `HydrationResult` 纯领域结果记录。
-  - `com.ai.guide.infrastructure.planner.repository`: 承接 `PlannerSessionRepository`，维护规划草稿多版本快照与 SQLite 持久化。
-  - `com.ai.guide.infrastructure.planner.amap`: 承接 `AmapPlannerGateway`, `AmapRouteService`, `AmapRequestCache`, `AmapPlannerConfig`，封装高德第三方地图 API 与并发防抖。
-  - 全量 353 个单元测试全部绿灯通过（22.775s），新增 15 个控制器自动化用例。
+- `2026-10-04 (Slice 4 - Planner 域)`: 迁移 `PlannerController` 至 `adapter.planner.web`，抽取 `PlanningApplicationService` 门面与 8 个 Request DTO，纯化 `RouteGatewayPort` 领域端口与 `HydrationResult` 领域模型，下沉 `PlannerSessionRepository` 与高德集成套件至 `infrastructure.planner.*`。
+- `2026-10-04 (Slice 5 - RAG 域)`:
+  - `com.ai.guide.adapter.rag.web`: 承接 `RagController`, `KnowledgeController`, `ImportController`，纯净处理 REST 请求路由与 HTTP 参数校验。
+  - `com.ai.guide.application.rag`: 新增 `RagApplicationService` 与 `KnowledgeApplicationService` 应用服务及实现，统筹检索增强、知识库管理与 Rerank 缓存编排。
+  - `com.ai.guide.infrastructure.rag.qdrant`: 承接 `ProductionV2QdrantImporter`，隔离 Qdrant GRPC 外部存储集成。
+  - `com.ai.guide.infrastructure.rag.amap`: 承接 `AmapWebServiceClient`，解耦高德外部 Web Service HTTP 通信。
+  - 物理清理已过时的 `domain.rag.api` 目录。
+  - 全工程 386 项测试全部通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 27 项适配层与应用层自动化测试。

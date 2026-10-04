@@ -1,7 +1,7 @@
 package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
-import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
+import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;

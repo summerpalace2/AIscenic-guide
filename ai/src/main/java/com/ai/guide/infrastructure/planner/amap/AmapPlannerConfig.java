@@ -1,6 +1,6 @@
 package com.ai.guide.infrastructure.planner.amap;
 
-import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
+import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -5,7 +5,7 @@ import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 
 
 
-import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
+import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;

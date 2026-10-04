@@ -1,4 +1,4 @@
-package com.ai.guide.domain.rag.pipeline;
+package com.ai.guide.infrastructure.rag.amap;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.web.client.RestTemplate;

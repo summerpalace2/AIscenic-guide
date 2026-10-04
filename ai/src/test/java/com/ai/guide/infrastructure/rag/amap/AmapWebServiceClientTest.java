@@ -1,4 +1,7 @@
-package com.ai.guide.domain.rag.pipeline;
+package com.ai.guide.infrastructure.rag.amap;
+
+import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+
 
 
 

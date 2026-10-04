@@ -6,7 +6,7 @@ import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
-import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
+import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.fasterxml.jackson.databind.JsonNode;

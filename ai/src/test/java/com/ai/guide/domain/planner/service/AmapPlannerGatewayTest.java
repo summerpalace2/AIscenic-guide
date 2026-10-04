@@ -7,7 +7,7 @@ import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 
 
 
-import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
+import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.ai.guide.domain.attraction.model.Attraction;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
