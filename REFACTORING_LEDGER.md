@@ -11,38 +11,42 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 10: Memory 旅行记忆与偏好沉淀域 (记忆控制器迁移至适配层、抽象旅行记忆应用服务、纯化用例编排、物理清理旧 api 包)** |
+| **当前重构切片** | **Slice 11: Analytics 分析大盘与实时在线感知域 (分析与在线控制器迁移至适配层、抽象分析应用服务、纯化看板编排与报表导出、物理清理旧 api 包)** |
 | **当前推进状态** | **阶段 2·第六步：独立质检子智能体复核通过 (Final Passed - Ready to Commit)** |
-| **全量自动化测试结果** | **454 passed / 0 failed / 0 error / 10 skipped (21.1s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 21:12 |
+| **全量自动化测试结果** | **488 passed / 0 failed / 0 error / 10 skipped (23.3s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 21:22 |
 
 ---
 
-## 一、 当前切片核验项清单 (Memory 旅行记忆与偏好沉淀域)
+## 一、 当前切片核验项清单 (Analytics 分析大盘与实时在线感知域)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-MEM-01 | `GET /ai/memories`<br/>已确认记忆列表 | 已登录返回 200 与记忆列表（7 天 TTL）；匿名请求拦截返回 401 "请先登录后查看旅行记忆"。 | `TravelMemoryController` 迁入 `adapter.memory.web`，委派应用服务，状态码与文案完全一致。 | `TravelMemoryControllerTest.testList*` + `TravelMemoryApplicationServiceImplTest.testList` | `[已验证一致]` |
-| V-MEM-02 | `GET /ai/memories/candidates`<br/>待确认记忆建议列表 | 已登录返回 200 与 MemoryCandidate 列表；匿名请求拦截返回 401 "请先登录后查看记忆建议"。 | 委派应用服务，状态码与文案完全一致。 | `TravelMemoryControllerTest.testCandidates*` + `TravelMemoryApplicationServiceImplTest.testCandidates` | `[已验证一致]` |
-| V-MEM-03 | `POST /ai/memories/candidate`<br/>单句记忆即时提取推荐 | 切斯特顿围栏：**无需登录即可使用**；提取 message 入参；调用 fast-path 规则或 smart-path LLM；返回 200 与 Candidate 对象。 | 保持免登开放契约，入参提取与返回完全一致。 | `TravelMemoryControllerTest.testCandidateSuggest_NoLoginRequired` + `TravelMemoryApplicationServiceImplTest.testSuggest` | `[已验证一致]` |
-| V-MEM-04 | `POST /ai/memories/observations`<br/>后台记忆线索捕获 | 已登录接收 message 与 sessionId，入队并返回 HTTP 202 "记忆线索已进入后台整理队列"；参数异常返回 400；匿名拦截返回 401 "请先登录后使用旅行记忆"。 | 严格保持 HTTP 202 异步接收语义、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testObserve*` + `TravelMemoryApplicationServiceImplTest.testCaptureObservation` | `[已验证一致]` |
-| V-MEM-05 | `POST /ai/memories`<br/>显式新增已确认记忆 | 接收 content, category (默认 CUSTOM), sourceType (默认 CHAT_CONFIRMED), sourceRef；已登录返回 HTTP 201 "旅行记忆已保存"；参数异常 400；匿名拦截 401 "请先登录后保存旅行记忆"。 | 严格保持 HTTP 201 创建状态码、参数默认值、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testConfirm*` + `TravelMemoryApplicationServiceImplTest.testConfirm` | `[已验证一致]` |
-| V-MEM-06 | `PATCH /ai/memories/{id}`<br/>更新已确认记忆 | 接收 content, category；已登录返回 200 "旅行记忆已更新"；参数异常 400；匿名拦截 401 "请先登录后编辑旅行记忆"。 | 严格保持 PATCH 动词、更新行为、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testUpdate*` + `TravelMemoryApplicationServiceImplTest.testUpdate` | `[已验证一致]` |
-| V-MEM-07 | `DELETE /ai/memories/{id}`<br/>删除旅行记忆 | 已登录调用 delete 并返回 200 "旅行记忆已删除"；匿名拦截 401 "请先登录后删除旅行记忆"。 | 严格保持 DELETE 动词、删除调用与 401 鉴权文案。 | `TravelMemoryControllerTest.testDelete*` + `TravelMemoryApplicationServiceImplTest.testDelete` | `[已验证一致]` |
-| V-MEM-08 | `POST /ai/memories/candidates/{id}/(confirm\|dismiss)`<br/>建议确认与忽略 | 确认：已登录返回 200 "旅行记忆已确认"（参数异常 400，匿名 401 "请先登录后确认记忆建议"）；<br/>忽略：已登录返回 200 "记忆建议已忽略"（匿名 401 "请先登录后忽略记忆建议"）。 | 严格区分确认与忽略两个端点操作、状态码与细微提示文案。 | `TravelMemoryControllerTest.test*Candidate*` + `TravelMemoryApplicationServiceImplTest.test*Candidate*` | `[已验证一致]` |
-| V-MEM-09 | `(GET\|POST) /ai/memories/prepend-prompt`<br/>前置提示词管理 | GET：查看前置提示词，匿名 401 "请先登录后查看旅行偏好提示词"；<br/>POST：保存或重生成前置提示词（action=resynthesize 返回 200 "偏好提示词已重新生成"，默认 save 返回 200 "旅行偏好提示词已保存"；匿名 401 "请先登录后保存旅行偏好提示词"）。 | 保持完全一致的 action 分支判断、返回值 Map key（prependPrompt）与提示文案。 | `TravelMemoryControllerTest.test*PrependPrompt*` + `TravelMemoryApplicationServiceImplTest.testPromptMethods` | `[已验证一致]` |
-| V-MEM-10 | 适配层迁移 (Adapter) | 原 `TravelMemoryController` 位于 `domain.memory.api`，混合领域代码。 | 统一迁移至 `com.ai.guide.adapter.memory.web`，彻底物理删除旧 `domain.memory.api` 目录。 | 架构包扫描核验 | `[明确获准的变化]` |
-| V-MEM-11 | 应用层服务提炼 (Application) | 控制器直接依赖领域服务 `TravelMemoryService` 暴露领域实现细节。 | 抽象 `TravelMemoryApplicationService` 门面及 `TravelMemoryApplicationServiceImpl`，隔离 Web 层与 Domain 核心。 | 架构分层校验 | `[明确获准的变化]` |
-| V-MEM-12 | 全量回归与测试安全基线 | 确保既有 7 天记忆淘汰定时任务、规则直通车、大模型提炼等核心逻辑全量通过。 | 全工程 454 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 29 项端点与应用层测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-ANALYTICS-01 | `GET /ai/analytics/dashboard`<br/>综合指标大盘 | period 参数默认 "today"；成功返回 200 "查询成功" 与指标 Map；异常捕获返回 500 "查询失败，请稍后重试"。 | `AnalyticsController` 迁入 `adapter.analytics.web`，委派应用服务，参数、状态码与文案完全一致。 | `AnalyticsControllerTest.testDashboard*` + `AnalyticsApplicationServiceImplTest.testGetDashboard` | `[已验证一致]` |
+| V-ANALYTICS-02 | `GET /ai/analytics/hot-questions`<br/>热门咨询问题排行 | period 参数默认 "today"，topN 参数默认 10；成功返回 200 "查询成功"；异常捕获返回 500。 | 保持完全一致的默认值解析、异常捕获与响应结构。 | `AnalyticsControllerTest.testHotQuestions*` + `AnalyticsApplicationServiceImplTest.testGetHotQuestions` | `[已验证一致]` |
+| V-ANALYTICS-03 | `GET /ai/analytics/sentiment-trend`<br/>游客情绪倾向时序 | startDate 与 endDate 可选，granularity 默认 "day"；成功返回 200 "查询成功"；异常捕获返回 500。 | 保持完全一致的参数提取、时序查询与响应结构。 | `AnalyticsControllerTest.testSentimentTrend*` + `AnalyticsApplicationServiceImplTest.testGetSentimentTrend` | `[已验证一致]` |
+| V-ANALYTICS-04 | `GET /ai/analytics/service-count`<br/>服务量时序统计 | startDate 与 endDate 可选，granularity 默认 "day"；成功返回 200 "查询成功"；异常捕获返回 500。 | 保持完全一致的参数提取与异常处理。 | `AnalyticsControllerTest.testServiceCount*` + `AnalyticsApplicationServiceImplTest.testGetServiceCount` | `[已验证一致]` |
+| V-ANALYTICS-05 | `GET /ai/analytics/reports`<br/>运营报告列表 | page 默认 1，size 默认 20；成功返回 200 "查询成功" 与分页结果；异常捕获返回 500。 | 保持完全一致的分页参数默认值与异常捕获。 | `AnalyticsControllerTest.testListReports*` + `AnalyticsApplicationServiceImplTest.testListReports` | `[已验证一致]` |
+| V-ANALYTICS-06 | `GET /ai/analytics/reports/{reportId}`<br/>运营报告详情 | 查无记录返回 404 "报告不存在"；查到返回 200 "查询成功"；异常捕获返回 500。 | 严格保持 404 判空拦截与提示文案。 | `AnalyticsControllerTest.testGetReport*` + `AnalyticsApplicationServiceImplTest.testGetReport` | `[已验证一致]` |
+| V-ANALYTICS-07 | `GET /ai/analytics/reports/{reportId}/export`<br/>报告 PDF 导出 | 报告不存在返回 404 notFound；提取 period_end 或 periodStart 前 10 位作为日期；调用 PDF 导出；返回 application/pdf 与 filename="report_<date/id>.pdf"；PDF 为空返回 500 "PDF 生成失败"；异常 500 "导出失败，请稍后重试"。 | 严格保持 Content-Type、Content-Disposition 格式、日期截取与错误响应 body 字节流。 | `AnalyticsControllerTest.testExportReportPdf*` + `AnalyticsApplicationServiceImplTest.testExportReportPdf` | `[已验证一致]` |
+| V-ANALYTICS-08 | `GET /ai/analytics/export/today`<br/>今日日报 PDF 导出 | 生成当日 LocalDate.now() 日报；返回 application/pdf 与 filename="daily_report_<date>.pdf"；异常 500。 | 严格保持今日日报导出、响应头与异常处理一致。 | `AnalyticsControllerTest.testExportToday*` + `AnalyticsApplicationServiceImplTest.testExportTodayReportPdf` | `[已验证一致]` |
+| V-ANALYTICS-09 | `POST /ai/online/heartbeat`<br/>客户端心跳续约 | 切斯特顿围栏：基础映射为 `/ai`；匿名拦截返回 401 "请先登录"；有效用户刷新心跳返回 200 "心跳已更新"。 | `OnlinePresenceController` 迁入 `adapter.analytics.web`，保持 `/ai` 根映射与鉴权拦截。 | `OnlinePresenceControllerTest.testHeartbeat*` + `AnalyticsApplicationServiceImplTest.testHeartbeatAndOnlineUsers` | `[已验证一致]` |
+| V-ANALYTICS-10 | `GET /ai/admin/online-users`<br/>在线活跃用户列表 | 非管理员拦截返回 403 "无管理员权限"；管理员返回 200 "查询成功"，包含 total, ttlSeconds=90, items。 | 严格保持管理员校验、403 文案与数据封装字段。 | `OnlinePresenceControllerTest.testOnlineUsers*` + `AnalyticsApplicationServiceImplTest.testHeartbeatAndOnlineUsers` | `[已验证一致]` |
+| V-ANALYTICS-11 | 适配层迁移 (Adapter) | 原 `AnalyticsController` 与 `OnlinePresenceController` 位于 `domain.analytics.api`。 | 统一迁移至 `com.ai.guide.adapter.analytics.web`，彻底物理删除旧 `domain.analytics.api` 目录。 | 架构包扫描核验 | `[明确获准的变化]` |
+| V-ANALYTICS-12 | 应用层服务提炼 (Application) | 跨域控制器直接调用 `AnalyticsService`, `PdfExportService`, `OnlinePresenceService`。 | 抽象 `AnalyticsApplicationService` 门面及 `AnalyticsApplicationServiceImpl`，收拢数据大盘、在线感知与报表生成。 | 架构分层校验 | `[明确获准的变化]` |
+| V-ANALYTICS-13 | 全量回归与测试安全基线 | 确保既有情感倾向计算、实时在线心跳感知与报表流式导出 100% 稳定。 | 全工程 488 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.3s），新增 34 项控制器与应用层测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
 
 ---
 
 ## 二、 历史切片核验项清单
 
-### 1. Voice 语音识别与合成域 (Slice 9)
+### 1. Memory 旅行记忆与偏好沉淀域 (Slice 10)
+- V-MEM-01 ~ V-MEM-12：11 大记忆端点、免登候选推荐围栏、HTTP 201/202 语义、7 天定时清理全部通过验收（Commit `45048fe`）。
+
+### 2. Voice 语音识别与合成域 (Slice 9)
 - V-VOICE-01 ~ V-VOICE-06：ASR 与 TTS 双端点、Base64 防御转译、dev_pid 与 voice 白名单、BaiduVoiceClient 基础设施下沉全部通过验收（Commit `9feb197`）。
 
-### 2. Attraction 文旅地标与百科域 (Slice 8)
+### 3. Attraction 文旅地标与百科域 (Slice 8)
 - V-ATTR-01 ~ V-ATTR-06：多条件景点列表、受控与动态详情分支路由、跨域事实投影与匿名登录态隔离、应用层编排全部通过验收（Commit `c9e4515`）。
 
 ### 2. Search 文旅多源综合搜索域 (Slice 7)
@@ -126,5 +130,11 @@
   - 严格保持切斯特顿围栏：单句记忆即时提取 `/ai/memories/candidate` 无需登录；后台线索收集返回 HTTP 202；显式确认返回 HTTP 201。
   - 物理清理旧 `domain.memory.api` 目录。
   - 全工程 454 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 29 项单元与端点覆盖测试。
+- `2026-10-04 (Slice 11 - Analytics 域)`:
+  - `com.ai.guide.adapter.analytics.web`: 承接 `AnalyticsController`（8 个大盘与报表导出端点）与 `OnlinePresenceController`（心跳与实时在线人数端点）。
+  - `com.ai.guide.application.analytics`: 抽象 `AnalyticsApplicationService` 门面及 `AnalyticsApplicationServiceImpl`，收拢数据看板、在线心跳与运营 PDF 导出编排。
+  - 严格保持切斯特顿围栏：`OnlinePresenceController` 根路径为 `/ai`（`/ai/online/heartbeat`, `/ai/admin/online-users`），非 `/ai/analytics`；PDF 导出包含 Content-Disposition 与 filename 规范。
+  - 物理清理旧 `domain.analytics.api` 目录。
+  - 全工程 488 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.3s），新增 34 项单元与端点覆盖测试。
 
 
