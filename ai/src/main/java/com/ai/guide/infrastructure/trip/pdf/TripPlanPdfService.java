@@ -1,5 +1,6 @@
-package com.ai.guide.domain.trip.service;
+package com.ai.guide.infrastructure.trip.pdf;
 
+import com.ai.guide.domain.trip.gateway.TripPlanPdfExportPort;
 import com.lowagie.text.Anchor;
 import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
@@ -26,12 +27,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 权威 Java 行程手册 PDF 导出服务。
- * 遵循专业旅行手册信息架构：封面与总览、每日时间线、景点卡片、高德路线直达与出行贴士。
+ * 权威 Java 行程手册 PDF 导出服务 (Trip Plan PDF Service)
+ *
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 文档导出技术适配器。
+ * 核心职责：实现领域端口 {@link TripPlanPdfExportPort}，基于 OpenPDF / iText 渲染生成高保真旅行手册 PDF。
  */
 @Service
-public class TripPlanPdfService {
+public class TripPlanPdfService implements TripPlanPdfExportPort {
 
+    @Override
     public byte[] export(Map<String, Object> plan) {
         if (plan == null) plan = Map.of();
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {

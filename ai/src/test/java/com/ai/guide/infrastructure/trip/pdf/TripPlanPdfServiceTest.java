@@ -1,4 +1,4 @@
-package com.ai.guide.domain.trip.service;
+package com.ai.guide.infrastructure.trip.pdf;
 
 
 import org.junit.jupiter.api.Test;

@@ -1,5 +1,6 @@
-package com.ai.guide.domain.trip.repository;
+package com.ai.guide.infrastructure.trip.repository;
 
+import com.ai.guide.domain.trip.gateway.TripRepositoryPort;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.trip.model.TripVersion;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -7,17 +8,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 正式行程主表与版本表持久化仓储
+ * 正式行程主表与版本表持久化仓储技术实现 (Trip Repository)
  *
- * 所属领域：domain.trip.repository（正式行程仓储层）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 数据持久化适配器。
+ * 核心职责：实现领域端口 {@link TripRepositoryPort}，负责行程聚合根、多版本历史快照及幂等记录在关系型数据库中的原子读写。
  */
 @Repository
-public class TripRepository {
+public class TripRepository implements TripRepositoryPort {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
 
@@ -30,6 +31,7 @@ public class TripRepository {
         this.objectMapper = objectMapper;
     }
 
+    @Override
     public List<Trip> list(String ownerId) {
         return jdbcTemplate.query(
                 "SELECT t.id, t.owner_id, t.title, t.status, t.current_version, " +
@@ -45,6 +47,7 @@ public class TripRepository {
                 ownerId);
     }
 
+    @Override
     public Trip find(String ownerId, String tripId) {
         List<Trip> rows = jdbcTemplate.query(
                 "SELECT t.id, t.owner_id, t.title, t.status, t.current_version, " +
@@ -61,6 +64,7 @@ public class TripRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    @Override
     public TripVersion findVersion(String ownerId, String tripId, int versionNumber) {
         List<TripVersion> rows = jdbcTemplate.query(
                 "SELECT v.id, v.trip_id, v.version_number, v.snapshot, v.change_reason, " +
@@ -75,6 +79,7 @@ public class TripRepository {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    @Override
     public List<TripVersion> listVersions(String ownerId, String tripId) {
         return jdbcTemplate.query(
                 "SELECT v.id, v.trip_id, v.version_number, v.snapshot, v.change_reason, " +
@@ -88,6 +93,7 @@ public class TripRepository {
                 ownerId, tripId);
     }
 
+    @Override
     public void insertTripAndVersion(String tripId, String ownerId, String title, String status,
                                      Map<String, Object> snapshot, long now, String createdBy,
                                      String versionId) {
@@ -98,6 +104,7 @@ public class TripRepository {
         insertVersion(versionId, tripId, 1, snapshot, "初始保存", now, createdBy);
     }
 
+    @Override
     public void insertVersion(String versionId, String tripId, int versionNumber,
                               Map<String, Object> snapshot, String changeReason,
                               long now, String createdBy) {
@@ -109,6 +116,7 @@ public class TripRepository {
     }
 
     /** CAS the aggregate pointer. Version insertion and this update belong to one service transaction. */
+    @Override
     public int advanceCurrentVersion(String ownerId, String tripId, int expectedVersion,
                                      int nextVersion, String title, long now) {
         return jdbcTemplate.update(
@@ -117,6 +125,7 @@ public class TripRepository {
                 title, nextVersion, now, tripId, ownerId, expectedVersion);
     }
 
+    @Override
     public int updateTitle(String ownerId, String tripId, String title, long now) {
         return jdbcTemplate.update(
                 "UPDATE trip SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?",
@@ -124,6 +133,7 @@ public class TripRepository {
     }
 
     /** Physically deletes the aggregate only if the caller still owns the expected version. */
+    @Override
     public int deleteIfCurrentVersion(String ownerId, String tripId, int expectedVersion) {
         int deleted = jdbcTemplate.update(
                 "DELETE FROM trip WHERE id = ? AND owner_id = ? AND current_version = ?",
@@ -135,6 +145,7 @@ public class TripRepository {
         return deleted;
     }
 
+    @Override
     public IdempotencyRecord findIdempotency(String ownerId, String operation, String key) {
         if (key == null || key.isBlank()) return null;
         List<IdempotencyRecord> rows = jdbcTemplate.query(
@@ -151,6 +162,7 @@ public class TripRepository {
     }
 
     /** Reserves a scoped idempotency key before a mutation is committed. */
+    @Override
     public void reserveIdempotency(String ownerId, String operation, String key,
                                    String fingerprint, String tripId, long now) {
         jdbcTemplate.update(
@@ -160,6 +172,7 @@ public class TripRepository {
                 ownerId, operation, key, fingerprint, tripId, 0, "{}", now);
     }
 
+    @Override
     public void completeIdempotency(String ownerId, String operation, String key, Trip trip) {
         jdbcTemplate.update(
                 "UPDATE trip_idempotency SET trip_id = ?, version_number = ?, response_json = ? " +
@@ -167,6 +180,7 @@ public class TripRepository {
                 trip.id(), trip.currentVersion(), write(trip), ownerId, operation, key);
     }
 
+    @Override
     public void deleteIdempotency(String ownerId, String operation, String key) {
         jdbcTemplate.update(
                 "DELETE FROM trip_idempotency WHERE owner_id = ? AND operation = ? AND idempotency_key = ?",
@@ -174,12 +188,14 @@ public class TripRepository {
     }
 
     /** Kept as a narrow compatibility helper for callers that already have a result. */
+    @Override
     public void insertIdempotency(String ownerId, String operation, String key,
                                   String fingerprint, Trip trip, long now) {
         reserveIdempotency(ownerId, operation, key, fingerprint, trip.id(), now);
         completeIdempotency(ownerId, operation, key, trip);
     }
 
+    @Override
     public Trip deserializeIdempotentTrip(IdempotencyRecord record) {
         if (record == null || record.versionNumber() <= 0
                 || record.responseJson() == null || record.responseJson().isBlank()
@@ -218,10 +234,5 @@ public class TripRepository {
         } catch (Exception error) {
             throw new IllegalArgumentException("Trip JSON 数据无效", error);
         }
-    }
-
-    public record IdempotencyRecord(String ownerId, String operation, String key,
-                                    String requestFingerprint, String tripId,
-                                    int versionNumber, String responseJson, long createdAt) {
     }
 }

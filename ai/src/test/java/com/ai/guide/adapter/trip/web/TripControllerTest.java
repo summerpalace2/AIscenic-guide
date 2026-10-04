@@ -1,9 +1,7 @@
-package com.ai.guide.domain.trip.api;
+package com.ai.guide.adapter.trip.web;
 
-
+import com.ai.guide.application.trip.TripApplicationService;
 import com.ai.guide.common.context.UserContext;
-import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.trip.service.TripPlanPdfService;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.trip.model.TripVersion;
 import com.ai.guide.domain.trip.service.TripService;
@@ -28,20 +26,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class TripControllerTest {
 
-    private final TripService tripService = mock(TripService.class);
-    private final TripPlanPdfService tripPlanPdfService = mock(TripPlanPdfService.class);
+    private final TripApplicationService tripApplicationService = mock(TripApplicationService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(
-                new TripController(tripService, tripPlanPdfService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(new TripController(tripApplicationService)).build();
     }
 
     @AfterEach
@@ -53,21 +50,21 @@ class TripControllerTest {
     void listIsScopedToCurrentOwner() throws Exception {
         UserContext.set("owner-1", "TOURIST");
         Trip trip = trip("trip-1", 1);
-        when(tripService.list("owner-1")).thenReturn(List.of(trip));
+        when(tripApplicationService.listTrips("owner-1")).thenReturn(List.of(trip));
 
         mockMvc.perform(get("/ai/trips"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].id").value("trip-1"));
 
-        verify(tripService).list("owner-1");
+        verify(tripApplicationService).listTrips("owner-1");
     }
 
     @Test
     void createKeepsTripAsMutationPayload() throws Exception {
         UserContext.set("owner-1", "TOURIST");
         Trip trip = trip("trip-1", 1);
-        when(tripService.create(eq("owner-1"), any()))
+        when(tripApplicationService.createTrip(eq("owner-1"), any()))
                 .thenReturn(TripService.OperationResult.success(201, "行程已创建", "CREATED", trip));
 
         mockMvc.perform(post("/ai/trips")
@@ -82,7 +79,7 @@ class TripControllerTest {
     @Test
     void getReturnsOwnerScopedTrip() throws Exception {
         UserContext.set("owner-1", "TOURIST");
-        when(tripService.get("owner-1", "trip-1")).thenReturn(trip("trip-1", 2));
+        when(tripApplicationService.getTrip("owner-1", "trip-1")).thenReturn(trip("trip-1", 2));
 
         mockMvc.perform(get("/ai/trips/trip-1"))
                 .andExpect(status().isOk())
@@ -94,7 +91,7 @@ class TripControllerTest {
     void updateReturnsCasConflictMetadata() throws Exception {
         UserContext.set("owner-1", "TOURIST");
         TripService.OperationResult conflict = TripService.OperationResult.conflict("trip-1", 1, 2);
-        when(tripService.update(eq("owner-1"), eq("trip-1"), any())).thenReturn(conflict);
+        when(tripApplicationService.updateTrip(eq("owner-1"), eq("trip-1"), any())).thenReturn(conflict);
 
         mockMvc.perform(put("/ai/trips/trip-1")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -111,7 +108,7 @@ class TripControllerTest {
     void replanExposesServerSelectedReplacementMetadata() throws Exception {
         UserContext.set("owner-1", "TOURIST");
         Trip trip = trip("trip-1", 2);
-        when(tripService.replan(eq("owner-1"), eq("trip-1"), any()))
+        when(tripApplicationService.replanTrip(eq("owner-1"), eq("trip-1"), any()))
                 .thenReturn(TripService.OperationResult.success(
                         200, "局部重规划已保存", "UPDATED", trip,
                         "cq-grand-theatre", List.of("day-1")));
@@ -133,8 +130,8 @@ class TripControllerTest {
         UserContext.set("owner-1", "TOURIST");
         TripVersion version = new TripVersion("version-1", "trip-1", 1,
                 Map.of("days", List.of()), "初始保存", 1L, "owner-1");
-        when(tripService.versions("owner-1", "trip-1")).thenReturn(List.of(version));
-        when(tripService.version("owner-1", "trip-1", 1)).thenReturn(version);
+        when(tripApplicationService.getVersions("owner-1", "trip-1")).thenReturn(List.of(version));
+        when(tripApplicationService.getVersion("owner-1", "trip-1", 1)).thenReturn(version);
 
         mockMvc.perform(get("/ai/trips/trip-1/versions"))
                 .andExpect(status().isOk())
@@ -147,7 +144,7 @@ class TripControllerTest {
     @Test
     void deleteUsesOwnerScopeAndExpectedVersion() throws Exception {
         UserContext.set("owner-1", "TOURIST");
-        when(tripService.delete(eq("owner-1"), eq("trip-1"), any()))
+        when(tripApplicationService.deleteTrip(eq("owner-1"), eq("trip-1"), any()))
                 .thenReturn(TripService.OperationResult.deleted("trip-1", 2));
 
         mockMvc.perform(delete("/ai/trips/trip-1")
@@ -156,13 +153,13 @@ class TripControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(tripService).delete(eq("owner-1"), eq("trip-1"), any());
+        verify(tripApplicationService).deleteTrip(eq("owner-1"), eq("trip-1"), any());
     }
 
     @Test
     void deleteWithoutExpectedVersionIsRejectedByServiceContract() throws Exception {
         UserContext.set("owner-1", "TOURIST");
-        when(tripService.delete(eq("owner-1"), eq("trip-1"), any()))
+        when(tripApplicationService.deleteTrip(eq("owner-1"), eq("trip-1"), any()))
                 .thenReturn(TripService.OperationResult.badRequest("expectedVersion 为必填整数"));
 
         mockMvc.perform(delete("/ai/trips/trip-1")
@@ -183,7 +180,7 @@ class TripControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.success").value(false));
 
-        verify(tripService, never()).create(any(), any());
+        verify(tripApplicationService, never()).createTrip(any(), any());
     }
 
     @Test
@@ -202,11 +199,24 @@ class TripControllerTest {
         mockMvc.perform(get("/ai/trips/trip-1/export"))
                 .andExpect(status().isUnauthorized());
 
-        verify(tripService, never()).list(any());
-        verify(tripService, never()).get(any(), any());
-        verify(tripService, never()).versions(any(), any());
-        verify(tripService, never()).version(any(), any(), anyInt());
-        verify(tripPlanPdfService, never()).export(any());
+        verify(tripApplicationService, never()).listTrips(any());
+        verify(tripApplicationService, never()).getTrip(any(), any());
+        verify(tripApplicationService, never()).getVersions(any(), any());
+        verify(tripApplicationService, never()).getVersion(any(), any(), anyInt());
+        verify(tripApplicationService, never()).exportTripPdf(any(), any());
+    }
+
+    @Test
+    void exportReturnsPdfWhenFound() throws Exception {
+        UserContext.set("owner-1", "TOURIST");
+        when(tripApplicationService.exportTripPdf("owner-1", "trip-1"))
+                .thenReturn(new TripApplicationService.PdfExportResult("测试行程", new byte[]{1, 2, 3}));
+
+        mockMvc.perform(get("/ai/trips/trip-1/export"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", MediaType.APPLICATION_PDF_VALUE));
+
+        verify(tripApplicationService).exportTripPdf("owner-1", "trip-1");
     }
 
     private Trip trip(String id, int version) {

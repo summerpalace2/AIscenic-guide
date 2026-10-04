@@ -1,9 +1,9 @@
 package com.ai.guide.domain.trip.service;
 
 import com.ai.guide.domain.planner.model.PlannerSession;
+import com.ai.guide.domain.trip.gateway.TripRepositoryPort;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.trip.model.TripVersion;
-import com.ai.guide.domain.trip.repository.TripRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -38,11 +38,11 @@ import java.util.UUID;
 @Service
 public class TripService {
 
-    private final TripRepository repository;
+    private final TripRepositoryPort repository;
     private final TripReplanEngine replanEngine;
     private final ObjectMapper objectMapper;
 
-    public TripService(TripRepository repository, TripReplanEngine replanEngine,
+    public TripService(TripRepositoryPort repository, TripReplanEngine replanEngine,
                        ObjectMapper objectMapper) {
         this.repository = repository;
         this.replanEngine = replanEngine;
@@ -273,7 +273,7 @@ public class TripService {
 
     private OperationResult replay(String ownerId, String operation, String key, String fingerprint) {
         if (key == null || key.isBlank()) return null;
-        TripRepository.IdempotencyRecord record = repository.findIdempotency(ownerId, operation, key);
+        TripRepositoryPort.IdempotencyRecord record = repository.findIdempotency(ownerId, operation, key);
         if (record == null) return null;
         if (!fingerprint.equals(record.requestFingerprint())) {
             return OperationResult.idempotencyConflict(record.tripId(), record.versionNumber());
