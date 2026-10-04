@@ -2,7 +2,10 @@ package com.ai.guide.domain.attraction.service;
 
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,9 +20,9 @@ import java.util.Map;
 @Service
 public class AttractionMediaService {
 
-    private final AmapRouteService routeService;
+    private final GeoRouteGatewayPort routeService;
 
-    public AttractionMediaService(AmapRouteService routeService) {
+    public AttractionMediaService(@Autowired(required = false) GeoRouteGatewayPort routeService) {
         this.routeService = routeService;
     }
 
@@ -47,7 +50,7 @@ public class AttractionMediaService {
         AmapResponseNormalizer.PoiCandidate selected = null;
         String reason = "未找到可匹配的高德 POI。";
         for (String keyword : keywords) {
-            AmapRouteService.PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
+            PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
             reason = outcome.reason() == null || outcome.reason().isBlank() ? reason : outcome.reason();
             selected = select(outcome.candidates(), attraction);
             if (selected != null) break;
@@ -67,8 +70,8 @@ public class AttractionMediaService {
         }
 
         AmapResponseNormalizer.PoiCandidate detailed = selected;
-        AmapRouteService.PoiOutcome detail = routeService.poiDetail(selected.poiId());
-        if (detail.status() == AmapRouteService.OutcomeStatus.SUCCESS) {
+        PoiOutcome detail = routeService.poiDetail(selected.poiId());
+        if (detail.status() == OutcomeStatus.SUCCESS) {
             AmapResponseNormalizer.PoiCandidate provider = select(detail.candidates(), attraction);
             if (provider != null) detailed = provider;
         } else if (detail.reason() != null && !detail.reason().isBlank()) {
@@ -76,7 +79,7 @@ public class AttractionMediaService {
         }
 
         attraction.setImagePoiId(detailed.poiId());
-        attraction.setImageFetchedAt((detail.status() == AmapRouteService.OutcomeStatus.SUCCESS
+        attraction.setImageFetchedAt((detail.status() == OutcomeStatus.SUCCESS
                 ? detail.fetchedAt() : java.time.Instant.now()).toString());
         if (detailed.photoUrl() != null && !detailed.photoUrl().isBlank()) {
             attraction.setImage(detailed.photoUrl());

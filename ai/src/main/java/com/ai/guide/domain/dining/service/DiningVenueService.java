@@ -4,7 +4,7 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.dining.model.DiningVenue;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
 import com.ai.guide.domain.planner.service.AttractionDiningKnowledge.DiningOption;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,16 +24,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class DiningVenueService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final AmapRouteService amapRouteService;
+    private final GeoRouteGatewayPort geoRouteGateway;
     private final ObjectMapper objectMapper;
     private final List<DiningVenue> inMemorySeedCache = new CopyOnWriteArrayList<>();
 
     @Autowired
     public DiningVenueService(@Autowired(required = false) JdbcTemplate jdbcTemplate,
-                              @Autowired(required = false) AmapRouteService amapRouteService,
+                              @Autowired(required = false) GeoRouteGatewayPort geoRouteGateway,
                               @Autowired(required = false) ObjectMapper objectMapper) {
         this.jdbcTemplate = jdbcTemplate;
-        this.amapRouteService = amapRouteService;
+        this.geoRouteGateway = geoRouteGateway;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         loadSeedResource();
     }
@@ -100,8 +100,8 @@ public class DiningVenueService {
         boolean proximityPriority = isProximityPriority(constraints, anchorAttraction);
 
         List<DiningVenue> candidates = new ArrayList<>();
-        // 1. 若配置了高德 API 且有定位，优先通过高德 LBS 检索当前景点周边的真实在营餐厅（解决跨山跨江与虚假数据问题）
-        if (amapRouteService != null && amapRouteService.isConfigured() && loc != null && !loc.isBlank()) {
+        // 1. 若配置了地理网关且有定位，优先通过 LBS 检索当前景点周边的真实在营餐厅（解决跨山跨江与虚假数据问题）
+        if (geoRouteGateway != null && geoRouteGateway.isConfigured() && loc != null && !loc.isBlank()) {
             candidates = searchAmapNearby(loc, district, normalizedMeal, dietPref, proximityPriority);
         }
 
@@ -179,8 +179,8 @@ public class DiningVenueService {
 
         boolean proximityPriority = isProximityPriority(constraints, anchorAttraction);
         List<DiningVenue> candidates = new ArrayList<>();
-        // 优先调用高德周边实时搜索，获取真实在营餐厅（包括茶馆、咖啡、特定风味火锅等）
-        if (amapRouteService != null && amapRouteService.isConfigured() && loc != null && !loc.isBlank()) {
+        // 优先调用地理网关周边实时搜索，获取真实在营餐厅（包括茶馆、咖啡、特定风味火锅等）
+        if (geoRouteGateway != null && geoRouteGateway.isConfigured() && loc != null && !loc.isBlank()) {
             candidates = searchAmapNearby(loc, dist, normalizedMeal, requestedFlavor, proximityPriority);
         }
 
@@ -399,7 +399,7 @@ public class DiningVenueService {
     }
 
     private List<DiningVenue> searchAmapNearby(String coordinate, String district, String mealType, String flavor, boolean proximityPriority) {
-        if (amapRouteService == null || !amapRouteService.isConfigured() || coordinate == null || coordinate.isBlank()) {
+        if (geoRouteGateway == null || !geoRouteGateway.isConfigured() || coordinate == null || coordinate.isBlank()) {
             return Collections.emptyList();
         }
         try {
@@ -432,12 +432,12 @@ public class DiningVenueService {
                 searchTypes = "中餐厅|风味餐厅|快餐厅";
             }
 
-            var outcome = amapRouteService.searchAround(coordinate, radius, searchTypes, keyword, "重庆市");
+            var outcome = geoRouteGateway.searchAround(coordinate, radius, searchTypes, keyword, "重庆市");
             if (outcome.candidates() == null || outcome.candidates().isEmpty()) {
-                outcome = amapRouteService.searchAround(coordinate, radius + 500, "餐饮服务", keyword, "重庆市");
+                outcome = geoRouteGateway.searchAround(coordinate, radius + 500, "餐饮服务", keyword, "重庆市");
             }
             if (outcome.candidates() == null || outcome.candidates().isEmpty()) {
-                outcome = amapRouteService.searchAround(coordinate, 1800, "餐饮服务", isBreakfast ? "早点" : (isTeaBreak ? "茶馆" : "饭店"), "重庆市");
+                outcome = geoRouteGateway.searchAround(coordinate, 1800, "餐饮服务", isBreakfast ? "早点" : (isTeaBreak ? "茶馆" : "饭店"), "重庆市");
             }
             if (outcome.candidates() == null || outcome.candidates().isEmpty()) {
                 return Collections.emptyList();

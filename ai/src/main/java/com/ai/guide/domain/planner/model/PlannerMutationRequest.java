@@ -1,14 +1,14 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 行程站点原子变更请求 DTO
+ * 行程站点原子变更请求命令对象
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：封装对规划草稿站点的增、删、改、替换原子操作参数（包含 operation、attractionId、dayNumber、targetStopId）。
+ * 架构定位：COLA 领域模型 (Domain Model / Command)
+ * 职责：封装对规划草稿站点的增、删、改、替换原子操作参数（包含 operation、attractionId、dayNumber、targetStopId）。
  */
 @Data
 @NoArgsConstructor
@@ -24,4 +24,3 @@ public class PlannerMutationRequest {
     private Integer expectedVersion;
     private String sessionAccessToken = "";
 }
-

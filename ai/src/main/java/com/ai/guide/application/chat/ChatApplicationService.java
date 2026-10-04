@@ -13,7 +13,9 @@ import com.ai.guide.domain.chat.service.IntentRadarService;
 import com.ai.guide.domain.chat.service.IntentService;
 import com.ai.guide.domain.chat.service.SlotTrackingService;
 import com.ai.guide.domain.memory.service.TravelMemoryService;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.service.ParallelRagService;
@@ -81,7 +83,7 @@ public class ChatApplicationService {
     private ParallelRagService parallelRagService;
 
     @Autowired(required = false)
-    private AmapRouteService amapRouteService;
+    private GeoRouteGatewayPort geoRouteGateway;
 
     @Autowired(required = false)
     private TravelMemoryService travelMemoryService;
@@ -589,10 +591,10 @@ public class ChatApplicationService {
         String text = message == null ? "" : message;
         boolean food = text.matches(".*(附近|周边).*(吃|餐|美食|饭店|餐厅).*");
         boolean play = text.matches(".*(附近|周边).*(玩|好玩|游玩|打卡).*");
-        if ((!food && !play) || activeStopName == null || activeStopName.isBlank() || amapRouteService == null) return base;
+        if ((!food && !play) || activeStopName == null || activeStopName.isBlank() || geoRouteGateway == null) return base;
         String keywords = activeStopName.trim() + (food ? " 附近餐饮" : " 附近景点");
-        AmapRouteService.PoiOutcome outcome = amapRouteService.searchPoi(keywords, "重庆市");
-        if (outcome.status() != AmapRouteService.OutcomeStatus.SUCCESS || outcome.candidates().isEmpty()) {
+        PoiOutcome outcome = geoRouteGateway.searchPoi(keywords, "重庆市");
+        if (outcome.status() != OutcomeStatus.SUCCESS || outcome.candidates().isEmpty()) {
             return base + "\n【当前行程位置】第" + activeDay + "天 · " + activeStopName + "。附近实时推荐暂不可用，请基于已知资料回答并提示用户可稍后查看地图。";
         }
         StringBuilder pois = new StringBuilder("\n【当前行程位置】第").append(activeDay).append("天 · ").append(activeStopName).append("。\n【实时周边推荐】");

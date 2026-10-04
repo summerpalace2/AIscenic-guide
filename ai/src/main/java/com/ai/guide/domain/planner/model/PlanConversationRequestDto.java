@@ -1,16 +1,15 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
-import com.ai.guide.domain.planner.model.PlanPageContext;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 对话式行程调整与咨询请求 DTO
+ * 对话式行程调整与咨询请求命令对象
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：封装用户在规划详情页发送的自然语言调整指令、当前选中的站点 ID 与会话上下文。
+ * 架构定位：COLA 领域模型 (Domain Model / Command)
+ * 职责：封装用户在规划详情页发送的自然语言调整指令、当前选中的站点 ID 与会话上下文。
  */
 @Data
 @Builder
@@ -34,4 +33,3 @@ public class PlanConversationRequestDto {
         return planId == null ? "" : planId.trim();
     }
 }
-

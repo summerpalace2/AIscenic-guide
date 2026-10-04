@@ -1,4 +1,4 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,8 +11,8 @@ import java.util.Map;
 /**
  * 规划引擎结构化偏好输入模型
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：承载规划时解析出的强类型偏好标签（步行耐受度、交通方式偏好、饮食口味偏好及住宿区域）。
+ * 架构定位：COLA 领域模型 (Domain Model)
+ * 职责：承载规划时解析出的强类型偏好标签（步行耐受度、交通方式偏好、饮食口味偏好及住宿区域）。
  */
 @Data
 @Builder
@@ -48,4 +48,3 @@ public class StructuredPreferences {
         return map;
     }
 }
-

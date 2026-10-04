@@ -1,12 +1,12 @@
 package com.ai.guide.adapter.planner.web;
 
 import com.ai.guide.application.planner.PlanningApplicationService;
-import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
-import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
-import com.ai.guide.application.planner.dto.PlanRequest;
-import com.ai.guide.application.planner.dto.PlannerMutationRequest;
-import com.ai.guide.application.planner.dto.ShadowMutationRequest;
-import com.ai.guide.application.planner.dto.ShadowPlanRequest;
+import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+import com.ai.guide.domain.planner.model.PlanRequest;
+import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+import com.ai.guide.domain.planner.model.ShadowPlanRequest;
 import com.ai.guide.domain.planner.service.PlannerService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

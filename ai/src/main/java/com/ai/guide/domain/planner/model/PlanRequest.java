@@ -1,6 +1,5 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
-import com.ai.guide.domain.trip.model.Trip;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,16 +8,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 影子测试多天规划请求 DTO
+ * 初始多天行程智能规划请求命令对象
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：用于服务端影子模式并发验证 Java Planner 与 Node Planner 一致性的无副作用入参。
+ * 架构定位：COLA 领域模型 (Domain Model / Command)
+ * 职责：封装用户初始发起的规划请求（包含自然语言 Prompt、天数、同行人、偏好标签、出发地与预算等级）。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ShadowPlanRequest {
+public class PlanRequest {
     @Builder.Default
     private String prompt = "";
     @Builder.Default
@@ -32,6 +31,12 @@ public class ShadowPlanRequest {
     private Map<String, Object> constraints = new LinkedHashMap<>();
     @Builder.Default
     private Boolean usePreferences = false;
+    @Builder.Default
+    private String preferenceDecision = "";
+    @Builder.Default
+    private String idempotencyKey = "";
+    @Builder.Default
+    private String sessionAccessToken = "";
 
     public String effectivePrompt() {
         if (freeText != null && !freeText.isBlank()) return freeText.trim();
@@ -41,11 +46,10 @@ public class ShadowPlanRequest {
     public Map<String, Object> effectiveConstraints() {
         Map<String, Object> map = new LinkedHashMap<>(constraints == null ? Map.of() : constraints);
         if (structuredPreferences != null) {
-            map.putAll(structuredPreferences.asMap());
+            structuredPreferences.asMap().forEach(map::putIfAbsent);
         }
         if (arrivalAt != null && !arrivalAt.isBlank()) map.put("arrivalAt", arrivalAt.trim());
         if (departureAt != null && !departureAt.isBlank()) map.put("departureAt", departureAt.trim());
         return map;
     }
 }
-

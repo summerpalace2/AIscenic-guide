@@ -1,5 +1,11 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RouteOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.planner.model.WeatherOutcome;
+
 import com.ai.guide.infrastructure.planner.amap.AmapRequestCache;
 import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 
@@ -45,17 +51,17 @@ class AmapRouteServiceTest {
                         {"status":"1","forecasts":[{"reporttime":"2026-08-17 08:00:00","casts":[{"date":"2026-08-17","dayweather":"晴","nightweather":"多云","daytemp":"34","nighttemp":"26"}]}]}
                         """, MediaType.APPLICATION_JSON));
 
-        AmapRouteService.RoutePairOutcome first = service.routePair(
+        RoutePairOutcome first = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
-        AmapRouteService.RoutePairOutcome second = service.routePair(
+        RoutePairOutcome second = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
-        AmapRouteService.WeatherOutcome firstWeather = service.weather("500000");
-        AmapRouteService.WeatherOutcome secondWeather = service.weather("500000");
+        WeatherOutcome firstWeather = service.weather("500000");
+        WeatherOutcome secondWeather = service.weather("500000");
 
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, first.selected().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, second.selected().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, firstWeather.status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, secondWeather.status());
+        assertEquals(OutcomeStatus.SUCCESS, first.selected().status());
+        assertEquals(OutcomeStatus.SUCCESS, second.selected().status());
+        assertEquals(OutcomeStatus.SUCCESS, firstWeather.status());
+        assertEquals(OutcomeStatus.SUCCESS, secondWeather.status());
         server.verify();
         service.close();
     }
@@ -67,10 +73,10 @@ class AmapRouteServiceTest {
         AmapRouteService service = new AmapRouteService(
                 new AmapWebServiceClient("https://restapi.amap.com", "", restTemplate));
 
-        AmapRouteService.RoutePairOutcome result = service.routePair(
+        RoutePairOutcome result = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
 
-        assertEquals(AmapRouteService.OutcomeStatus.UNAVAILABLE, result.walking().status());
+        assertEquals(OutcomeStatus.UNAVAILABLE, result.walking().status());
         assertTrue(result.selected().reason().contains("未配置"));
         server.verify();
         service.close();
@@ -93,14 +99,14 @@ class AmapRouteServiceTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess(transitJson(), MediaType.APPLICATION_JSON));
 
-        AmapRouteService.RoutePairOutcome result = service.routePair(
+        RoutePairOutcome result = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
-        AmapRouteService.RoutePairOutcome cached = service.routePair(
+        RoutePairOutcome cached = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
 
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.walking().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.transit().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, cached.transit().status());
+        assertEquals(OutcomeStatus.SUCCESS, result.walking().status());
+        assertEquals(OutcomeStatus.SUCCESS, result.transit().status());
+        assertEquals(OutcomeStatus.SUCCESS, cached.transit().status());
         assertEquals("TRANSIT", result.transit().segment().mode());
         assertEquals("WALKING", result.selected().segment().mode());
         assertTrue(result.transit().reason().contains("v5 transit fallback"));
@@ -124,15 +130,15 @@ class AmapRouteServiceTest {
                         {"status":"0","info":"CUQPS_HAS_EXCEEDED_THE_LIMIT","infocode":"10021"}
                         """, MediaType.APPLICATION_JSON));
 
-        AmapRouteService.RoutePairOutcome first = service.routePair(
+        RoutePairOutcome first = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
-        AmapRouteService.RoutePairOutcome second = service.routePair(
+        RoutePairOutcome second = service.routePair(
                 "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
 
-        assertEquals(AmapRouteService.OutcomeStatus.RATE_LIMITED, first.transit().status());
+        assertEquals(OutcomeStatus.RATE_LIMITED, first.transit().status());
         assertTrue(first.transit().reason().contains("10021"));
-        assertEquals(AmapRouteService.OutcomeStatus.RATE_LIMITED, second.transit().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, second.walking().status());
+        assertEquals(OutcomeStatus.RATE_LIMITED, second.transit().status());
+        assertEquals(OutcomeStatus.SUCCESS, second.walking().status());
         server.verify();
         service.close();
     }
@@ -150,12 +156,12 @@ class AmapRouteServiceTest {
                         {"status":"0","info":"CUQPS_HAS_EXCEEDED_THE_LIMIT","infocode":"10021"}
                         """, MediaType.APPLICATION_JSON));
 
-        AmapRouteService.PoiOutcome first = service.searchPoi("洪崖洞", "重庆市");
-        AmapRouteService.PoiOutcome second = service.searchPoi("解放碑", "重庆市");
+        PoiOutcome first = service.searchPoi("洪崖洞", "重庆市");
+        PoiOutcome second = service.searchPoi("解放碑", "重庆市");
 
-        assertEquals(AmapRouteService.OutcomeStatus.RATE_LIMITED, first.status());
+        assertEquals(OutcomeStatus.RATE_LIMITED, first.status());
         assertTrue(first.reason().contains("10021"));
-        assertEquals(AmapRouteService.OutcomeStatus.RATE_LIMITED, second.status());
+        assertEquals(OutcomeStatus.RATE_LIMITED, second.status());
         assertTrue(second.reason().contains("冷却"));
         server.verify();
         service.close();
@@ -173,9 +179,9 @@ class AmapRouteServiceTest {
                         {"status":"1","forecasts":[{"reporttime":"2026-08-17 08:00:00","casts":[{"date":"2026-08-17","dayweather":"晴","nightweather":"多云","daytemp":"34","nighttemp":"26"}]}]}
                         """, MediaType.APPLICATION_JSON));
 
-        AmapRouteService.WeatherOutcome result = service.weather("500000");
+        WeatherOutcome result = service.weather("500000");
 
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.status());
+        assertEquals(OutcomeStatus.SUCCESS, result.status());
         assertTrue(result.weather().available());
         assertEquals("晴", result.weather().casts().get(0).dayWeather());
         server.verify();
@@ -189,10 +195,10 @@ class AmapRouteServiceTest {
         AmapRouteService service = new AmapRouteService(
                 new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
 
-        AmapRouteService.RoutePairOutcome result = service.routePair(
+        RoutePairOutcome result = service.routePair(
                 "not-a-coordinate", "106.581,29.564", "重庆市", "", "", "transit");
 
-        assertEquals(AmapRouteService.OutcomeStatus.INVALID, result.selected().status());
+        assertEquals(OutcomeStatus.INVALID, result.selected().status());
         assertFalse(result.selected().reason().isBlank());
         server.verify();
         service.close();
@@ -208,9 +214,9 @@ class AmapRouteServiceTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess("{\"status\":\"0\",\"info\":\"服务不可用\"}", MediaType.APPLICATION_JSON));
 
-        AmapRouteService.PoiOutcome result = service.searchPoi("洪崖洞", "重庆市");
+        PoiOutcome result = service.searchPoi("洪崖洞", "重庆市");
 
-        assertEquals(AmapRouteService.OutcomeStatus.UNAVAILABLE, result.status());
+        assertEquals(OutcomeStatus.UNAVAILABLE, result.status());
         assertTrue(result.reason().contains("服务不可用"));
         server.verify();
         service.close();
@@ -229,9 +235,9 @@ class AmapRouteServiceTest {
         AmapRouteService service = new AmapRouteService(
                 new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
 
-        AmapRouteService.PoiOutcome result = service.searchPoi("洪崖洞", "重庆市");
+        PoiOutcome result = service.searchPoi("洪崖洞", "重庆市");
 
-        assertEquals(AmapRouteService.OutcomeStatus.TIMEOUT, result.status());
+        assertEquals(OutcomeStatus.TIMEOUT, result.status());
         assertEquals(2, calls.get());
         service.close();
     }
@@ -269,7 +275,7 @@ class AmapRouteServiceTest {
         AmapRouteService service = new AmapRouteService(
                 new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
 
-        java.util.concurrent.CompletableFuture<AmapRouteService.RoutePairOutcome> future =
+        java.util.concurrent.CompletableFuture<RoutePairOutcome> future =
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> service.routePair(
                         "106.580,29.563", "106.581,29.564", "重庆市", "", "", "transit"));
 
@@ -277,10 +283,10 @@ class AmapRouteServiceTest {
         assertEquals(2, maxActive.get(), "最大并发调用应达到2");
         release.countDown();
 
-        AmapRouteService.RoutePairOutcome outcome = future.get(3, java.util.concurrent.TimeUnit.SECONDS);
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, outcome.walking().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, outcome.transit().status());
-        assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, outcome.selected().status());
+        RoutePairOutcome outcome = future.get(3, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(OutcomeStatus.SUCCESS, outcome.walking().status());
+        assertEquals(OutcomeStatus.SUCCESS, outcome.transit().status());
+        assertEquals(OutcomeStatus.SUCCESS, outcome.selected().status());
         assertEquals("TRANSIT", outcome.selected().segment().mode());
         assertEquals("transit", outcome.preference());
         assertFalse(outcome.taxiUnsupported());
@@ -303,11 +309,11 @@ class AmapRouteServiceTest {
                 .andRespond(withSuccess(transitJson(), MediaType.APPLICATION_JSON));
 
         assertTimeoutPreemptively(java.time.Duration.ofSeconds(3), () -> {
-            AmapRouteService.RoutePairOutcome result = service.routePair(
+            RoutePairOutcome result = service.routePair(
                     "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
-            assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.walking().status());
-            assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.transit().status());
-            assertEquals(AmapRouteService.OutcomeStatus.SUCCESS, result.selected().status());
+            assertEquals(OutcomeStatus.SUCCESS, result.walking().status());
+            assertEquals(OutcomeStatus.SUCCESS, result.transit().status());
+            assertEquals(OutcomeStatus.SUCCESS, result.selected().status());
             assertEquals("WALKING", result.selected().segment().mode());
         });
 
@@ -327,4 +333,5 @@ class AmapRouteServiceTest {
                 """;
     }
 }
+
 

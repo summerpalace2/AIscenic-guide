@@ -1,14 +1,15 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RouteOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.planner.model.WeatherOutcome;
+
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.infrastructure.planner.amap.AmapPlannerGateway;
 import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService.OutcomeStatus;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService.PoiOutcome;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService.RoutePairOutcome;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService.RouteOutcome;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService.WeatherOutcome;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -27,8 +28,8 @@ class RuntimeLocationPlannerTest {
         AmapResponseNormalizer.PoiCandidate nearby = poi("nearby", "动态周边景点", target);
         AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
                 "WALKING", 1000, 600, 1000, 1, List.of(), "106.33,29.58;106.335,29.585", true);
-        AmapRouteService.RouteOutcome route = new AmapRouteService.RouteOutcome(
-                AmapRouteService.OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        RouteOutcome route = new RouteOutcome(
+                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override
@@ -76,8 +77,8 @@ class RuntimeLocationPlannerTest {
         AmapResponseNormalizer.PoiCandidate nearby = poi("nanping", "南滨路", target);
         AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
                 "WALKING", 1200, 720, 1200, 1, List.of(), "106.53,29.50;106.535,29.505", true);
-        AmapRouteService.RouteOutcome route = new AmapRouteService.RouteOutcome(
-                AmapRouteService.OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        RouteOutcome route = new RouteOutcome(
+                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
         AmapResponseNormalizer.WeatherCast todayCast = new AmapResponseNormalizer.WeatherCast(
                 java.time.LocalDate.now().toString(), "多云", "晴", "26", "20");
         AmapResponseNormalizer.WeatherResult weatherResult = new AmapResponseNormalizer.WeatherResult(
@@ -114,8 +115,8 @@ class RuntimeLocationPlannerTest {
         AmapResponseNormalizer.PoiCandidate nearby = poi("hyd", "洪崖洞", target);
         AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
                 "WALKING", 800, 600, 800, 1, List.of(), "106.58,29.56;106.585,29.565", true);
-        AmapRouteService.RouteOutcome route = new AmapRouteService.RouteOutcome(
-                AmapRouteService.OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        RouteOutcome route = new RouteOutcome(
+                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
@@ -150,8 +151,8 @@ class RuntimeLocationPlannerTest {
 
         AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
                 "WALKING", 600, 480, 600, 1, List.of(), "106.4678,29.5637;106.469,29.560", true);
-        AmapRouteService.RouteOutcome route = new AmapRouteService.RouteOutcome(
-                AmapRouteService.OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        RouteOutcome route = new RouteOutcome(
+                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
@@ -219,3 +220,4 @@ class RuntimeLocationPlannerTest {
                 null, null, id, null, null);
     }
 }
+

@@ -1,9 +1,12 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,14 +43,14 @@ public class RuntimeLocationPlanner {
     private static final String SCENIC_TYPE = "110000";
     private static final int DEFAULT_START_MINUTE = 9 * 60 + 30;
 
-    private final AmapRouteService routeService;
+    private final GeoRouteGatewayPort routeService;
     private final ObjectMapper objectMapper;
     private final int searchRadiusMeters;
     private final int maxCandidates;
 
     @Autowired
     public RuntimeLocationPlanner(
-            AmapRouteService routeService,
+            GeoRouteGatewayPort routeService,
             ObjectMapper objectMapper,
             @Value("${planner.runtime-location.search-radius-meters:6000}") int searchRadiusMeters,
             @Value("${planner.runtime-location.max-candidates:40}") int maxCandidates) {
@@ -58,7 +61,7 @@ public class RuntimeLocationPlanner {
     }
 
     /** Convenient constructor for focused unit tests. */
-    public RuntimeLocationPlanner(AmapRouteService routeService) {
+    public RuntimeLocationPlanner(GeoRouteGatewayPort routeService) {
         this(routeService, new ObjectMapper(), 6000, 40);
     }
 
@@ -73,7 +76,7 @@ public class RuntimeLocationPlanner {
                     "当前未配置高德服务端密钥，无法确认起点与周边景点；不会回退到无关核心景点。", 0);
         }
 
-        AmapRouteService.PoiOutcome startOutcome = routeService.searchPoi(requestedPlace, city(constraints));
+        PoiOutcome startOutcome = routeService.searchPoi(requestedPlace, city(constraints));
         AmapResponseNormalizer.PoiCandidate start = chooseStart(startOutcome.candidates(), requestedPlace);
         if (start == null || start.coordinate() == null) {
             String reason = startOutcome.reason() == null || startOutcome.reason().isBlank()
@@ -92,7 +95,7 @@ public class RuntimeLocationPlanner {
         int pages = budgetMinutes >= 300 ? 3 : (budgetMinutes >= 180 ? 3 : 2);
         int effectiveRadius = budgetMinutes >= 300 ? Math.max(searchRadiusMeters, 8000)
                 : budgetMinutes >= 180 ? Math.max(searchRadiusMeters, 6000) : Math.max(searchRadiusMeters, 4000);
-        AmapRouteService.PoiOutcome around = routeService.searchAround(
+        PoiOutcome around = routeService.searchAround(
                 coordinate(start.coordinate()), effectiveRadius, SCENIC_TYPE, "", city(constraints), pages);
         List<AmapResponseNormalizer.PoiCandidate> candidates = usableCandidates(around.candidates(), start);
         if (candidates.isEmpty()) {
@@ -221,7 +224,7 @@ public class RuntimeLocationPlanner {
         int replacedTravelMinutes = routeMinutesFromStop(resolvedTarget.stop());
         int optionIndex = 1;
         for (AmapResponseNormalizer.PoiCandidate candidate : candidates) {
-            AmapRouteService.RoutePairOutcome route = routeService.routePair(
+            RoutePairOutcome route = routeService.routePair(
                     previousCoordinate, coordinate(candidate.coordinate()), city(constraints), previousPoiId,
                     text(candidate.navigationPoiId()).isBlank() ? text(candidate.poiId()) : candidate.navigationPoiId(),
                     "transit".equalsIgnoreCase(constraints.getTransportPreference()) ? "transit" : "walking");
@@ -297,7 +300,7 @@ public class RuntimeLocationPlanner {
     private List<AmapResponseNormalizer.PoiCandidate> searchCandidates(String startCoordinate,
                                                                          String requestedName,
                                                                          TravelConstraints constraints) {
-        AmapRouteService.PoiOutcome outcome;
+        PoiOutcome outcome;
         if (requestedName != null && !requestedName.isBlank()) {
             String reference = requestedName.startsWith("amap-") ? requestedName.substring("amap-".length()) : requestedName;
             outcome = requestedName.startsWith("amap-")
@@ -339,7 +342,7 @@ public class RuntimeLocationPlanner {
 
     private Map<String, Object> replacementStop(AmapResponseNormalizer.PoiCandidate candidate,
                                                  Map<String, Object> original,
-                                                 AmapRouteService.RoutePairOutcome route,
+                                                 RoutePairOutcome route,
                                                  int travelMinutes, int visitMinutes, String reason) {
         Map<String, Object> stop = new LinkedHashMap<>();
         stop.put("id", original.get("id"));
@@ -743,7 +746,7 @@ public class RuntimeLocationPlanner {
                     ? distanceKm(prevCoord, destCoord) : 1.0;
             String segmentPreference = prefersTransit || (distBetweenKm > 1.5 && !"低".equals(constraints.getWalkingTolerance()))
                     ? "transit" : "walking";
-            AmapRouteService.RoutePairOutcome route = routeService.routePair(
+            RoutePairOutcome route = routeService.routePair(
                     previousCoordinate, destination, city(constraints), previousPoiId,
                     text(candidate.navigationPoiId()).isBlank() ? text(candidate.poiId()) : candidate.navigationPoiId(),
                     segmentPreference);
@@ -977,7 +980,7 @@ public class RuntimeLocationPlanner {
 
     private Map<String, Object> stop(AmapResponseNormalizer.PoiCandidate candidate, int index,
                                      String startTime, int visitMinutes,
-                                     AmapRouteService.RoutePairOutcome route, int travelMinutes,
+                                     RoutePairOutcome route, int travelMinutes,
                                      TravelConstraints constraints) {
         String name = safeName(candidate);
         String poiId = text(candidate.poiId());
@@ -1421,7 +1424,7 @@ public class RuntimeLocationPlanner {
         return safeName(left).equals(safeName(right));
     }
 
-    private int routeMinutes(AmapRouteService.RoutePairOutcome route) {
+    private int routeMinutes(RoutePairOutcome route) {
         if (route == null || route.selected() == null || route.selected().segment() == null
                 || route.selected().segment().durationSeconds() == null) return 0;
         return Math.max(1, (int) Math.ceil(route.selected().segment().durationSeconds() / 60.0));
@@ -1434,7 +1437,7 @@ public class RuntimeLocationPlanner {
         return Math.max(5, (int) Math.ceil(distanceKm(from, to) * 4.0));
     }
 
-    private String routeLabel(AmapRouteService.RoutePairOutcome route, int fallbackMinutes) {
+    private String routeLabel(RoutePairOutcome route, int fallbackMinutes) {
         if (route != null && route.selected() != null && route.selected().segment() != null
                 && route.selected().segment().distanceMeters() != null) {
             int effectiveMinutes = routeMinutes(route);
@@ -1445,7 +1448,7 @@ public class RuntimeLocationPlanner {
         return "路线待核验 · 预计约 " + fallbackMinutes + " 分钟";
     }
 
-    private Map<String, Object> routeMap(AmapRouteService.RoutePairOutcome route) {
+    private Map<String, Object> routeMap(RoutePairOutcome route) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (route == null || route.selected() == null || route.selected().segment() == null) {
             result.put("status", "待核验");

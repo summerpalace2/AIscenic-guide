@@ -2,7 +2,7 @@ package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionService;
-import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.domain.planner.model.PlanRequest;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ChongqingTopographyKnowledge;
 import com.ai.guide.domain.planner.service.ItineraryBuilder;

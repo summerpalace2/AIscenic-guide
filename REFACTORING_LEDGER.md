@@ -11,33 +11,30 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 12: Admin 管理后台与系统全局治理域 (管理控制器迁移至适配层、抽象管理应用服务、纯化配置仓储端口、下沉基础设施、100% 清除 domain/api)** |
-| **当前推进状态** | **阶段 2·第六步：红方审查通过，全量 12 切片重构圆满完成 (Final Passed)** |
-| **全量自动化测试结果** | **507 passed / 0 failed / 0 error / 10 skipped (23.8s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 21:26 |
+| **当前重构切片** | **Slice 13: 领域层纯洁度治理与 DIP 彻底闭环 (消除领域层所有反向跨层依赖、纯化 GeoRouteGatewayPort、解耦 ChatMessageRecord、命令模型归位)** |
+| **当前推进状态** | **阶段 2·第六步：红方审查通过，全量 13 切片重构圆满完成 (Final Passed)** |
+| **全量自动化测试结果** | **507 passed / 0 failed / 0 error / 10 skipped (24.3s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 22:00 |
 
 ---
 
-## 一、 当前切片核验项清单 (Admin 管理后台与系统全局治理域)
+## 一、 当前切片核验项清单 (Slice 13: 领域层纯洁度治理与 DIP 彻底闭环)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-ADMIN-01 | `GET /ai/admin/users`<br/>分页查询系统用户列表 | page 默认 1，size 默认 20；非管理员拦截返回 403 "需要管理员权限"；成功返回 200 "查询成功"；参数非法返回 400；异常返回 500 "查询失败，请稍后重试"。 | `AdminController` 迁入 `adapter.admin.web`，委派应用服务，拦截文案、参数默认值及状态码完全一致。 | `AdminControllerTest.testListUsers*` + `AdminApplicationServiceImplTest.testUserManagementDelegation` | `[已验证一致]` |
-| V-ADMIN-02 | `PUT /ai/admin/users/{userId}/role`<br/>调整用户角色或状态 | 非管理员拦截 403 "需要管理员权限"；成功调用 `userService.updateUser` 返回 200 "更新成功"；参数错误 400；异常 500 "更新失败，请稍后重试"。 | 保持完全一致的更新操作、异常捕获与返回状态码。 | `AdminControllerTest.testUpdateUserRole*` + `AdminApplicationServiceImplTest.testUserManagementDelegation` | `[已验证一致]` |
-| V-ADMIN-03 | `DELETE /ai/admin/users/{userId}`<br/>冻结/禁用用户账户 | 非管理员拦截 403 "需要管理员权限"；软冻结状态设置为 "disabled"，成功返回 200 "账号已禁用"；异常 500 "删除失败，请稍后重试"。 | 严格保持将 status 更新为 "disabled" 的软冻结语义与提示文案。 | `AdminControllerTest.testDeleteUser_Admin_Success` + `AdminApplicationServiceImplTest.testUserManagementDelegation` | `[已验证一致]` |
-| V-ADMIN-04 | `GET /ai/admin/users/{userId}`<br/>用户详情查询 | 非管理员拦截 403 "需要管理员权限"；用户不存在返回 404 "用户不存在"；成功返回 200 "查询成功"；异常 500。 | 保持完全一致的 404 判空拦截与提示文案。 | `AdminControllerTest.testGetUserDetail*` + `AdminApplicationServiceImplTest.testUserManagementDelegation` | `[已验证一致]` |
-| V-ADMIN-05 | `GET /ai/admin/digital-human`<br/>数字人配置查询 | 预设默认值（name="渝游智策助手", voiceId="106", language="zh", greeting, enabled=true）；从 app_config 表按前缀 `digital_human_` 读取并合并；enabled 兼容字符串转布尔；非管理员拦截 403；成功返回 200 "查询成功"。 | 委派应用服务与 AppConfigRepository，保持完全相同的默认值填充与类型转译。 | `AdminControllerTest.testDigitalHumanEndpoints` + `AdminApplicationServiceImplTest.testDigitalHumanConfig` | `[已验证一致]` |
-| V-ADMIN-06 | `PUT /ai/admin/digital-human`<br/>更新数字人配置 | 非管理员拦截 403 "需要管理员权限"；写入配置至 app_config 表；成功返回 200 "更新成功"；异常返回 500 "更新失败，请稍后重试"。 | 严格保持写入行为与异常处理。 | `AdminControllerTest.testDigitalHumanEndpoints` + `AdminApplicationServiceImplTest.testDigitalHumanConfig` | `[已验证一致]` |
-| V-ADMIN-07 | `GET /ai/admin/digital-human/voices`<br/>数字人音色白名单 | 返回 9 种百度预设发音人元数据（106 度博文默认，0, 1, 3, 4, 5, 103, 110, 111）；支持中英双语；非管理员拦截 403；成功返回 200 "查询成功"。 | 保持完全一致的发音人常量集合与默认标记。 | `AdminControllerTest.testDigitalHumanEndpoints` + `AdminApplicationServiceImplTest.testDigitalHumanConfig` | `[已验证一致]` |
-| V-ADMIN-08 | `GET /ai/admin/settings`<br/>系统全局设置查询 | 预设默认值（siteName="渝游智策 · 重庆智慧文旅", defaultLanguage="zh", ttsEnabled=true, knowledgeSyncEnabled=true, maxUploadSizeMb=50）；读取 `settings_` 前缀；切斯特顿围栏：**显式移除历史废弃字段 asrEnabled**；转译布尔与整数；非管理员拦截 403；成功返回 200。 | 严格保持默认值、asrEnabled 屏蔽防污染机制与类型转换。 | `AdminControllerTest.testSettingsEndpoints` + `AdminApplicationServiceImplTest.testSettings` | `[已验证一致]` |
-| V-ADMIN-09 | `PUT /ai/admin/settings`<br/>更新系统全局设置 | 切斯特顿围栏：**写入前显式剔除 asrEnabled**；非管理员拦截 403；成功写入返回 200 "更新成功"；异常返回 500 "更新失败，请稍后重试"。 | 严格保持历史废弃字段防注入拦截与写入一致性。 | `AdminControllerTest.testSettingsEndpoints` + `AdminApplicationServiceImplTest.testSettings` | `[已验证一致]` |
-| V-ADMIN-10 | 适配层迁移与旧包 100% 清除 (Adapter) | 原 `AdminController` 位于 `domain.admin.api`。 | 统一迁移至 `com.ai.guide.adapter.admin.web`，物理删除旧目录。**至此全系统 100% 消除 domain 层 api 控制器包**！ | 架构扫描验证 | `[明确获准的变化]` |
-| V-ADMIN-11 | 领域网关依赖倒置与应用层抽象 (DIP) | 原实现控制器直接注入 JdbcTemplate 编写 SQL 操作 app_config 表。 | 在 `domain.admin.gateway` 抽象 `AppConfigRepositoryPort`，下沉 `AppConfigRepository` 至基础设施层，抽象 `AdminApplicationService` 门面。 | 依赖倒置原则核验 | `[明确获准的变化]` |
-| V-ADMIN-12 | 全量回归与测试安全基线 | 确保既有安全 bootstrap 初始化、权限校验与全站设置配置持久化 100% 稳定。 | 全工程 507 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.8s），新增 19 项端点、应用层与仓储测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-PURITY-01 | 领域层零反向 Import 扫描 (Domain Purity) | 存在 3 处违规跨层依赖：`ChatHistoryService` 依赖 `infrastructure.chat.memory.RedisChatMemory`；`PlannerService` 依赖 `application.planner.dto.*`；5 个领域服务直接依赖 `infrastructure.planner.amap.AmapRouteService`。 | 1. 抽取 `ChatMessageRecord` 领域模型解耦 Redis 记忆；<br/>2. 8 个规划命令/请求类归位下沉至 `domain.planner.model`；<br/>3. 抽象 `GeoRouteGatewayPort` 领域端口并由基础设施实现。<br/>**PowerShell 扫描 0 处违规匹配**！ | `Get-ChildItem domain -Recurse \| Select-String "import com.ai.guide.(adapter\|application\|infrastructure)"` | `[明确获准的变化]` |
+| V-PURITY-02 | 会话历史领域模型与 Redis 序列化一致性 | A 中 `ChatHistoryService` 与 `RedisChatMemory` 共享内部记录类。 | B 中创建 `ChatMessageRecord`（实现 `Message`），`ChatHistoryService` 反序列化为该领域记录；`RedisChatMemory` 保留等价 JSON 结构，与 Redis 生产数据完全兼容。 | `independent_reviewer` 源码级比对 + 测试全通 | `[已验证一致]` |
+| V-PURITY-03 | 规划命令入参模型归位 (Domain Commands) | 原 8 个类在 Slice 4 中暂时放置于 `application.planner.dto`。 | 物理迁入 `domain.planner.model`（`PlanRequest`, `PlannerMutationRequest`, `ApplyAdjustmentRequestDto`, `PlanAdjustmentPreviewDto`, `PlanConversationRequestDto`, `ShadowMutationRequest`, `ShadowPlanRequest`, `StructuredPreferences`），物理删除原 dto 目录，所有字段、类型、注解、默认值 100% 保持一致。 | 字段与注解逐行比对 | `[已验证一致]` |
+| V-PURITY-04 | 地理路线领域网关端口依赖倒置 (DIP Port) | A 中领域层 `RouteCostProvider`, `RuntimeLocationPlanner`, `AttractionMediaService`, `RuntimeAttractionDetailService`, `DiningVenueService` 直接注入基础设施 `AmapRouteService`。 | 在 `domain.planner.gateway` 定义 `GeoRouteGatewayPort` 端口，下沉 5 大 Outcome 结果模型；`AmapRouteService` 实现端口；所有领域服务仅注入接口，彻底消除对具体高德实现的依赖。 | 架构扫描 + 接口覆盖率审查 | `[明确获准的变化]` |
+| V-PURITY-05 | 路线与周边搜索业务逻辑零漂移 | 5 个领域服务包含拓扑距离权重、步骑行换乘偏好回退、景点周边餐厅搜索过滤等核心算法。 | 仅修改构造注入类型为 `GeoRouteGatewayPort`，内部算法、缓存命中、条件分支、降级兜底逻辑 100% 忠实保留。 | `RouteAwarePlannerTest`, `RouteAwarePlannerTopographyTest`, `RuntimeLocationPlannerTest` 等自动化验证 | `[已验证一致]` |
+| V-PURITY-06 | 全量回归与测试安全基线 | 确保既有 507 项自动化测试在 DIP 闭环后零回归。 | 全工程 507 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 24.3s）。 | `mvn test` 自动化验证 | `[已验证一致]` |
 
 ---
 
 ## 二、 历史切片核验项清单
+
+### 1. Admin 管理后台与系统全局治理域 (Slice 12)
+- V-ADMIN-01 ~ V-ADMIN-12：8 大核心管理端点、切斯特顿围栏（屏蔽 `asrEnabled`、403 `"需要管理员权限"`）、软冻结、`AppConfigRepositoryPort` 依赖倒置、物理清理旧 `domain.admin.api` 全部通过验收（Commit `33c5ec9`）。
 
 ### 1. Analytics 分析大盘与实时在线感知域 (Slice 11)
 - V-ANALYTICS-01 ~ V-ANALYTICS-13：8 个大盘与报表导出端点、`/ai` 根路径在线心跳与大盘用户感知、PDF 报表单次查库优化全部通过验收（Commit `8100e38`）。
@@ -147,5 +144,16 @@
   - 物理清理旧 `domain.admin.api` 目录。**全系统已达成 100% 消除 domain 层所有 api 控制器包的宏伟目标**！
   - 全工程 507 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.8s），新增 19 项端点、应用层与基础设施层覆盖测试。
   - 红方独立质检审查员（9df23944-c0d9-4132-8259-aa6f489b010b）对照 A（42d69a9）现场严格审查，所有端点与切斯特顿围栏完全一致，判定最终 PASS（准予合并）。
+- `2026-10-04 (Slice 13 - 领域层纯洁度治理与 DIP 彻底闭环)`:
+  - **领域层 100% 零违规反向 Import**：经过全局 PowerShell 扫描，`ai/src/main/java/com/ai/guide/domain` 下针对 `adapter`、`application`、`infrastructure` 的违规引用彻底清零（0 matches）。
+  - **会话历史领域模型解耦**：创建 `com.ai.guide.domain.chat.model.ChatMessageRecord` 实现 Spring AI `Message`，`ChatHistoryService` 改用该领域记录反序列化，解除了对 `infrastructure.chat.memory.RedisChatMemory` 的依赖，Redis 数据格式完全向后兼容。
+  - **规划引擎领域命令模型归位**：将 `PlanRequest`, `PlannerMutationRequest`, `ApplyAdjustmentRequestDto`, `PlanAdjustmentPreviewDto`, `PlanConversationRequestDto`, `ShadowMutationRequest`, `ShadowPlanRequest`, `StructuredPreferences` 等 8 个核心业务入参实体由 `application.planner.dto` 迁移归位至 `domain.planner.model`，彻底删除原 `application.planner.dto` 目录，消除领域层反向依赖应用层的异味。
+  - **地理路线领域网关端口依赖倒置 (DIP)**：
+    - 在 `domain.planner.gateway` 抽象 `GeoRouteGatewayPort`，声明 POI 搜索、周边 LBS 检索、POI 详情、多模式起终点路线规划与天气实况查询的标准接口。
+    - 将 5 大查询结果模型（`OutcomeStatus`, `PoiOutcome`, `RouteOutcome`, `RoutePairOutcome`, `WeatherOutcome`）沉淀至 `domain.planner.model`。
+    - `infrastructure.planner.amap.AmapRouteService` 实现 `GeoRouteGatewayPort`，底层高德 HTTP 客户端与缓存降级保持原样。
+    - 领域服务 `RouteCostProvider`, `RuntimeLocationPlanner`, `AttractionMediaService`, `RuntimeAttractionDetailService`, `DiningVenueService` 构造函数全部改注入 `GeoRouteGatewayPort`，实现对高德第三方实现的彻底解耦。
+  - **全量测试与独立审查通过**：全工程 507 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 24.3s）。红方独立质检审查员（80595c44-647d-4904-94c6-ed0653ceff97）现场比对并给出了细节优化建议（已全面采纳落实），判定正式通过（准予合并）。
+
 
 

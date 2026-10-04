@@ -1,5 +1,11 @@
 package com.ai.guide.infrastructure.planner.amap;
 
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RouteOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.planner.model.WeatherOutcome;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
@@ -33,16 +39,13 @@ import java.util.function.Supplier;
 /**
  * 高德地图多模式路线计算与折线渲染辅助服务
  *
- * 所属领域：domain.planner.service（规划引擎服务层）
+ * 架构定位：COLA 基础设施层实现 (Infrastructure Service)
+ * 职责：实现 {@link PoiSearchGatewayPort} 与 {@link GeoRouteGatewayPort}，调用高德 Web Service 接口。
  */
 @Service
-public class AmapRouteService implements PoiSearchGatewayPort {
+public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPort {
 
     private static final Logger log = LoggerFactory.getLogger(AmapRouteService.class);
-
-    public enum OutcomeStatus {
-        SUCCESS, UNAVAILABLE, TIMEOUT, INVALID, UNSUPPORTED, RATE_LIMITED, AUTH_ERROR, TLS_ERROR
-    }
 
     private final AmapWebServiceClient client;
     private final int requestTimeoutMs;
@@ -411,8 +414,8 @@ public class AmapRouteService implements PoiSearchGatewayPort {
     }
 
     private boolean successful(RouteOutcome outcome) {
-        return outcome != null && outcome.status == OutcomeStatus.SUCCESS
-                && outcome.segment != null && outcome.segment.metricsComplete();
+        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS
+                && outcome.segment() != null && outcome.segment().metricsComplete();
     }
 
     private JsonNode execute(Supplier<JsonNode> operation, int timeoutMs, int retries) {
@@ -597,22 +600,6 @@ public class AmapRouteService implements PoiSearchGatewayPort {
     public void close() {
         orchestrationExecutor.shutdownNow();
         executor.shutdownNow();
-    }
-
-    public record PoiOutcome(OutcomeStatus status, List<AmapResponseNormalizer.PoiCandidate> candidates,
-                             String reason, Instant fetchedAt) {
-    }
-
-    public record RouteOutcome(OutcomeStatus status, AmapResponseNormalizer.RouteResult segment,
-                               String reason, String endpoint, Instant fetchedAt) {
-    }
-
-    public record RoutePairOutcome(RouteOutcome walking, RouteOutcome transit, RouteOutcome selected,
-                                   String preference, boolean taxiUnsupported) {
-    }
-
-    public record WeatherOutcome(OutcomeStatus status, AmapResponseNormalizer.WeatherResult weather,
-                                 String reason, Instant fetchedAt) {
     }
 
     private static final class ProviderFailure extends RuntimeException {

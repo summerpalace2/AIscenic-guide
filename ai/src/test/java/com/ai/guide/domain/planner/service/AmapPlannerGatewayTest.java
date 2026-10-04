@@ -1,6 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.HydrationResult;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
 import com.ai.guide.infrastructure.planner.amap.AmapPlannerGateway;
 import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 

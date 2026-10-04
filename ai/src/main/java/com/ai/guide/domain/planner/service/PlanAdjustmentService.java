@@ -2,9 +2,9 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
-import com.ai.guide.application.planner.dto.PlanAdjustmentPreviewDto;
-import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+import com.ai.guide.domain.planner.model.PlanAdjustmentPreviewDto;
+import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
 import com.ai.guide.domain.planner.engine.RouteCost;

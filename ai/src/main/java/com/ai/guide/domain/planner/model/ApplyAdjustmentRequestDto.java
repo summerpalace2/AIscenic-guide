@@ -1,4 +1,4 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -6,10 +6,10 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 确认并应用调整方案请求 DTO
+ * 确认并应用调整方案请求命令对象
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：封装用户在前端确认应用某个调整选项时的请求参数（包含 proposalId、选中的 optionId 及 baseRevision 乐观锁版本号）。
+ * 架构定位：COLA 领域模型 (Domain Model / Command)
+ * 职责：封装用户在前端确认应用某个调整选项时的请求参数（包含 proposalId、选中的 optionId 及 baseRevision 乐观锁版本号）。
  */
 @Data
 @Builder
@@ -28,4 +28,3 @@ public class ApplyAdjustmentRequestDto {
     @Builder.Default
     private String idempotencyKey = "";
 }
-

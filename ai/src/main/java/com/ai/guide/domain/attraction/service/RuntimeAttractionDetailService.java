@@ -1,9 +1,12 @@
 package com.ai.guide.domain.attraction.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
 import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -20,18 +23,18 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class RuntimeAttractionDetailService {
 
-    private final AmapRouteService routeService;
+    private final GeoRouteGatewayPort routeService;
     private final Map<String, Attraction> runtimeAttractionCache = new ConcurrentHashMap<>();
 
-    public RuntimeAttractionDetailService(AmapRouteService routeService) {
+    public RuntimeAttractionDetailService(@Autowired(required = false) GeoRouteGatewayPort routeService) {
         this.routeService = routeService;
     }
 
     public Map<String, Object> detail(String entityId) {
         String poiId = poiId(entityId);
         if (poiId.isBlank()) return null;
-        AmapRouteService.PoiOutcome outcome = routeService.poiDetail(poiId);
-        if (outcome.status() != AmapRouteService.OutcomeStatus.SUCCESS
+        PoiOutcome outcome = routeService.poiDetail(poiId);
+        if (outcome.status() != OutcomeStatus.SUCCESS
                 || outcome.candidates() == null || outcome.candidates().isEmpty()) return null;
         AmapResponseNormalizer.PoiCandidate poi = outcome.candidates().get(0);
         return projection(poi, outcome);
@@ -44,8 +47,8 @@ public class RuntimeAttractionDetailService {
         if (cached != null) return cached;
         String poiId = poiId(entityId);
         if (poiId.isBlank()) return null;
-        AmapRouteService.PoiOutcome outcome = routeService.poiDetail(poiId);
-        if (outcome.status() != AmapRouteService.OutcomeStatus.SUCCESS
+        PoiOutcome outcome = routeService.poiDetail(poiId);
+        if (outcome.status() != OutcomeStatus.SUCCESS
                 || outcome.candidates() == null || outcome.candidates().isEmpty()) return null;
         AmapResponseNormalizer.PoiCandidate poi = outcome.candidates().get(0);
         Attraction built = buildAttractionFromPoi(entityId, poi);
@@ -114,7 +117,7 @@ public class RuntimeAttractionDetailService {
         if (routeService == null || !routeService.isConfigured()) return null;
 
         String effectiveCity = (city == null || city.isBlank()) ? "重庆市" : city;
-        AmapRouteService.PoiOutcome search = routeService.searchPoi(cleanQuery, effectiveCity);
+        PoiOutcome search = routeService.searchPoi(cleanQuery, effectiveCity);
         List<AmapResponseNormalizer.PoiCandidate> candidates = search.candidates();
 
         // 若直接搜索未果且包含高校/地标后缀，尝试以核心主体兜底检索
@@ -128,7 +131,7 @@ public class RuntimeAttractionDetailService {
                 fallbackQuery = cleanQuery.substring(0, cleanQuery.indexOf("公园") + 2);
             }
             if (!fallbackQuery.equals(cleanQuery)) {
-                AmapRouteService.PoiOutcome retry = routeService.searchPoi(fallbackQuery, effectiveCity);
+                PoiOutcome retry = routeService.searchPoi(fallbackQuery, effectiveCity);
                 if (retry.candidates() != null && !retry.candidates().isEmpty()) {
                     candidates = retry.candidates();
                 }
@@ -180,7 +183,7 @@ public class RuntimeAttractionDetailService {
     public String answerReference(String reference) {
         String query = text(reference);
         if (query.isBlank()) return "请提供具体景点名称，我再为你查询高德实时详情。";
-        AmapRouteService.PoiOutcome search = routeService.searchPoi(query, "重庆市");
+        PoiOutcome search = routeService.searchPoi(query, "重庆市");
         if (search.candidates() == null || search.candidates().isEmpty()) {
             return "高德暂时没有找到“" + query + "”，请检查名称或补充所在区县。";
         }
@@ -262,7 +265,7 @@ public class RuntimeAttractionDetailService {
     }
 
     private Map<String, Object> projection(AmapResponseNormalizer.PoiCandidate poi,
-                                           AmapRouteService.PoiOutcome outcome) {
+                                           PoiOutcome outcome) {
         String id = "amap-" + text(poi.poiId());
         String name = text(poi.name());
         String address = text(poi.address());

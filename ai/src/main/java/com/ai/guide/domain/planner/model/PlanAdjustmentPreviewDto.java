@@ -1,4 +1,4 @@
-package com.ai.guide.application.planner.dto;
+package com.ai.guide.domain.planner.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -10,10 +10,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 方案调整多选项预览响应 DTO
+ * 方案调整多选项预览响应模型
  *
- * 所属领域：domain.planner.api（智能排程规划 API 层）
- * 架构职责：承载规划引擎生成的 1~3 个调整选项、路线变更对比（changedSegments）、可行性校验结果及推荐理由。
+ * 架构定位：COLA 领域模型 (Domain Model)
+ * 职责：承载规划引擎生成的 1~3 个调整选项、路线变更对比（changedSegments）、可行性校验结果及推荐理由。
  */
 @Data
 @Builder
@@ -47,4 +47,3 @@ public class PlanAdjustmentPreviewDto {
     @Builder.Default
     private String message = "";
 }
-

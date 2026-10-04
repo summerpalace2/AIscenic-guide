@@ -5,7 +5,7 @@ import com.ai.guide.domain.chat.model.ChatHistoryVO;
 import com.ai.guide.domain.chat.model.ConversationVO;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.ai.guide.infrastructure.chat.memory.RedisChatMemory;
+import com.ai.guide.domain.chat.model.ChatMessageRecord;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -23,7 +23,7 @@ import java.util.Set;
 /**
  * 前端历史记录的查询服务
  * 从 Redis 读取会话列表和消息，为前端侧边栏提供数据支持。
- * 内部复用 RedisChatMemory 的 MessageRecord 结构进行 JSON 反序列化。
+ * 内部使用领域模型 ChatMessageRecord 进行 JSON 反序列化。
  *
  * 多账户改造：
  * - 会话 ZSet key 使用 chat:sessions:{userId} 实现用户隔离
@@ -113,8 +113,8 @@ public class ChatHistoryService {
                 String title = "新对话";
                 if (firstMsgJson != null && !firstMsgJson.isEmpty()) {
                     try {
-                        RedisChatMemory.MessageRecord rec =
-                                objectMapper.readValue(firstMsgJson.get(0), RedisChatMemory.MessageRecord.class);
+                        ChatMessageRecord rec =
+                                objectMapper.readValue(firstMsgJson.get(0), ChatMessageRecord.class);
                         String c = rec.content();
                         title = c.length() > 30 ? c.substring(0, 30) + "..." : c;
                     } catch (Exception ignored) {}
@@ -155,8 +155,8 @@ public class ChatHistoryService {
             List<ChatHistoryVO> result = new ArrayList<>();
             for (String json : jsonList) {
                 try {
-                    RedisChatMemory.MessageRecord rec =
-                            objectMapper.readValue(json, RedisChatMemory.MessageRecord.class);
+                    ChatMessageRecord rec =
+                            objectMapper.readValue(json, ChatMessageRecord.class);
                     ChatHistoryVO vo = new ChatHistoryVO(rec.type(), rec.content(), null);
                     result.add(vo);
                 } catch (Exception e) {

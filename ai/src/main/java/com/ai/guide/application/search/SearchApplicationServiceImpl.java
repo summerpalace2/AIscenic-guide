@@ -4,7 +4,9 @@ import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import com.ai.guide.domain.search.service.BaiduSearchService;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,10 +21,10 @@ import java.util.List;
 public class SearchApplicationServiceImpl implements SearchApplicationService {
 
     private final BaiduSearchService baiduSearchService;
-    private final AmapRouteService amapRouteService;
+    private final GeoRouteGatewayPort amapRouteService;
 
     public SearchApplicationServiceImpl(BaiduSearchService baiduSearchService,
-                                       AmapRouteService amapRouteService) {
+                                        GeoRouteGatewayPort amapRouteService) {
         this.baiduSearchService = baiduSearchService;
         this.amapRouteService = amapRouteService;
     }
@@ -38,10 +40,10 @@ public class SearchApplicationServiceImpl implements SearchApplicationService {
         if (q == null || q.isBlank()) {
             return Result.success("请输入搜索关键词", List.of());
         }
-        AmapRouteService.PoiOutcome outcome = amapRouteService.searchPoi(q.trim(), city, types);
-        if (outcome.status() == AmapRouteService.OutcomeStatus.SUCCESS) {
+        PoiOutcome outcome = amapRouteService.searchPoi(q.trim(), city, types);
+        if (outcome.status() == OutcomeStatus.SUCCESS) {
             return Result.success("高德POI检索成功", outcome.candidates());
-        } else if (outcome.status() == AmapRouteService.OutcomeStatus.INVALID) {
+        } else if (outcome.status() == OutcomeStatus.INVALID) {
             return Result.success("请输入有效搜索关键词", List.of());
         } else {
             return Result.error(503, "高德检索暂不可用: " + outcome.reason());

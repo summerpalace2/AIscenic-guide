@@ -40,7 +40,7 @@ public class RedisChatMemory implements ChatMemory {
     private final ExecutorService asyncExecutor;
 
     /**
-     * 消息记录（用于 JSON 序列化）
+     * 兼容性保留消息记录类型定义
      */
     public record MessageRecord(String type, String content) implements Message {
         @Override

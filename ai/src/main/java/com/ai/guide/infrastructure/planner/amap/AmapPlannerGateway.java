@@ -2,6 +2,11 @@ package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.HydrationResult;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RouteOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.planner.model.WeatherOutcome;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
@@ -167,7 +172,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             AmapResponseNormalizer.PoiCandidate selected = null;
             String lastReason = "";
             for (String keyword : keywords) {
-                AmapRouteService.PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
+                PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
                 lastReason = outcome.reason();
                 selected = select(outcome.candidates(), attraction);
                 if (selected != null) break;
@@ -185,9 +190,9 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     private int hydrateWeather(Map<String, Object> trip) {
         List<Map<String, Object>> days = dayMaps(trip);
         boolean hasMatchableDate = days.stream().anyMatch(day -> isoDate(day.get("date")) != null);
-        AmapRouteService.WeatherOutcome outcome = hasMatchableDate
+        WeatherOutcome outcome = hasMatchableDate
                 ? routeService.weather("500000")
-                : new AmapRouteService.WeatherOutcome(AmapRouteService.OutcomeStatus.UNAVAILABLE,
+                : new WeatherOutcome(OutcomeStatus.UNAVAILABLE,
                         null, "行程没有可匹配的 ISO 日期，跳过高德天气查询。", Instant.now());
         String providerReason = outcome.reason() == null || outcome.reason().isBlank()
                 ? "高德天气接口未返回可用结果。" : outcome.reason();
@@ -202,7 +207,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             AmapResponseNormalizer.WeatherCast cast = casts.stream()
                     .filter(item -> item != null && date != null && date.equals(item.date()))
                     .findFirst().orElse(null);
-            if (outcome.status() == AmapRouteService.OutcomeStatus.SUCCESS && cast != null) {
+            if (outcome.status() == OutcomeStatus.SUCCESS && cast != null) {
                 String value = weatherText(cast);
                 if (!value.isBlank()) {
                     day.put("weather", fact("天气", value, "动态",
@@ -215,7 +220,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             }
             String reason = date == null
                     ? "行程日期不是 ISO 日期，无法安全匹配高德预报。"
-                    : outcome.status() != AmapRouteService.OutcomeStatus.SUCCESS
+                    : outcome.status() != OutcomeStatus.SUCCESS
                         ? providerReason
                         : casts.isEmpty() ? "高德没有返回预报列表。"
                         : "高德预报范围内没有日期 " + date + "。";
@@ -224,7 +229,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         }
         log.info("[AMAP_WEATHER_REFRESH] days={}, status={}, casts={}, resolved={}, reason={}",
                 days.size(), outcome.status(), casts.size(), resolved,
-                outcome.status() == AmapRouteService.OutcomeStatus.SUCCESS ? "" : providerReason);
+                outcome.status() == OutcomeStatus.SUCCESS ? "" : providerReason);
         return resolved;
     }
 
@@ -254,7 +259,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             }
         }
 
-        List<java.util.concurrent.CompletableFuture<AmapRouteService.RoutePairOutcome>> futures = tasks.stream()
+        List<java.util.concurrent.CompletableFuture<RoutePairOutcome>> futures = tasks.stream()
                 .map(t -> java.util.concurrent.CompletableFuture.supplyAsync(() -> routeService.routePair(
                         t.origin(), t.destination(), "重庆市", t.originPoi(), t.destinationPoi(), t.preference()
                 ), hydrationExecutor))
@@ -263,11 +268,11 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         int successes = 0;
         for (int i = 0; i < tasks.size(); i++) {
             RouteTask t = tasks.get(i);
-            AmapRouteService.RoutePairOutcome pair;
+            RoutePairOutcome pair;
             try {
                 pair = futures.get(i).join();
             } catch (Exception e) {
-                pair = new AmapRouteService.RoutePairOutcome(null, null, null, t.preference(), false);
+                pair = new RoutePairOutcome(null, null, null, t.preference(), false);
             }
             Map<String, Object> walking = routeMap(pair.walking());
             Map<String, Object> transit = routeMap(pair.transit());
@@ -435,12 +440,12 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         trip.put("retrieval", retrieval);
     }
 
-    private boolean isSuccessful(AmapRouteService.RouteOutcome outcome) {
-        return outcome != null && outcome.status() == AmapRouteService.OutcomeStatus.SUCCESS
+    private boolean isSuccessful(RouteOutcome outcome) {
+        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS
                 && outcome.segment() != null && outcome.segment().metricsComplete();
     }
 
-    private Map<String, Object> routeMap(AmapRouteService.RouteOutcome outcome) {
+    private Map<String, Object> routeMap(RouteOutcome outcome) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (outcome == null) {
             result.put("status", "未返回");
@@ -468,7 +473,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return result;
     }
 
-    private String selectedSummary(AmapRouteService.RouteOutcome outcome) {
+    private String selectedSummary(RouteOutcome outcome) {
         if (!isSuccessful(outcome)) return "动态·暂未查询";
         AmapResponseNormalizer.RouteResult segment = outcome.segment();
         int distance = segment.distanceMeters() == null ? 0 : segment.distanceMeters();
@@ -477,7 +482,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return distanceText + " · " + Math.max(1, Math.round(duration / 60.0f)) + " 分钟";
     }
 
-    private List<String> polyline(AmapRouteService.RouteOutcome outcome) {
+    private List<String> polyline(RouteOutcome outcome) {
         return outcome == null || outcome.segment() == null ? List.of() : splitPolyline(outcome.segment().polyline());
     }
 

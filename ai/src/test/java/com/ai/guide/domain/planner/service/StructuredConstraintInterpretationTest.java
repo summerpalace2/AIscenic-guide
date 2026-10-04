@@ -3,9 +3,9 @@ package com.ai.guide.domain.planner.service;
 
 
 
-import com.ai.guide.application.planner.dto.PlanRequest;
-import com.ai.guide.application.planner.dto.ShadowPlanRequest;
-import com.ai.guide.application.planner.dto.StructuredPreferences;
+import com.ai.guide.domain.planner.model.PlanRequest;
+import com.ai.guide.domain.planner.model.ShadowPlanRequest;
+import com.ai.guide.domain.planner.model.StructuredPreferences;
 import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.planner.model.TravelConstraints;

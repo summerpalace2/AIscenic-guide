@@ -1,5 +1,11 @@
 package com.ai.guide.application.search;
 
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.planner.model.RouteOutcome;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.planner.model.WeatherOutcome;
+
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
@@ -57,8 +63,8 @@ class SearchApplicationServiceImplTest {
                 "1", "磁器口古镇", new AmapResponseNormalizer.Coordinate(106.44, 29.58),
                 "沙坪坝区", "景区", null, null, "1", null, null
         );
-        AmapRouteService.PoiOutcome outcome = new AmapRouteService.PoiOutcome(
-                AmapRouteService.OutcomeStatus.SUCCESS, List.of(poi), "ok", Instant.now()
+        PoiOutcome outcome = new PoiOutcome(
+                OutcomeStatus.SUCCESS, List.of(poi), "ok", Instant.now()
         );
         when(amapRouteService.searchPoi(eq("磁器口"), eq("重庆市"), isNull())).thenReturn(outcome);
 
@@ -72,8 +78,8 @@ class SearchApplicationServiceImplTest {
     @Test
     @DisplayName("searchAmap - 高德返回 INVALID 状态码仍为 200 并提示有效关键词")
     void testSearchAmapInvalidOutcome() {
-        AmapRouteService.PoiOutcome outcome = new AmapRouteService.PoiOutcome(
-                AmapRouteService.OutcomeStatus.INVALID, List.of(), "关键词非法", Instant.now()
+        PoiOutcome outcome = new PoiOutcome(
+                OutcomeStatus.INVALID, List.of(), "关键词非法", Instant.now()
         );
         when(amapRouteService.searchPoi(anyString(), anyString(), any())).thenReturn(outcome);
 
@@ -86,8 +92,8 @@ class SearchApplicationServiceImplTest {
     @Test
     @DisplayName("searchAmap - 高德服务不可用或超时返回 503")
     void testSearchAmapUnavailable() {
-        AmapRouteService.PoiOutcome outcome = new AmapRouteService.PoiOutcome(
-                AmapRouteService.OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now()
+        PoiOutcome outcome = new PoiOutcome(
+                OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now()
         );
         when(amapRouteService.searchPoi(anyString(), anyString(), any())).thenReturn(outcome);
 
@@ -96,3 +102,4 @@ class SearchApplicationServiceImplTest {
         assertEquals("高德检索暂不可用: 未配置高德服务端密钥", result.getMessage());
     }
 }
+

@@ -2,7 +2,9 @@ package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.model.OutcomeStatus;
+import com.ai.guide.domain.planner.model.RoutePairOutcome;
 import com.ai.guide.domain.planner.service.PlannerMetricsLogger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -19,20 +21,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class RouteCostProvider {
 
-    private final AmapRouteService amapRouteService;
+    private final GeoRouteGatewayPort geoRouteGateway;
     private final PlannerMetricsLogger metricsLogger;
     private final Map<String, RouteCost> finalEdgeCache = new ConcurrentHashMap<>();
     private final AtomicInteger finalEdgeProviderCalls = new AtomicInteger();
 
     @Autowired
-    public RouteCostProvider(AmapRouteService amapRouteService,
+    public RouteCostProvider(@Autowired(required = false) GeoRouteGatewayPort geoRouteGateway,
                              @Autowired(required = false) PlannerMetricsLogger metricsLogger) {
-        this.amapRouteService = amapRouteService;
+        this.geoRouteGateway = geoRouteGateway;
         this.metricsLogger = metricsLogger != null ? metricsLogger : new PlannerMetricsLogger();
     }
 
-    public RouteCostProvider(AmapRouteService amapRouteService) {
-        this(amapRouteService, new PlannerMetricsLogger());
+    public RouteCostProvider(GeoRouteGatewayPort geoRouteGateway) {
+        this(geoRouteGateway, new PlannerMetricsLogger());
     }
 
     /**
@@ -107,15 +109,15 @@ public class RouteCostProvider {
     }
 
     protected RouteCost requestExactRoute(Attraction origin, Attraction destination, String preference) {
-        if (amapRouteService == null || !amapRouteService.isConfigured()) return null;
+        if (geoRouteGateway == null || !geoRouteGateway.isConfigured()) return null;
         finalEdgeProviderCalls.incrementAndGet();
         try {
-            AmapRouteService.RoutePairOutcome outcome = amapRouteService.routePair(
+            RoutePairOutcome outcome = geoRouteGateway.routePair(
                     origin.getLocation(), destination.getLocation(), "重庆市",
                     queryKeyword(origin), queryKeyword(destination), preference
             );
             if (outcome == null || outcome.selected() == null
-                    || outcome.selected().status() != AmapRouteService.OutcomeStatus.SUCCESS
+                    || outcome.selected().status() != OutcomeStatus.SUCCESS
                     || outcome.selected().segment() == null
                     || !outcome.selected().segment().metricsComplete()) {
                 return null;
