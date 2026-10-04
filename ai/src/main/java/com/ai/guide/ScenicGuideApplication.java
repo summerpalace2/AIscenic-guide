@@ -26,7 +26,22 @@ import java.nio.file.Paths;
 public class ScenicGuideApplication {
 
     private static final Logger log = LoggerFactory.getLogger(ScenicGuideApplication.class);
-    private static final Path CANONICAL_ENV_FILE = Paths.get("D:\\scenic-guide\\ai\\.env");
+
+    private static Path resolveEnvFile() {
+        Path local = Paths.get(".env");
+        if (Files.exists(local)) {
+            return local;
+        }
+        Path parent = Paths.get("..", ".env");
+        if (Files.exists(parent)) {
+            return parent;
+        }
+        Path fallback = Paths.get("D:\\scenic-guide\\ai\\.env");
+        if (Files.exists(fallback)) {
+            return fallback;
+        }
+        return local;
+    }
 
     public static void main(String[] args) {
         loadDotEnv();
@@ -34,18 +49,19 @@ public class ScenicGuideApplication {
     }
 
     /**
-     * 读取唯一的本地开发配置源。进程环境和 JVM 参数始终优先，
-     * 但不会再按工作目录探测 .env.local、根目录 .env 或其他文件。
+     * 读取本地配置源。进程环境和 JVM 参数始终优先。
+     * 优先探测当前运行目录或父目录的 .env，未找到时回退到默认开发路径。
      */
     public static void loadDotEnv() {
-        if (!Files.exists(CANONICAL_ENV_FILE)) {
-            log.info("[提示] 未找到 canonical 本地配置文件，跳过环境变量注入");
+        Path envFile = resolveEnvFile();
+        if (!Files.exists(envFile)) {
+            log.info("[提示] 未找到本地配置文件，跳过环境变量注入: {}", envFile.toAbsolutePath());
             return;
         }
 
         int loadedVariables = 0;
         try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(new FileInputStream(CANONICAL_ENV_FILE.toFile()), StandardCharsets.UTF_8))) {
+                new InputStreamReader(new FileInputStream(envFile.toFile()), StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.replaceFirst("^\\uFEFF", "").trim();
@@ -67,9 +83,9 @@ public class ScenicGuideApplication {
                 }
             }
         } catch (Exception e) {
-            log.warn("[警告] canonical 本地配置文件读取失败: {}", CANONICAL_ENV_FILE);
+            log.warn("[警告] 本地配置文件读取失败: {}", envFile);
             return;
         }
-        log.info("[提示] 已加载 canonical 本地配置文件（{} 个新变量）", loadedVariables);
+        log.info("[提示] 已加载本地配置文件（{} 个新变量）", loadedVariables);
     }
 }

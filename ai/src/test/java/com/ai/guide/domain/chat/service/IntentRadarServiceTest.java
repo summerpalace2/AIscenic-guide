@@ -57,10 +57,24 @@ class IntentRadarServiceTest {
         assertTrue(spicy.preference().trait().contains("火锅"));
         assertTrue(spicy.suggestions().stream().anyMatch(a -> a.action().equals("save_slot_preference") && a.label().contains("老火锅")));
 
+        var spicy2 = radar.scan("午餐吃辣");
+        assertNotNull(spicy2, "午餐吃辣 必须命中重辣火锅规则");
+        assertEquals("DIET", spicy2.preference().domain());
+        assertTrue(spicy2.suggestions().stream().anyMatch(a -> a.action().equals("save_slot_preference")));
+
+        var spicy3 = radar.scan("我想吃点辣的，能吃辣");
+        assertNotNull(spicy3, "我想吃点辣的，能吃辣 必须命中重辣火锅规则");
+        assertEquals("DIET", spicy3.preference().domain());
+
         var soup = radar.scan("胃有点不舒服，想喝点暖胃的热汤，要清淡少油");
         assertNotNull(soup);
         assertEquals("DIET", soup.preference().domain());
         assertTrue(soup.preference().trait().contains("清淡"));
+
+        var notSpicy = radar.scan("我不吃辣，有没有清淡一点的");
+        assertNotNull(notSpicy);
+        assertEquals("DIET", notSpicy.preference().domain());
+        assertTrue(notSpicy.preference().trait().contains("清淡"), "我不吃辣 必须命中清淡规则，不能误判为吃辣");
     }
 
     @Test

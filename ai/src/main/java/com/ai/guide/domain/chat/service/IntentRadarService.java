@@ -68,19 +68,7 @@ public class IntentRadarService {
                 )
         ));
 
-        // 重辣、火锅、江湖菜
-        rules.add(new PatternRule(
-                "DIET",
-                Pattern.compile(".*(火锅|老火锅|九宫格|串串|毛血旺|辣子鸡|江湖菜|重辣|麻辣|喜辣|爱吃辣|想吃辣|川菜|爆辣).*"),
-                "饮食偏好麻辣浓郁与地道火锅",
-                0.95,
-                List.of(
-                        new ActionTemplate("replace_meal", "推荐并替换为地道老火锅/江湖菜", "🍲", "寻找并替换为附近地道老火锅或江湖菜餐厅"),
-                        new ActionTemplate("save_slot_preference", "将【老火锅】加入美食偏好", "✦", "{\"slot\":\"dining\",\"tag\":\"老火锅\"}")
-                )
-        ));
-
-        // 清淡、少辣、少油、暖胃热汤
+        // 清淡、少辣、少油、暖胃热汤（前置判定，避免“不吃辣/少辣”被后续吃辣规则误匹配）
         rules.add(new PatternRule(
                 "DIET",
                 Pattern.compile(".*(清淡|不吃辣|少辣|微辣|不能吃辣|少油|喝汤|热汤|暖胃|养生|炖汤|抄手清汤|老鸭汤|蹄花).*"),
@@ -89,6 +77,18 @@ public class IntentRadarService {
                 List.of(
                         new ActionTemplate("replace_meal", "安排清汤蹄花或滋补老鸭汤正餐", "🥣", "安排清淡滋补蹄花汤或老鸭汤正餐"),
                         new ActionTemplate("save_slot_preference", "将【清淡少辣】加入美食偏好", "✦", "{\"slot\":\"dining\",\"tag\":\"清淡少辣\"}")
+                )
+        ));
+
+        // 重辣、火锅、江湖菜、吃辣偏好
+        rules.add(new PatternRule(
+                "DIET",
+                Pattern.compile(".*(火锅|老火锅|九宫格|串串|毛血旺|辣子鸡|江湖菜|重辣|中辣|特辣|麻辣|喜辣|爱吃辣|想吃辣|喜欢吃辣|吃辣|吃点辣|能吃辣|无辣不欢|嗜辣|辣的|整点辣|搞点辣|川菜|爆辣|红汤).*"),
+                "饮食偏好麻辣浓郁与地道火锅",
+                0.95,
+                List.of(
+                        new ActionTemplate("replace_meal", "推荐并替换为地道老火锅/江湖菜", "🍲", "寻找并替换为附近地道老火锅或江湖菜餐厅"),
+                        new ActionTemplate("save_slot_preference", "将【老火锅】加入美食偏好", "✦", "{\"slot\":\"dining\",\"tag\":\"老火锅\"}")
                 )
         ));
 
