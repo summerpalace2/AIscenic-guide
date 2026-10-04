@@ -1,5 +1,6 @@
-package com.ai.guide.domain.preferences.repository;
+package com.ai.guide.infrastructure.preferences.repository;
 
+import com.ai.guide.domain.preferences.gateway.PreferencesRepositoryPort;
 import com.ai.guide.domain.preferences.model.BudgetPreference;
 import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -14,12 +15,13 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 用户偏好主数据仓储
+ * 用户偏好主数据仓储技术实现 (Preferences Repository)
  *
- * 所属领域：domain.preferences.repository（用户偏好画像仓储层）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 数据持久化适配器。
+ * 核心职责：实现领域端口 {@link PreferencesRepositoryPort}，负责偏好主数据在关系型数据库中的读写与 CAS 乐观并发控制。
  */
 @Repository
-public class PreferencesRepository {
+public class PreferencesRepository implements PreferencesRepositoryPort {
 
     private static final TypeReference<List<String>> INTERESTS_TYPE = new TypeReference<>() { };
     private static final TypeReference<Map<String, Object>> METADATA_TYPE = new TypeReference<>() { };
@@ -36,6 +38,7 @@ public class PreferencesRepository {
         this.objectMapper = objectMapper;
     }
 
+    @Override
     public Optional<UserPreferences> findByUserId(String userId) {
         List<UserPreferences> rows = jdbcTemplate.query(SELECT, (rs, rowNum) -> new UserPreferences(
                 rs.getString("user_id"),
@@ -54,6 +57,7 @@ public class PreferencesRepository {
         return rows.stream().findFirst();
     }
 
+    @Override
     public void insert(UserPreferences preferences) {
         try {
             jdbcTemplate.update("INSERT INTO user_preferences (user_id, schema_version, revision, interests_json, " +
@@ -66,6 +70,7 @@ public class PreferencesRepository {
     }
 
     /** Updates only the row at expectedRevision, providing optimistic concurrency. */
+    @Override
     public boolean updateCas(UserPreferences next, long expectedRevision) {
         int updated = jdbcTemplate.update("UPDATE user_preferences SET schema_version = ?, revision = ?, " +
                         "interests_json = ?, walking_tolerance = ?, budget_json = ?, companions = ?, " +

@@ -10,7 +10,7 @@ import com.ai.guide.domain.planner.api.ShadowMutationRequest;
 import com.ai.guide.domain.planner.api.ShadowPlanRequest;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.preferences.model.UserPreferences;
-import com.ai.guide.domain.preferences.api.UserPreferencesPatch;
+import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
 import com.ai.guide.domain.trip.service.TripService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

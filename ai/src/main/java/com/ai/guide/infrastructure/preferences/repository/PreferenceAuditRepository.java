@@ -1,5 +1,6 @@
-package com.ai.guide.domain.preferences.repository;
+package com.ai.guide.infrastructure.preferences.repository;
 
+import com.ai.guide.domain.preferences.gateway.PreferenceAuditRepositoryPort;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,12 +10,13 @@ import org.springframework.stereotype.Repository;
 import java.util.UUID;
 
 /**
- * 用户偏好变更审计日志仓储
+ * 用户偏好变更审计日志仓储技术实现 (Preference Audit Repository)
  *
- * 所属领域：domain.preferences.repository（用户偏好画像仓储层）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 数据持久化适配器。
+ * 核心职责：实现领域端口 {@link PreferenceAuditRepositoryPort}，负责记录用户偏好历史变更与溯源 Provenance。
  */
 @Repository
-public class PreferenceAuditRepository {
+public class PreferenceAuditRepository implements PreferenceAuditRepositoryPort {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -25,6 +27,7 @@ public class PreferenceAuditRepository {
         this.objectMapper = objectMapper;
     }
 
+    @Override
     public void record(String userId, UserPreferences before, UserPreferences after, String operation) {
         long now = System.currentTimeMillis();
         jdbcTemplate.update("INSERT INTO user_preference_audit (event_id, user_id, revision, operation, " +

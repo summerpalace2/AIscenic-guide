@@ -1,5 +1,6 @@
-package com.ai.guide.domain.preferences.repository;
+package com.ai.guide.infrastructure.preferences.repository;
 
+import com.ai.guide.domain.preferences.gateway.PreferencesRepositoryPort;
 import com.ai.guide.domain.preferences.model.BudgetPreference;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.ai.guide.domain.preferences.model.UserPreferences;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PreferencesRepositoryTest {
 
     @Autowired
-    private PreferencesRepository repository;
+    private PreferencesRepositoryPort repository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;

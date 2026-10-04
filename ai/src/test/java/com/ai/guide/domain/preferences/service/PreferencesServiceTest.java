@@ -1,11 +1,11 @@
 package com.ai.guide.domain.preferences.service;
 
-import com.ai.guide.domain.preferences.api.UserPreferencesPatch;
+import com.ai.guide.domain.preferences.gateway.PreferenceAuditRepositoryPort;
+import com.ai.guide.domain.preferences.gateway.PreferencesRepositoryPort;
 import com.ai.guide.domain.preferences.model.BudgetPreference;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.ai.guide.domain.preferences.model.UserPreferences;
-import com.ai.guide.domain.preferences.repository.PreferenceAuditRepository;
-import com.ai.guide.domain.preferences.repository.PreferencesRepository;
+import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
@@ -24,8 +24,8 @@ class PreferencesServiceTest {
 
     @Test
     void mergeCreatesTypedOwnerBoundPreferenceAndAudit() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         when(repository.findByUserId("java-user-1")).thenReturn(Optional.empty());
         PreferencesService service = new PreferencesService(repository, audit);
 
@@ -53,8 +53,8 @@ class PreferencesServiceTest {
 
     @Test
     void staleExpectedRevisionDoesNotOverwriteOrAudit() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         UserPreferences current = new UserPreferences(
                 "java-user-1", PreferencesSchema.CURRENT_SCHEMA_VERSION, 4,
                 List.of("城市"), UserPreferences.WalkingTolerance.NORMAL,
@@ -75,8 +75,8 @@ class PreferencesServiceTest {
 
     @Test
     void anonymousOwnerIsRejectedBeforePersistence() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         PreferencesService service = new PreferencesService(repository, audit);
 
         assertThrows(IllegalArgumentException.class,
@@ -86,8 +86,8 @@ class PreferencesServiceTest {
 
     @Test
     void replaceUsesOnlySuppliedTypedFieldsAndClearsOmittedValues() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         UserPreferences current = new UserPreferences(
                 "java-user-1", PreferencesSchema.CURRENT_SCHEMA_VERSION, 4,
                 List.of("城市"), UserPreferences.WalkingTolerance.LOW,
@@ -116,8 +116,8 @@ class PreferencesServiceTest {
 
     @Test
     void clearResetsFormalPreferencesWithoutTouchingAutomaticSlots() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         UserPreferences current = new UserPreferences(
                 "java-user-1", PreferencesSchema.CURRENT_SCHEMA_VERSION, 4,
                 List.of("城市"), UserPreferences.WalkingTolerance.LOW,
@@ -141,8 +141,8 @@ class PreferencesServiceTest {
 
     @Test
     void compareAndSwapFailureReturnsCurrentRevision() {
-        PreferencesRepository repository = mock(PreferencesRepository.class);
-        PreferenceAuditRepository audit = mock(PreferenceAuditRepository.class);
+        PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
+        PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);
         UserPreferences current = UserPreferences.empty("java-user-1", 2, 10L);
         UserPreferences latest = UserPreferences.empty("java-user-1", 3, 10L);
         when(repository.findByUserId("java-user-1")).thenReturn(Optional.of(current), Optional.of(latest));

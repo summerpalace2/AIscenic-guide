@@ -1,10 +1,10 @@
 package com.ai.guide.domain.preferences.service;
 
-import com.ai.guide.domain.preferences.api.UserPreferencesPatch;
+import com.ai.guide.domain.preferences.gateway.PreferenceAuditRepositoryPort;
+import com.ai.guide.domain.preferences.gateway.PreferencesRepositoryPort;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.ai.guide.domain.preferences.model.UserPreferences;
-import com.ai.guide.domain.preferences.repository.PreferenceAuditRepository;
-import com.ai.guide.domain.preferences.repository.PreferencesRepository;
+import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,11 +28,11 @@ import java.util.Optional;
 @Service
 public class PreferencesService {
 
-    private final PreferencesRepository repository;
-    private final PreferenceAuditRepository auditRepository;
+    private final PreferencesRepositoryPort repository;
+    private final PreferenceAuditRepositoryPort auditRepository;
 
-    public PreferencesService(PreferencesRepository repository,
-                              PreferenceAuditRepository auditRepository) {
+    public PreferencesService(PreferencesRepositoryPort repository,
+                              PreferenceAuditRepositoryPort auditRepository) {
         this.repository = repository;
         this.auditRepository = auditRepository;
     }

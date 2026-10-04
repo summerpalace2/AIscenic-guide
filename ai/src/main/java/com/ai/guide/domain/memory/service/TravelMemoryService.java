@@ -1,7 +1,7 @@
 package com.ai.guide.domain.memory.service;
 
 import com.ai.guide.domain.memory.model.TravelMemory;
-import com.ai.guide.domain.preferences.api.UserPreferencesPatch;
+import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
 import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import org.springframework.beans.factory.annotation.Autowired;

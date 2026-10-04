@@ -1,8 +1,5 @@
-package com.ai.guide.domain.preferences.api;
+package com.ai.guide.domain.preferences.model;
 
-import com.ai.guide.domain.preferences.model.BudgetPreference;
-import com.ai.guide.domain.preferences.model.PreferencesSchema;
-import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -10,10 +7,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 用户偏好增量更新补丁模型
+ * 用户偏好增量更新补丁模型 (User Preferences Patch Model)
  *
- * 所属领域：domain.preferences.api（用户偏好画像 API 层）
- * 架构职责：承载客户端提交的偏好增量更新字段集合。
+ * 所属领域：domain.preferences.model（用户偏好画像领域模型层）
+ * 架构职责：承载偏好增量更新字段集合，封装 mergeOnto 与 replaceOnto 领域操作。
  */
 @JsonIgnoreProperties(ignoreUnknown = false)
 public record UserPreferencesPatch(
