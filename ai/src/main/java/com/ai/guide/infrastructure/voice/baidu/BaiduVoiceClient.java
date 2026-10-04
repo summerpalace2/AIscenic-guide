@@ -1,70 +1,65 @@
-package com.ai.guide.domain.voice.api;
+package com.ai.guide.infrastructure.voice.baidu;
 
 import com.ai.guide.common.model.Result;
+import com.ai.guide.domain.voice.gateway.VoiceGatewayPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 语音识别控制器 - 百度短语音识别 (https://vop.baidu.com/server_api)
+ * 百度语音技术客户端 (ASR 语音识别 & TTS 语音合成)
  *
- * 鉴权复用百度 TTS 同一套 API_KEY / SECRET_KEY
- * 前端 encodeWAV 后发送 WAV 格式 → 百度 ASR
- * dev_pid 1537=中文普通话 / 1737=英语 / 1637=粤语 / 1837=四川话
+ * 所属基础设施层：infrastructure.voice.baidu
+ * 职责：封装百度云智能开放平台 ASR 与 TTS 的 HTTP 通信细节、OAuth2 Token 鉴权以及错误码转译。
  */
-@RestController
-@RequestMapping("/ai")
-public class AsrController {
+@Component
+public class BaiduVoiceClient implements VoiceGatewayPort {
 
-    private static final Logger log = LoggerFactory.getLogger(AsrController.class);
+    private static final Logger log = LoggerFactory.getLogger(BaiduVoiceClient.class);
 
     private static final String ASR_URL = "http://vop.baidu.com/server_api";
+    private static final String TTS_URL = "https://tsn.baidu.com/text2audio";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
+
     @Value("${baidu.api-key:}")
     private String apiKey;
 
     @Value("${baidu.secret-key:}")
     private String secretKey;
 
-    /** 默认语种 1537 = 中文普通话；前端可通过 dev_pid 指定：1737=英语 / 1637=粤语 / 1837=四川话 */
-    private static final int DEV_PID = 1537;
+    private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    public BaiduVoiceClient() {
+        this.restTemplate = new RestTemplate();
+        this.objectMapper = new ObjectMapper();
+    }
 
-    @PostMapping(value = "/asr", consumes = "application/json")
-    public Result<String> transcribe(@RequestBody Map<String, String> body) {
+    public BaiduVoiceClient(RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public Result<String> transcribe(byte[] audioBytes, String base64Audio, int devPid) {
         try {
-            String audioDataUrl = body.getOrDefault("audio", "");
-            if (audioDataUrl.isEmpty()) {
-                return Result.error(400, "音频数据为空");
-            }
-
-            // 提取纯 base64（去掉 "data:audio/wav;base64," 前缀）
-            String base64Audio = audioDataUrl;
-            int commaIdx = audioDataUrl.indexOf(",");
-            if (commaIdx != -1) {
-                base64Audio = audioDataUrl.substring(commaIdx + 1);
-            }
-
-            // 获取百度 Access Token
             String token = getAccessToken();
-
-            // 构造请求体 — format=wav（前端 encodeWAV 生成）
-            byte[] audioBytes = java.util.Base64.getDecoder().decode(base64Audio);
             String cuid = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-            int devPid = parseDevPid(body.getOrDefault("dev_pid", "1537"));
 
             String requestBody = String.format(
                     "{\"format\":\"wav\",\"rate\":16000,\"channel\":1,\"token\":\"%s\",\"cuid\":\"%s\",\"dev_pid\":%d,\"len\":%d,\"speech\":\"%s\"}",
@@ -72,7 +67,6 @@ public class AsrController {
 
             log.info("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + devPid);
 
-            // POST
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
@@ -81,7 +75,6 @@ public class AsrController {
 
             log.info("[ASR] Response: " + (responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null"));
 
-            // 解析
             if (responseBody == null || responseBody.isEmpty()) {
                 return Result.error(500, "语音识别返回空结果");
             }
@@ -113,25 +106,39 @@ public class AsrController {
         }
     }
 
-    /**
-     * 解析并校验 dev_pid（白名单：1537 中文普通话 / 1737 英语 / 1637 粤语 / 1837 四川话）
-     */
-    private int parseDevPid(String raw) {
-        int devPid = DEV_PID;
+    @Override
+    public ResponseEntity<byte[]> synthesize(String text, String per, String lang) {
         try {
-            int parsed = Integer.parseInt(raw.trim());
-            if (parsed == 1537 || parsed == 1737 || parsed == 1637 || parsed == 1837) {
-                devPid = parsed;
-            }
-        } catch (NumberFormatException ignored) {
+            String token = getAccessToken();
+            String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.name());
+            String url = TTS_URL
+                    + "?tex=" + encodedText
+                    + "&tok=" + token
+                    + "&cuid=scenic_guide_tts"
+                    + "&ctp=1"
+                    + "&lan=" + lang
+                    + "&spd=5"
+                    + "&pit=5"
+                    + "&vol=5"
+                    + "&per=" + per
+                    + "&aue=3";
+
+            log.info("[TTS] lang=" + lang + ", voice=" + per + ", text_len=" + text.length());
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.set("Content-Disposition", "attachment; filename=tts.mp3");
+            return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
+        } catch (Exception e) {
+            log.error("[TTS] Error: " + e.getMessage());
+            return ResponseEntity.internalServerError().build();
         }
-        return devPid;
     }
 
     /**
-     * 获取百度 Access Token（与 TTS 共用同一套 API Key）
+     * 获取百度 Access Token
      */
-    private String getAccessToken() throws Exception {
+    public String getAccessToken() throws Exception {
         String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
         ResponseEntity<Map> resp = restTemplate.getForEntity(tokenUrl, Map.class);
         Map<String, Object> b = resp.getBody();
@@ -144,7 +151,7 @@ public class AsrController {
     /**
      * 百度错误码 → 友好中文提示
      */
-    private Result<String> handleBaiduError(int errNo, String errMsg) {
+    public Result<String> handleBaiduError(int errNo, String errMsg) {
         switch (errNo) {
             case 3001:
                 return Result.error(400, "音频质量过差，请重新录制（靠近麦克风、减少噪音）");
