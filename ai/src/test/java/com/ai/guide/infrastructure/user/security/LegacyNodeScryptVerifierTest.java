@@ -1,4 +1,4 @@
-package com.ai.guide.domain.user.security;
+package com.ai.guide.infrastructure.user.security;
 
 
 import org.junit.jupiter.api.Test;

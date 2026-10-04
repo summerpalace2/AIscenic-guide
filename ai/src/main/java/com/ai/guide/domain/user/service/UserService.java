@@ -3,7 +3,7 @@ package com.ai.guide.domain.user.service;
 import com.ai.guide.domain.chat.service.ChatHistoryService;
 import com.ai.guide.common.security.JwtUtil;
 import com.ai.guide.domain.user.model.User;
-import com.ai.guide.domain.user.security.LegacyNodeScryptVerifier;
+import com.ai.guide.domain.user.gateway.LegacyPasswordVerifierPort;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,17 +43,17 @@ public class UserService {
 
     private final JdbcTemplate jdbcTemplate;
     private final JwtUtil jwtUtil;
-    private final LegacyNodeScryptVerifier legacyScryptVerifier;
+    private final LegacyPasswordVerifierPort legacyScryptVerifier;
 
     /** Compatibility constructor retained for focused unit tests. */
     public UserService(JdbcTemplate jdbcTemplate, JwtUtil jwtUtil) {
-        this(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
+        this(jdbcTemplate, jwtUtil, (LegacyPasswordVerifierPort) null);
     }
 
     @Autowired
     public UserService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbcTemplate,
                        JwtUtil jwtUtil,
-                       LegacyNodeScryptVerifier legacyScryptVerifier) {
+                       LegacyPasswordVerifierPort legacyScryptVerifier) {
         this.jdbcTemplate = jdbcTemplate;
         this.jwtUtil = jwtUtil;
         this.legacyScryptVerifier = legacyScryptVerifier;
@@ -117,7 +117,7 @@ public class UserService {
                 : u.getPasswordScheme().trim().toUpperCase(java.util.Locale.ROOT);
         switch (scheme) {
             case "BCRYPT" -> verifyBcryptAndMaybeRehash(u, password);
-            case LegacyNodeScryptVerifier.SCHEME -> verifyLegacyAndUpgrade(u, password);
+            case LegacyPasswordVerifierPort.SCHEME -> verifyLegacyAndUpgrade(u, password);
             default -> throw new IllegalArgumentException("密码需要重置");
         }
 
@@ -145,7 +145,7 @@ public class UserService {
     }
 
     private void verifyLegacyAndUpgrade(User user, String password) {
-        if (!legacyScryptVerifier.isVerifiable(
+        if (legacyScryptVerifier == null || !legacyScryptVerifier.isVerifiable(
                 user.getPasswordScheme(), user.getPasswordVersion(), user.getPasswordParameters(),
                 user.getPasswordSalt(), user.getPasswordHash())) {
             throw new IllegalArgumentException("密码需要重置");
@@ -164,8 +164,8 @@ public class UserService {
                         "rehash_required = 0, reset_required = 0, updated_at = ? " +
                         "WHERE id = ? AND password_scheme = ? AND password_version = ? " +
                         "AND password_hash = ? AND password_salt = ?",
-                upgradedHash, now, user.getId(), LegacyNodeScryptVerifier.SCHEME,
-                LegacyNodeScryptVerifier.VERSION, user.getPasswordHash(), user.getPasswordSalt());
+                upgradedHash, now, user.getId(), LegacyPasswordVerifierPort.SCHEME,
+                LegacyPasswordVerifierPort.VERSION, user.getPasswordHash(), user.getPasswordSalt());
         if (updated == 1) return;
 
         // A concurrent request may have completed the same safe transition. It

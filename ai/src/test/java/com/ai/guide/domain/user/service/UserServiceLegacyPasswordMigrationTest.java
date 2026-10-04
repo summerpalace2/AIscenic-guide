@@ -3,7 +3,7 @@ package com.ai.guide.domain.user.service;
 
 import com.ai.guide.common.security.JwtUtil;
 import com.ai.guide.domain.user.model.User;
-import com.ai.guide.domain.user.security.LegacyNodeScryptVerifier;
+import com.ai.guide.infrastructure.user.security.LegacyNodeScryptVerifier;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -40,7 +40,7 @@ class UserServiceLegacyPasswordMigrationTest {
         when(jwtUtil.generateToken(eq("legacy-id"), eq(username), eq("USER")))
                 .thenReturn("legacy-token");
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil);
+        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
         Map<String, Object> result = service.login(username, PASSWORD);
 
         assertEquals("legacy-token", result.get("token"));
@@ -57,7 +57,7 @@ class UserServiceLegacyPasswordMigrationTest {
         when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(username)))
                 .thenReturn(List.of(legacyUser(username)));
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil);
+        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.login(username, "phase5b-wrong-password"));
@@ -90,7 +90,7 @@ class UserServiceLegacyPasswordMigrationTest {
         when(jwtUtil.generateToken(eq("legacy-id"), eq(username), eq("USER")))
                 .thenReturn("legacy-token", "bcrypt-token");
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil);
+        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
         service.login(username, PASSWORD);
         Map<String, Object> second = service.login(username, PASSWORD);
 
