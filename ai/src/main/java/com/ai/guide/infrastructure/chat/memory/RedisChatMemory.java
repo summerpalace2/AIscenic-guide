@@ -1,4 +1,4 @@
-package com.ai.guide.domain.chat.service;
+package com.ai.guide.infrastructure.chat.memory;
 
 import com.ai.guide.common.context.UserContext;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -18,17 +18,11 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
 /**
- * 基于 Redis 的 Spring AI ChatMemory 实现
+ * 基于 Redis 的 Spring AI ChatMemory 基础设施实现
  * 消息以 JSON 形式存入 Redis List，会话记录在 ZSet
  * 支持异步写入
  *
- * 多账户改造：
- * - 会话 ZSet key 使用 chat:sessions:{userId} 实现用户隔离
- * - 摘要存储同样按 userId:sessionId 隔离
- * - 异步写入时提前捕获 userId，避免 ThreadLocal 丢失
- *
- * 性能优化：
- * - 线程池改为 Spring 托管 Bean（优雅关闭）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer)
  */
 @Component
 public class RedisChatMemory implements ChatMemory {

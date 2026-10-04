@@ -1,6 +1,5 @@
 package com.ai.guide.domain.analytics.service;
 
-import com.ai.guide.domain.chat.api.ChatController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;

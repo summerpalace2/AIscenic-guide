@@ -5,6 +5,7 @@ import com.ai.guide.domain.chat.model.ChatHistoryVO;
 import com.ai.guide.domain.chat.model.ConversationVO;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ai.guide.infrastructure.chat.memory.RedisChatMemory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.RedisTemplate;

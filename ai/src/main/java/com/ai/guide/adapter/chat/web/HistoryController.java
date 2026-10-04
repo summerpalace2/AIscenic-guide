@@ -1,16 +1,19 @@
-package com.ai.guide.domain.chat.api;
+package com.ai.guide.adapter.chat.web;
 
+import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.chat.model.ChatHistoryVO;
 import com.ai.guide.domain.chat.model.ConversationVO;
-import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.chat.service.ChatHistoryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 /**
- * 会话历史控制器 - 管理聊天会话和消息记录
+ * 会话历史适配器控制器 - 管理聊天会话和消息记录
+ *
+ * 架构定位：COLA 适配层 (Adapter Layer) - Web 协议入口。
  */
 @RestController
 @RequestMapping("/ai")
