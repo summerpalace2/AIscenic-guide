@@ -11,45 +11,50 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 7: Search 文旅多源搜索域 (控制器迁移适配层、抽象搜索应用服务、纯化POI领域端口、解耦基础设施)** |
+| **当前重构切片** | **Slice 8: Attraction 文旅地标与百科域 (地标控制器迁移至适配层、抽象地标应用服务编排多维检索、富媒体装配与跨域事实投影)** |
 | **当前推进状态** | **阶段 2·第六步：独立质检子智能体复核通过 (Final Passed - Ready to Commit)** |
-| **全量自动化测试结果** | **401 passed / 0 failed / 0 error / 10 skipped (23.3s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 20:45 |
+| **全量自动化测试结果** | **411 passed / 0 failed / 0 error / 10 skipped (21.1s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 20:55 |
 
 ---
 
-## 一、 当前切片核验项清单 (Search 文旅多源搜索域)
+## 一、 当前切片核验项清单 (Attraction 文旅地标与百科域)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-SEARCH-01 | `GET /ai/search/baidu`<br/>百度与本地文旅融合搜索 | 参数 `q`（必填）与 `limit`（默认 10）；聚合本地知识检索、高德实景 POI 与百度全网直达卡片；结果条数限制在 `[3, 15]` 之间；返回 200 "百度文旅检索成功" 与卡片列表。 | `SearchController` 迁入适配层，委派 `SearchApplicationService` 与领域服务 `BaiduSearchService`，参数默认值、卡片来源类型与成功文案 100% 一致。 | `SearchControllerTest.testSearchBaidu` + `SearchApplicationServiceImplTest.testSearchBaidu` + `BaiduSearchServiceTest` | `[已验证一致]` |
-| V-SEARCH-02 | `GET /ai/search/amap`<br/>高德实景 POI 地理搜索 | 参数 `q`（必填）、`city`（默认 "重庆市"）、`types`（可选）；<br/>• `q` 为空或空白：返回 **200** "请输入搜索关键词" 与空列表（切斯特顿围栏：非 400！）；<br/>• 成功：返回 200 "高德POI检索成功" 与候选列表；<br/>• 非法：返回 200 "请输入有效搜索关键词" 与空列表；<br/>• 失败/未配置密钥：返回 **503** "高德检索暂不可用: ..."。 | 保持完全一致的 200/503 状态码映射，严格保留对空 query 响应 200 的历史契约。 | `SearchControllerTest.testSearchAmap*` + `SearchApplicationServiceImplTest.testSearchAmap*` | `[已验证一致]` |
-| V-SEARCH-03 | 适配层迁移 (Adapter) | 原 `SearchController` 位于 `domain.search.api`，混合领域层代码。 | 统一迁移至 `com.ai.guide.adapter.search.web`，彻底物理删除旧 `domain.search.api` 目录。 | 架构包扫描校验 | `[明确获准的变化]` |
-| V-SEARCH-04 | 应用层服务提炼 (Application) | 控制器直接编排 `BaiduSearchService` 与底层 `AmapRouteService`。 | 提取 `SearchApplicationService` 门面与 `SearchApplicationServiceImpl`，隔离 Web 请求与业务编排。 | 架构分层校验 | `[明确获准的变化]` |
-| V-SEARCH-05 | 领域端口依赖倒置 (DIP) | 原 `BaiduSearchService` 直接 import 底层设施 `infrastructure.planner.amap.AmapRouteService`。 | 在 `domain.search.gateway` 建立 `PoiSearchGatewayPort` 接口，`AmapRouteService` 实现该端口，`domain.search` 对 `infrastructure` 反向依赖归零。 | 反向依赖扫描通过 | `[明确获准的变化]` |
-| V-SEARCH-06 | 全量回归与测试安全基线 | 原系统无搜索域单元测试。 | 新增 11 项全覆盖自动化测试（控制器、应用层、领域服务各层单测），全工程 401 项测试 100% 绿灯（0 errors, 0 failures, 10 skipped，耗时 23.3s）。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-ATTR-01 | `GET /ai/attractions`<br/>多条件景点列表查询 | 支持 `district`（所属区县）与 `category`（分类）可选参数；查询受控核心地标目录；返回 200 "查询成功" 与 `List<Attraction>`。 | `AttractionController` 迁入适配层，委派 `AttractionApplicationService`，参数映射、默认值与返回结构完全一致。 | `AttractionControllerTest.testListAttractions` + `AttractionApplicationServiceImplTest.testList` + `AttractionServiceTest` | `[已验证一致]` |
+| V-ATTR-02 | `GET /ai/attractions/{id}`<br/>受控与动态景点详情查询 | • 动态景点（`amap-` 或 `runtime-stop-` 前缀）：委派 `RuntimeAttractionDetailService.detail(id)`，查无记录返回 404 "高德未返回该动态景点详情"，成功返回 200 "查询成功"；<br/>• 受控地标：委派 `AttractionService.get(id)`，查无记录返回 404 "景点不存在"，成功委派 `AttractionMediaService.enrich` 返回 200 "查询成功"。 | 保持完全一致的受控/动态前缀分支路由、404 错误提示文案以及媒体富化逻辑。 | `AttractionControllerTest.testGet*` + `AttractionApplicationServiceImplTest.testGet*` | `[已验证一致]` |
+| V-ATTR-03 | `GET /ai/attractions/{id}/facts`<br/>事实核验声明与详情向下兼容 | • 动态景点同上（404/200 逻辑）；<br/>• 受控地标：优先从 `ProductionV2FactQueryService` 获取核验事实；未命中且用户已登录时回退到 `TripPlanService.findAttraction(userId, id)`（切斯特顿围栏：匿名请求跳过行程库）；均无返回 404 "暂无可核验的景点详情"；成功返回 200。 | 保持完全一致的事实查询优先级、UserContext 登录态感知、行程库回退门禁与 404/200 契约。 | `AttractionControllerTest.testGetFacts*` + `AttractionApplicationServiceImplTest.testGetFacts*` | `[已验证一致]` |
+| V-ATTR-04 | 适配层迁移 (Adapter) | 原 `AttractionController` 位于 `domain.attraction.api`，混合领域层代码。 | 统一迁移至 `com.ai.guide.adapter.attraction.web`，彻底物理删除旧 `domain.attraction.api` 目录。 | 架构包扫描校验 | `[明确获准的变化]` |
+| V-ATTR-05 | 应用层服务提炼 (Application) | 控制器直接注入并调度 5 个跨域与领域服务（`AttractionService`, `AttractionMediaService`, `TripPlanService`, `ProductionV2FactQueryService`, `RuntimeAttractionDetailService`）。 | 提炼 `AttractionApplicationService` 门面与 `AttractionApplicationServiceImpl`，应用层统一收拢跨域编排，隔离控制层。 | 架构分层校验 | `[明确获准的变化]` |
+| V-ATTR-06 | 全量回归与测试安全基线 | 确保既有景点数据种子、区县分类过滤、富媒体与跨域事实链路 100% 稳定。 | 全工程 411 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 10 项端点与应用层自动化测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
+
 
 ---
 
 ## 二、 历史切片核验项清单
 
-### 1. User 用户身份认证与账户鉴权域 (Slice 6)
+### 1. Search 文旅多源综合搜索域 (Slice 7)
+- V-SEARCH-01 ~ V-SEARCH-06：百度与高德搜索 2 大端点、空查询 200 响应围栏、`PoiSearchGatewayPort` 领域网关解耦高德路线服务、应用层编排全部通过验收（Commit `4c8d93c`）。
+
+### 2. User 用户身份认证与账户鉴权域 (Slice 6)
 - V-USER-01 ~ V-USER-08：4 个 REST 认证端点、切斯特顿围栏校验差异、Scrypt 验证器下沉、`LegacyPasswordVerifierPort` 领域端口依赖倒置全部通过验收（Commit `0cf2008`）。
 
-### 2. RAG 知识检索增强域 (Slice 5)
+### 3. RAG 知识检索增强域 (Slice 5)
 - V-RAG-01 ~ V-RAG-13：19 个 REST 端点（检索、指标、文档生命周期、碎片分页、双清空端点）、管理员 403 文案围栏差异、Qdrant 客户端与高德客户端下沉全部通过验收（Commit `3b2179c`）。
 
-### 3. Planner 规划引擎域 (Slice 4)
+### 4. Planner 规划引擎域 (Slice 4)
 - V-PLAN-01 ~ V-PLAN-14：14 个 REST 端点、X-Plan-Session-Token 请求头自动注入、空 Body 兜底、DIP 纯净化 `RouteGatewayPort`/`HydrationResult`、高德与会话仓储下沉全部通过验收（Commit `9b6fefd`）。
 
-### 4. Trip 行程生命周期域 (Slice 3)
+### 5. Trip 行程生命周期域 (Slice 3)
 - V-TRIP-01 ~ V-TRIP-12：9 大 REST 动词、401/404/409 异常映射、局部重规划数据外露、PDF 导出、CAS 并发控制、仓储与 PDF 基础设施下沉全部通过验收（Commit `2afbe66`）。
 
-### 5. Preferences 偏好画像域 (Slice 2)
+### 6. Preferences 偏好画像域 (Slice 2)
 - V-PREF-01 ~ V-PREF-09：5 大 REST 动词、401 鉴权拦截、409 OCC 冲突结构、400 校验、200/201 状态码、仓储端口依赖倒置全部通过验收（Commit `bfbb2ef`）。
 
-### 6. Chat 对话流试点 (Slice 1)
+### 7. Chat 对话流试点 (Slice 1)
 - V-CHAT-01 ~ V-CHAT-08：10 参数流式契约、槽位隔离、情绪分流、双层超时容灾、RedisChatMemory 基础设施下沉全部通过验收（Commit `eda0277`）。
+
 
 ---
 
@@ -88,5 +93,10 @@
   - `com.ai.guide.domain.search.gateway`: 定义 `PoiSearchGatewayPort` 领域端口，`AmapRouteService` 实现该端口，彻底消除 `domain.search` 对基础设施层的依赖。
   - 物理清理旧 `domain.search.api` 目录。
   - 全工程 401 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.3s），新增 11 项全覆盖自动化测试。
+- `2026-10-04 (Slice 8 - Attraction 域)`:
+  - `com.ai.guide.adapter.attraction.web`: 承接 `AttractionController`，处理 `/ai/attractions`, `/ai/attractions/{id}`, `/ai/attractions/{id}/facts` 请求。
+  - `com.ai.guide.application.attraction`: 抽象 `AttractionApplicationService` 门面及 `AttractionApplicationServiceImpl`，收拢受控地标多条件查询、富媒体装配与跨域事实核验投影用例。
+  - 物理清理旧 `domain.attraction.api` 目录。
+  - 全工程 411 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 10 项端点与应用层自动化测试。
 
 

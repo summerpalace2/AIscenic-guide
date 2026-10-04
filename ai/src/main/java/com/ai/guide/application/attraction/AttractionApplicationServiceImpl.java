@@ -1,36 +1,26 @@
-package com.ai.guide.domain.attraction.api;
+package com.ai.guide.application.attraction;
 
 import com.ai.guide.common.context.UserContext;
-import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.attraction.service.AttractionService;
+import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionMediaService;
+import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
 import com.ai.guide.domain.rag.service.ProductionV2FactQueryService;
 import com.ai.guide.domain.trip.service.TripPlanService;
-import org.springframework.web.bind.annotation.CrossOrigin;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.Map;
 
 /**
- * 受控文旅地标与景点探索控制器
+ * 文旅地标与景点探索应用服务实现
  *
- * 所属领域：domain.attraction（文旅地标与百科域）
- * 架构职责：作为重庆 24 大核心文旅地标元数据的唯一权威下发方，提供景点检索、分类过滤、详情富媒体展示及事实核验信息。
- *
- * 核心对外接口与关键方法：
- * 1. list：多条件查询景点列表（支持按所属区县 district、分类 category 进行筛选）
- * 2. get：查询指定景点的完整结构化数据（含门票、开放时间、游玩建议、高清配图等多媒体字段）
- * 3. getFacts：向下兼容查询景点的已核验证实事实与详情
+ * 所属应用层：application.attraction
+ * 职责：协调地标领域服务、媒体富化服务、跨域事实查询服务与动态景点解析服务。
  */
-@RestController
-@RequestMapping("/ai/attractions")
-public class AttractionController {
+@Service
+public class AttractionApplicationServiceImpl implements AttractionApplicationService {
 
     private final AttractionService attractionService;
     private final AttractionMediaService attractionMediaService;
@@ -38,11 +28,11 @@ public class AttractionController {
     private final ProductionV2FactQueryService productionV2FactQueryService;
     private final RuntimeAttractionDetailService runtimeAttractionDetailService;
 
-    public AttractionController(AttractionService attractionService,
-                                AttractionMediaService attractionMediaService,
-                                TripPlanService tripPlanService,
-                                ProductionV2FactQueryService productionV2FactQueryService,
-                                RuntimeAttractionDetailService runtimeAttractionDetailService) {
+    public AttractionApplicationServiceImpl(AttractionService attractionService,
+                                            AttractionMediaService attractionMediaService,
+                                            TripPlanService tripPlanService,
+                                            ProductionV2FactQueryService productionV2FactQueryService,
+                                            RuntimeAttractionDetailService runtimeAttractionDetailService) {
         this.attractionService = attractionService;
         this.attractionMediaService = attractionMediaService;
         this.tripPlanService = tripPlanService;
@@ -50,16 +40,14 @@ public class AttractionController {
         this.runtimeAttractionDetailService = runtimeAttractionDetailService;
     }
 
-    @GetMapping
-    public Result<List<Attraction>> list(
-            @RequestParam(required = false) String district,
-            @RequestParam(required = false) String category) {
+    @Override
+    public Result<List<Attraction>> list(String district, String category) {
         List<Attraction> list = attractionService.list(district, category);
         return Result.success("查询成功", list);
     }
 
-    @GetMapping("/{id}")
-    public Result<?> get(@PathVariable String id) {
+    @Override
+    public Result<?> get(String id) {
         if (id != null && (id.startsWith("amap-") || id.startsWith("runtime-stop-"))) {
             Map<String, Object> runtimeDetail = runtimeAttractionDetailService.detail(id);
             return runtimeDetail == null
@@ -77,8 +65,8 @@ public class AttractionController {
      * 保持向下兼容：优先从 Production V2 事实声明获取详情；没有时回退到用户保存的行程投影，
      * 不得将旧 Qdrant 命中提升为事实。
      */
-    @GetMapping("/{id}/facts")
-    public Result<Map<String, Object>> getFacts(@PathVariable String id) {
+    @Override
+    public Result<Map<String, Object>> getFacts(String id) {
         if (id != null && (id.startsWith("amap-") || id.startsWith("runtime-stop-"))) {
             Map<String, Object> runtimeDetail = runtimeAttractionDetailService.detail(id);
             return runtimeDetail == null
