@@ -1,10 +1,14 @@
-package com.ai.guide.domain.planner.api;
+package com.ai.guide.adapter.planner.web;
 
-import com.ai.guide.domain.trip.model.Trip;
-import com.ai.guide.domain.planner.service.PlanningApplicationService;
+import com.ai.guide.application.planner.PlanningApplicationService;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.PlannerMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
 import com.ai.guide.domain.planner.service.PlannerService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,21 +18,27 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 智能排程规划引擎与会话调整控制器 (Planner Controller)
+ * 智能排程规划引擎与会话调整适配器控制器 (Planner Controller)
  *
- * 所属领域：domain.planner (智能排程与规划引擎域)
- * 架构职责：作为文旅规划决策的核心中枢，负责意图槽位解析、24景候选召回、高德路线耗时测算、多天动态规划 (RouteAwarePlanner)、局部快速重规划以及对话式方案提案与确认。
+ * 架构定位：COLA 适配层 (Adapter Layer) - Web 协议入口。
+ * 核心职责：作为文旅规划决策的外部 HTTP 访问入口，负责入参协议解析、X-Plan-Session-Token 请求头提取、
+ * 委派应用服务编排 {@link PlanningApplicationService}，并精确输出排程草稿状态、多天局部重排结果及对话式方案提案。
  *
- * 核心对外接口与关键方法：
+ * 核心对外接口：
  * 1. {@link #plan}: 执行多天行程初始排程计算，创建规划会话并生成初始行程草稿。
- *    - 关键参数：request (包含用户自由 prompt、天数、同行人、偏好标签及可选硬约束)。
- * 2. {@link #get}: 查询进行中的规划会话上下文与当前草稿状态。
- * 3. {@link #replan}: 对指定某天的某个景点发起局部重排（局部修复与候选去重替换）。
- * 4. {@link #stops}: 针对站点的直接原子操作（添加景点、删除站点、调整顺序）。
- * 5. {@link #conversation}: 基于自然语言对话提取用户的修改诉求或景点百科问答。
- * 6. {@link #previewAdjustment}: 生成调整方案预览（包含 1~3 个候选方案及路线差异比对）。
- * 7. {@link #applyAdjustment}: 确认并应用选定的方案选项，完成草稿原子升版。
- * 8. {@link #save}: 将当前满意的规划会话转正持久化为正式行程 (Trip)。
+ * 2. {@link #shadow}: 无状态静态候选规划（专供 Web Shadow 流程，不创建会话与持久化）。
+ * 3. {@link #shadowReplan}: 无状态局部去重重排。
+ * 4. {@link #shadowStops}: 无状态站点直接原子编辑。
+ * 5. {@link #openFormalTrip}: 将已有正式行程 (Trip) 反向解构并在规划器中加载草稿。
+ * 6. {@link #list}: 查询当前登录用户的全部活跃规划会话。
+ * 7. {@link #get}: 查询进行中的规划会话上下文与当前草稿状态。
+ * 8. {@link #refreshDynamicData}: 强制触发高德路线、天气及 POI 动态水化刷新。
+ * 9. {@link #replan}: 对指定某天的某个景点发起局部重排（局部修复与候选去重替换）。
+ * 10. {@link #stops}: 针对站点的直接原子操作（添加景点、删除站点、调整顺序）。
+ * 11. {@link #save}: 将当前满意的规划会话转正持久化为正式行程 (Trip)。
+ * 12. {@link #converse}: 基于自然语言对话提取用户的修改诉求或景点百科问答。
+ * 13. {@link #previewAdjustment}: 生成调整方案预览（包含 1~3 个候选方案及路线差异比对）。
+ * 14. {@link #applyAdjustment}: 确认并应用选定的方案选项，完成草稿原子升版。
  */
 @RestController
 @RequestMapping("/ai/planner/v1")

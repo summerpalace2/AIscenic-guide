@@ -10,10 +10,10 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.api.PlanRequest;
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.engine.RouteCost;
 import com.ai.guide.domain.planner.engine.RouteCostProvider;
@@ -23,7 +23,8 @@ import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
 import com.ai.guide.domain.planner.model.ScoreBreakdown;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.narrative.PlanNarrativeService;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepositoryPort;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.trip.service.TripService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -454,3 +455,4 @@ class Phase6FinalClosureTest {
         assertEquals(409, plannerService.applyAdjustment(session9, staleApply).status());
     }
 }
+

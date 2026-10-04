@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.service;
+package com.ai.guide.infrastructure.planner.amap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,12 +13,12 @@ import java.util.function.Supplier;
 /**
  * 高德路线与地理编码两级请求缓存
  *
- * 所属领域：domain.planner.service（规划引擎服务层）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 高德 API 调用二级缓存与防抖并发抑制。
  */
-final class AmapRequestCache {
+public final class AmapRequestCache {
 
-    record RequestKey(String operation, List<String> dimensions) {
-        RequestKey {
+    public record RequestKey(String operation, List<String> dimensions) {
+        public RequestKey {
             operation = normalize(operation);
             dimensions = dimensions == null
                     ? List.of()
@@ -34,16 +34,16 @@ final class AmapRequestCache {
     private final ConcurrentHashMap<RequestKey, CacheEntry> completed = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<RequestKey, CompletableFuture<Object>> inFlight = new ConcurrentHashMap<>();
 
-    AmapRequestCache(int maxEntries) {
+    public AmapRequestCache(int maxEntries) {
         this(maxEntries, System::nanoTime);
     }
 
-    AmapRequestCache(int maxEntries, LongSupplier ticker) {
+    public AmapRequestCache(int maxEntries, LongSupplier ticker) {
         this.maxEntries = Math.max(1, maxEntries);
         this.ticker = Objects.requireNonNull(ticker, "ticker");
     }
 
-    <T> T getOrLoad(RequestKey key,
+    public <T> T getOrLoad(RequestKey key,
                     long ttlNanos,
                     boolean cacheEnabled,
                     boolean dedupEnabled,

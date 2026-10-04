@@ -3,9 +3,9 @@ package com.ai.guide.domain.planner.service;
 
 
 
-import com.ai.guide.domain.planner.api.PlanRequest;
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
-import com.ai.guide.domain.planner.api.StructuredPreferences;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.StructuredPreferences;
 import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.planner.model.TravelConstraints;
@@ -123,3 +123,4 @@ class StructuredConstraintInterpretationTest {
         assertTrue(ConstraintOrigin.PROMPT.higherOrEqualThan(ConstraintOrigin.REQUEST));
     }
 }
+

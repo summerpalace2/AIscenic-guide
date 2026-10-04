@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.service;
+package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
@@ -98,7 +98,7 @@ public class AmapRouteService {
                 weatherCacheTtlMs, 2000);
     }
 
-    AmapRouteService(AmapWebServiceClient client,
+    public AmapRouteService(AmapWebServiceClient client,
                      int requestTimeoutMs,
                      int routeTimeoutMs,
                      int maxConcurrency,

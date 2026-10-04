@@ -13,7 +13,7 @@ import com.ai.guide.domain.chat.service.IntentRadarService;
 import com.ai.guide.domain.chat.service.IntentService;
 import com.ai.guide.domain.chat.service.SlotTrackingService;
 import com.ai.guide.domain.memory.service.TravelMemoryService;
-import com.ai.guide.domain.planner.service.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.service.ParallelRagService;
@@ -759,3 +759,4 @@ public class ChatApplicationService {
         return CHITCHAT_PATTERN.matcher(message.trim()).find();
     }
 }
+

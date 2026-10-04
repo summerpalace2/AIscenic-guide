@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.api;
+package com.ai.guide.application.planner.dto;
 
 import com.ai.guide.domain.planner.model.PlannerSession;
 import com.ai.guide.domain.trip.model.Trip;
@@ -25,3 +25,4 @@ public class ShadowMutationRequest {
     private Integer day;
     private String stopId = "";
 }
+

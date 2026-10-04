@@ -1,7 +1,7 @@
 package com.ai.guide.domain.attraction.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.service.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import org.springframework.stereotype.Service;
@@ -371,3 +371,4 @@ public class RuntimeAttractionDetailService {
         return value == null ? "" : String.valueOf(value).trim();
     }
 }
+

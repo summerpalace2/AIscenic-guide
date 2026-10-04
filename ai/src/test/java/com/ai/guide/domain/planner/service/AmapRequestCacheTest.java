@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.amap.AmapRequestCache;
+
 
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -125,3 +127,4 @@ class AmapRequestCacheTest {
         }
     }
 }
+

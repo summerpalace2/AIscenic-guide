@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.api;
+package com.ai.guide.application.planner.dto;
 
 import com.ai.guide.domain.planner.model.PlanPageContext;
 import lombok.AllArgsConstructor;
@@ -34,3 +34,4 @@ public class PlanConversationRequestDto {
         return planId == null ? "" : planId.trim();
     }
 }
+

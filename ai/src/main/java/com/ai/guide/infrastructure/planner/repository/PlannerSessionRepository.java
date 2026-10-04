@@ -1,6 +1,6 @@
-package com.ai.guide.domain.planner.repository;
+package com.ai.guide.infrastructure.planner.repository;
 
-import com.ai.guide.domain.trip.model.Trip;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
 import com.ai.guide.domain.planner.model.PlannerSession;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -23,8 +23,8 @@ import java.util.UUID;
 /**
  * 规划会话仓储实现类
  *
- * 所属领域：domain.planner.repository（规划会话仓储层）
- * 架构职责：基于内存与本地 SQLite 表提供会话草稿的高效读写、版本原子更新与访问令牌鉴权。
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 持久化仓储实现。
+ * 核心职责：基于本地 SQLite 表与事务模板提供规划会话草稿的高效读写、版本原子更新与访问令牌鉴权。
  */
 @Repository
 public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
@@ -50,6 +50,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
                 trip, idempotencyKey, requestFingerprint);
     }
 
+    @Override
     public CreateResult create(String ownerType, String ownerId, String prompt,
                                Map<String, Object> constraints,
                                AppliedPreferencesSnapshot appliedPreferences,
@@ -103,6 +104,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         return CreateResult.created(created, rawToken);
     }
 
+    @Override
     public StoredSession find(String sessionId, String ownerType, String ownerId, String accessToken) {
         List<StoredSession> rows = jdbcTemplate.query(
                 "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
@@ -120,6 +122,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     }
 
     /** Resolves a guest owner only from a stored capability digest. */
+    @Override
     public StoredSession findAnonymousByAccessToken(String accessToken) {
         if (accessToken == null || accessToken.isBlank()) return null;
         List<StoredSession> rows = jdbcTemplate.query(
@@ -134,6 +137,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    @Override
     public StoredSession findByIdempotency(String ownerType, String ownerId, String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) return null;
         List<StoredSession> rows = jdbcTemplate.query(
@@ -148,6 +152,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
+    @Override
     public List<StoredSession> list(String ownerType, String ownerId) {
         return jdbcTemplate.query(
                 "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
@@ -160,6 +165,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
                 ownerType, ownerId);
     }
 
+    @Override
     @Transactional
     public MutationResult update(StoredSession current, Map<String, Object> trip, int expectedVersion,
                                  String mutationType, String label, String reason,
@@ -194,11 +200,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         return rows.isEmpty() ? null : rows.get(0);
     }
 
-    /**
-     * Associates a planner workspace with its formal server-generated Trip id.
-     * This is metadata linkage only: it does not create a Planner revision and
-     * never changes the planner working version or applied preference snapshot.
-     */
+    @Override
     public boolean linkFormalTrip(StoredSession current, Map<String, Object> trip) {
         long now = System.currentTimeMillis();
         int updated = jdbcTemplate.update(
@@ -210,12 +212,14 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         return updated > 0;
     }
 
+    @Override
     public int revisionCount(String sessionId) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM planner_plan_revision WHERE session_id = ?", Integer.class, sessionId);
         return count == null ? 0 : count;
     }
 
+    @Override
     public PlannerSession toProjection(StoredSession session, String rawToken) {
         return new PlannerSession(session.sessionId(), session.ownerType(), session.ownerId(),
                 session.currentVersion(), session.syncRevision(), session.trip(), session.constraints(),
@@ -271,34 +275,6 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
             return result.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 不可用", e);
-        }
-    }
-
-    public record StoredSession(String sessionId, String ownerType, String ownerId, String accessTokenHash,
-                                String requestFingerprint, String prompt, Map<String, Object> constraints,
-                                AppliedPreferencesSnapshot appliedPreferences, Map<String, Object> trip,
-                                int currentVersion, int syncRevision, String status,
-                                long createdAt, long updatedAt) {
-    }
-
-    public record CreateResult(String status, StoredSession session, String accessToken) {
-        public static CreateResult created(StoredSession session, String token) {
-            return new CreateResult("CREATED", session, token);
-        }
-        public static CreateResult existing(StoredSession session) {
-            return new CreateResult("EXISTING", session, "");
-        }
-        public static CreateResult conflict(StoredSession session) {
-            return new CreateResult("CONFLICT", session, "");
-        }
-    }
-
-    public record MutationResult(String status, StoredSession session) {
-        public static MutationResult updated(StoredSession session) {
-            return new MutationResult("UPDATED", session);
-        }
-        public static MutationResult conflict(StoredSession session) {
-            return new MutationResult("CONFLICT", session);
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.config;
+package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,7 +10,7 @@ import org.springframework.web.client.RestTemplate;
 /**
  * 高德地图 Web 服务规划器客户端配置
  *
- * 所属领域：domain.planner.config（规划引擎配置）
+ * 架构定位：COLA 基础设施层 (Infrastructure Layer) - 第三方地图客户端配置。
  * 架构职责：读取高德 Web 服务 API Key、请求超时时间与最大并发阈值配置。
  */
 @Configuration

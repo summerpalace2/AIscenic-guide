@@ -1,16 +1,18 @@
-package com.ai.guide.domain.planner.service;
+package com.ai.guide.application.planner;
 
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.api.PlanRequest;
-import com.ai.guide.domain.planner.api.PlannerMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.PlannerMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
+import com.ai.guide.domain.planner.service.PlannerService;
 
 /**
  * 智能规划应用层门面接口
  *
- * 所属领域：domain.planner.service（规划引擎服务层）
+ * 架构定位：COLA 应用层 (Application Layer) - 用例接口。
+ * 核心职责：定义多天行程初始排程、会话生命周期、多天局部重排、站点增删替换及对话式调整等核心用例契约。
  */
 public interface PlanningApplicationService {
 

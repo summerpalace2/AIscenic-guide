@@ -3,6 +3,7 @@ package com.ai.guide.domain.planner.service;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.fasterxml.jackson.databind.ObjectMapper;

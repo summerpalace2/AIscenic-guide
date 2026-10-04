@@ -2,13 +2,17 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanAdjustmentPreviewDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanAdjustmentPreviewDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
 import com.ai.guide.domain.planner.engine.RouteCost;
 import com.ai.guide.domain.planner.engine.RouteCostProvider;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.MutationResult;
+import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.PlanAdjustmentProposal;
@@ -16,8 +20,6 @@ import com.ai.guide.domain.planner.model.PlanPageContext;
 import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
 import com.ai.guide.domain.planner.model.ScoreBreakdown;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepository;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -137,7 +139,7 @@ public class PlanAdjustmentService {
 
     public PlannerService.ServiceResult preview(String sessionId, PlanConversationRequestDto request) {
         long startNanos = System.nanoTime();
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
+        StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
 
         PlanPageContext context = request == null || request.getContext() == null ? new PlanPageContext() : request.getContext();
@@ -492,7 +494,7 @@ public class PlanAdjustmentService {
 
     public synchronized PlannerService.ServiceResult apply(String sessionId, ApplyAdjustmentRequestDto request) {
         long startNanos = System.nanoTime();
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
+        StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
 
         String proposalId = request == null ? "" : safe(request.getProposalId());
@@ -553,7 +555,7 @@ public class PlanAdjustmentService {
                 proposal.getChangedSegments());
 
         String mutationLabel = proposal.getIntent() != null ? proposal.getIntent().getType().name() : "ADJUSTMENT_APPLIED";
-        PlannerSessionRepository.MutationResult result = repository.update(
+        MutationResult result = repository.update(
                 session, proposedTrip, expectedRevision,
                 mutationLabel, "AI 局部调整应用",
                 proposal.getIntent() == null ? "" : proposal.getIntent().getRawMessage(),
@@ -609,7 +611,7 @@ public class PlanAdjustmentService {
         return success;
     }
 
-    private PlannerService.ServiceResult generateProposalPreview(PlannerSessionRepository.StoredSession session,
+    private PlannerService.ServiceResult generateProposalPreview(StoredSession session,
                                                                 PlanAdjustmentIntent intent,
                                                                 PlanPageContext context,
                                                                 long startNanos) {
@@ -2244,7 +2246,7 @@ public class PlanAdjustmentService {
         return unchanged;
     }
 
-    private TravelConstraints extractConstraints(PlannerSessionRepository.StoredSession session) {
+    private TravelConstraints extractConstraints(StoredSession session) {
         if (session == null || session.constraints() == null) return new TravelConstraints();
         try {
             return objectMapper.convertValue(session.constraints(), TravelConstraints.class);
@@ -2253,10 +2255,10 @@ public class PlanAdjustmentService {
         }
     }
 
-    private PlannerSessionRepository.StoredSession findAuthorized(String sessionId, String token) {
+    private StoredSession findAuthorized(String sessionId, String token) {
         if (sessionId == null || sessionId.isBlank()) return null;
         if (UserContext.isAnonymous()) {
-            PlannerSessionRepository.StoredSession capabilitySession = repository.findAnonymousByAccessToken(token);
+            StoredSession capabilitySession = repository.findAnonymousByAccessToken(token);
             if (capabilitySession == null || !sessionId.equals(capabilitySession.sessionId())) return null;
             return repository.find(sessionId, "ANONYMOUS", capabilitySession.ownerId(), token);
         }
@@ -2282,7 +2284,7 @@ public class PlanAdjustmentService {
         trip.put("versionHistory", history);
     }
 
-    private PlannerService.ServiceResult error(int status, String message, PlannerSessionRepository.StoredSession session) {
+    private PlannerService.ServiceResult error(int status, String message, StoredSession session) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", false);
         body.put("message", message);
@@ -2294,7 +2296,7 @@ public class PlanAdjustmentService {
         return new PlannerService.ServiceResult(status, body);
     }
 
-    private PlannerService.ServiceResult conflict(PlannerSessionRepository.StoredSession session) {
+    private PlannerService.ServiceResult conflict(StoredSession session) {
         return error(409, "规划版本已变化，请基于最新行程重新操作。", session);
     }
 
@@ -2455,3 +2457,4 @@ public class PlanAdjustmentService {
         }
     }
 }
+

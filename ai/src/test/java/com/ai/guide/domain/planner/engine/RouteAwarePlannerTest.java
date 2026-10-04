@@ -1,9 +1,9 @@
 package com.ai.guide.domain.planner.engine;
 
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.api.PlanRequest;
+import com.ai.guide.application.planner.dto.PlanRequest;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilder;
 import com.ai.guide.domain.planner.service.PlannerService;
@@ -204,7 +204,7 @@ class RouteAwarePlannerTest {
                 .build();
 
         PlannerService.ServiceResult result = plannerService.shadow(
-                com.ai.guide.domain.planner.api.ShadowPlanRequest.builder()
+                ShadowPlanRequest.builder()
                         .prompt(request.getPrompt())
                         .build()
         );
@@ -251,7 +251,7 @@ class RouteAwarePlannerTest {
                 .build();
 
         PlannerService.ServiceResult result = plannerService.shadow(
-                com.ai.guide.domain.planner.api.ShadowPlanRequest.builder()
+                ShadowPlanRequest.builder()
                         .prompt(request.getPrompt())
                         .build()
         );
@@ -315,3 +315,4 @@ class RouteAwarePlannerTest {
         }
     }
 }
+

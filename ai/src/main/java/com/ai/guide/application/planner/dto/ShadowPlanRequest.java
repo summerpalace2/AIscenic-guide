@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.api;
+package com.ai.guide.application.planner.dto;
 
 import com.ai.guide.domain.trip.model.Trip;
 import lombok.AllArgsConstructor;
@@ -48,3 +48,4 @@ public class ShadowPlanRequest {
         return map;
     }
 }
+

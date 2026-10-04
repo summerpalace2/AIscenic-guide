@@ -6,9 +6,9 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.user.model.User;
 import com.ai.guide.common.context.UserContext;
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.api.PlanRequest;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.PlanAdjustmentProposal;
@@ -1576,3 +1576,4 @@ class PlanAdjustmentServiceTest {
         assertTrue(hasCqupt, "Updated trip must contain 重庆邮电大学四教");
     }
 }
+

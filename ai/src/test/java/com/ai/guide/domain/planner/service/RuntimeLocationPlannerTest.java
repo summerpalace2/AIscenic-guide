@@ -2,6 +2,13 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.planner.amap.AmapPlannerGateway;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService.OutcomeStatus;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService.PoiOutcome;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService.RoutePairOutcome;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService.RouteOutcome;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService.WeatherOutcome;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

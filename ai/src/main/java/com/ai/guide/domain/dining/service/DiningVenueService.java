@@ -4,7 +4,7 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.dining.model.DiningVenue;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.planner.service.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.planner.service.AttractionDiningKnowledge.DiningOption;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -676,3 +676,4 @@ public class DiningVenueService {
 
     private record ScoredVenue(DiningVenue venue, int score, double distanceKm) {}
 }
+

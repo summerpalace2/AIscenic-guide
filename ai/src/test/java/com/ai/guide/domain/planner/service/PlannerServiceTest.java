@@ -2,12 +2,12 @@ package com.ai.guide.domain.planner.service;
 
 
 import com.ai.guide.common.context.UserContext;
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.api.PlanRequest;
-import com.ai.guide.domain.planner.api.PlannerMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.PlannerMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
@@ -353,3 +353,4 @@ class PlannerServiceTest {
         jdbcTemplate.update("DELETE FROM planner_session WHERE session_id = ?", sessionId);
     }
 }
+

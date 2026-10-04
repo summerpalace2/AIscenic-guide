@@ -4,18 +4,22 @@ import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.api.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.api.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.api.PlanRequest;
-import com.ai.guide.domain.planner.api.PlannerMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowMutationRequest;
-import com.ai.guide.domain.planner.api.ShadowPlanRequest;
+import com.ai.guide.application.planner.dto.ApplyAdjustmentRequestDto;
+import com.ai.guide.application.planner.dto.PlanConversationRequestDto;
+import com.ai.guide.application.planner.dto.PlanRequest;
+import com.ai.guide.application.planner.dto.PlannerMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowMutationRequest;
+import com.ai.guide.application.planner.dto.ShadowPlanRequest;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.CreateResult;
+import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.MutationResult;
+import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
+import com.ai.guide.domain.planner.model.HydrationResult;
 import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.narrative.GroundedNarrativeService;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepository;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.trip.service.TripService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -51,7 +55,7 @@ import java.util.UUID;
  * 5. save：将当前的临时规划会话固化保存为正式行程 (Trip)
  */
 @Service
-public class PlannerService implements PlanningApplicationService {
+public class PlannerService {
 
     private static final Logger log = LoggerFactory.getLogger(PlannerService.class);
 
@@ -139,9 +143,9 @@ public class PlannerService implements PlanningApplicationService {
         String ownerId;
         if ("ANONYMOUS".equals(ownerType)) {
             if (!suppliedCapability.isBlank()) {
-                PlannerSessionRepository.StoredSession capabilitySession =
+                StoredSession capabilitySession =
                         repository.findAnonymousByAccessToken(suppliedCapability);
-                PlannerSessionRepository.StoredSession keyedSession = capabilitySession == null
+                StoredSession keyedSession = capabilitySession == null
                         ? null
                         : repository.findByIdempotency("ANONYMOUS", capabilitySession.ownerId(), idempotencyKey);
                 if (capabilitySession == null || idempotencyKey.isBlank() || keyedSession == null
@@ -158,7 +162,7 @@ public class PlannerService implements PlanningApplicationService {
         }
         String fingerprint = fingerprint(prompt, constraints.asMap(), usePreferences, appliedPreferences,
                 request == null ? "" : request.getPreferenceDecision());
-        PlannerSessionRepository.CreateResult created = repository.create(ownerType, ownerId, prompt,
+        CreateResult created = repository.create(ownerType, ownerId, prompt,
                 constraints.asMap(), appliedPreferences, trip, idempotencyKey, fingerprint);
         if ("CONFLICT".equals(created.status())) {
             return error(409, "同一幂等键对应了不同的规划请求。", created.session());
@@ -299,7 +303,7 @@ public class PlannerService implements PlanningApplicationService {
     }
 
     public ServiceResult get(String sessionId, String accessToken) {
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, accessToken);
+        StoredSession session = findAuthorized(sessionId, accessToken);
         return session == null ? error(404, "规划会话不存在或无权访问。", null) : new ServiceResult(200, planResponse(session, ""));
     }
 
@@ -308,10 +312,10 @@ public class PlannerService implements PlanningApplicationService {
      * weather, POI and route data are intentionally not treated as a user edit.
      */
     public ServiceResult refreshDynamicData(String sessionId, String accessToken) {
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, accessToken);
+        StoredSession session = findAuthorized(sessionId, accessToken);
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
         Map<String, Object> trip = mutableMap(session.trip());
-        AmapPlannerGateway.HydrationResult hydration = amapPlannerGateway.hydrate(trip);
+        HydrationResult hydration = amapPlannerGateway.hydrate(trip);
         Map<String, Object> response = planResponse(session, "");
         response.put("trip", trip);
         response.put("source", sourceStatus(trip));
@@ -327,7 +331,7 @@ public class PlannerService implements PlanningApplicationService {
     public ServiceResult list() {
         if (UserContext.isAnonymous()) return error(401, "登录后才能查看规划历史。", null);
         List<Map<String, Object>> sessions = new ArrayList<>();
-        for (PlannerSessionRepository.StoredSession session : repository.list("USER", UserContext.getUserId())) {
+        for (StoredSession session : repository.list("USER", UserContext.getUserId())) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", session.sessionId());
             item.put("sessionId", session.sessionId());
@@ -345,7 +349,7 @@ public class PlannerService implements PlanningApplicationService {
     }
 
     public ServiceResult replan(String sessionId, PlannerMutationRequest request) {
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
+        StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
         Map<String, Object> trip = mutableMap(session.trip());
         String targetId = request == null ? "" : safe(request.getTargetStopId());
@@ -375,7 +379,7 @@ public class PlannerService implements PlanningApplicationService {
         finalizeTrip(trip, session.currentVersion() + 1, "局部重规划", reason, List.of(targetId));
         amapPlannerGateway.hydrate(trip);
         int expected = expectedVersion(request, session.currentVersion());
-        PlannerSessionRepository.MutationResult result = repository.update(session, trip, expected,
+        MutationResult result = repository.update(session, trip, expected,
                 "REPLAN", "局部重规划", reason, List.of(targetId));
         if ("CONFLICT".equals(result.status())) return conflict(result.session());
         List<String> unchanged = unchangedStopIds(trip, targetId);
@@ -392,7 +396,7 @@ public class PlannerService implements PlanningApplicationService {
     }
 
     public ServiceResult mutateStops(String sessionId, PlannerMutationRequest request) {
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
+        StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
         String operation = request == null ? "add" : safe(request.getOperation());
         if (operation.isBlank()) operation = "add";
@@ -437,7 +441,7 @@ public class PlannerService implements PlanningApplicationService {
         finalizeTrip(trip, session.currentVersion() + 1, label, safe(request == null ? null : request.getReason()), List.of(changedId));
         amapPlannerGateway.hydrate(trip);
         int expected = expectedVersion(request, session.currentVersion());
-        PlannerSessionRepository.MutationResult result = repository.update(session, trip, expected,
+        MutationResult result = repository.update(session, trip, expected,
                 "STOP_MUTATION", label, safe(request == null ? null : request.getReason()), List.of(changedId));
         if ("CONFLICT".equals(result.status())) return conflict(result.session());
         Map<String, Object> body = new LinkedHashMap<>();
@@ -463,7 +467,7 @@ public class PlannerService implements PlanningApplicationService {
 
     private ServiceResult saveOnce(String sessionId, String accessToken) {
         if (UserContext.isAnonymous()) return error(401, "请先登录后保存行程。", null);
-        PlannerSessionRepository.StoredSession session = findAuthorized(sessionId, accessToken);
+        StoredSession session = findAuthorized(sessionId, accessToken);
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
         Map<String, Object> plan = mutableMap(session.trip());
         plan.put("plannerSessionId", session.sessionId());
@@ -495,7 +499,6 @@ public class PlannerService implements PlanningApplicationService {
         return new ServiceResult(saved.status(), body);
     }
 
-    @Override
     public ServiceResult openFormalTrip(String tripId) {
         if (UserContext.isAnonymous()) return error(401, "请先登录后打开正式行程。", null);
         String formalTripId = safe(tripId);
@@ -523,7 +526,7 @@ public class PlannerService implements PlanningApplicationService {
         String restoreKey = "trip-open-" + formal.id() + "-" + formal.currentVersion() + "-" + UUID.randomUUID();
         String restoreFingerprint = fingerprint(prompt, constraints.asMap(), false, appliedPreferences,
                 "RESTORED_FROM_TRIP:" + formal.id() + ":" + formal.currentVersion());
-        PlannerSessionRepository.CreateResult created = repository.create("USER", UserContext.getUserId(), prompt,
+        CreateResult created = repository.create("USER", UserContext.getUserId(), prompt,
                 constraints.asMap(), appliedPreferences, restoredPlan, restoreKey, restoreFingerprint);
         Map<String, Object> response = planResponse(created.session(), "");
         response.put("formalTripId", formal.id());
@@ -534,7 +537,6 @@ public class PlannerService implements PlanningApplicationService {
         return new ServiceResult(200, response);
     }
 
-    @Override
     public ServiceResult converse(String sessionId, PlanConversationRequestDto request) {
         if (!plannerV1Enabled) {
             return error(400, "LEGACY_PLANNER_UNAVAILABLE: 详情页 AI 调整能力仅在 V1 规划器启用时可用。", null);
@@ -542,7 +544,6 @@ public class PlannerService implements PlanningApplicationService {
         return planAdjustmentService.preview(sessionId, request);
     }
 
-    @Override
     public ServiceResult previewAdjustment(String sessionId, PlanConversationRequestDto request) {
         if (!plannerV1Enabled) {
             return error(400, "LEGACY_PLANNER_UNAVAILABLE: 详情页 AI 调整能力仅在 V1 规划器启用时可用。", null);
@@ -550,7 +551,6 @@ public class PlannerService implements PlanningApplicationService {
         return planAdjustmentService.preview(sessionId, request);
     }
 
-    @Override
     public ServiceResult applyAdjustment(String sessionId, ApplyAdjustmentRequestDto request) {
         if (!plannerV1Enabled) {
             return error(400, "LEGACY_PLANNER_UNAVAILABLE: 详情页 AI 调整能力仅在 V1 规划器启用时可用。", null);
@@ -664,12 +664,12 @@ public class PlannerService implements PlanningApplicationService {
         return version == null || version < 1 ? 1 : version;
     }
 
-    private PlannerSessionRepository.StoredSession findAuthorized(String sessionId, String token) {
+    private StoredSession findAuthorized(String sessionId, String token) {
         if (sessionId == null || sessionId.isBlank()) return null;
         if (UserContext.isAnonymous()) {
             // Resolve the owner from the capability digest before any session
             // lookup; a session idempotency key is never a credential.
-            PlannerSessionRepository.StoredSession capabilitySession =
+            StoredSession capabilitySession =
                     repository.findAnonymousByAccessToken(token);
             if (capabilitySession == null || !sessionId.equals(capabilitySession.sessionId())) return null;
             return repository.find(sessionId, "ANONYMOUS", capabilitySession.ownerId(), token);
@@ -705,7 +705,7 @@ public class PlannerService implements PlanningApplicationService {
         return score;
     }
 
-    private Map<String, Object> planResponse(PlannerSessionRepository.StoredSession session, String token) {
+    private Map<String, Object> planResponse(StoredSession session, String token) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("ok", true);
         response.put("sessionId", session.sessionId());
@@ -766,7 +766,7 @@ public class PlannerService implements PlanningApplicationService {
         }
         return source;
     }
-    private ServiceResult error(int status, String message, PlannerSessionRepository.StoredSession session) {
+    private ServiceResult error(int status, String message, StoredSession session) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", false); body.put("message", message);
         if (session != null) {
@@ -776,7 +776,7 @@ public class PlannerService implements PlanningApplicationService {
         }
         return new ServiceResult(status, body);
     }
-    private ServiceResult conflict(PlannerSessionRepository.StoredSession session) {
+    private ServiceResult conflict(StoredSession session) {
         if (metricsLogger != null && session != null) {
             metricsLogger.logRevisionConflict(session.sessionId(), session.currentVersion(), session.currentVersion());
         }
@@ -881,3 +881,4 @@ public class PlannerService implements PlanningApplicationService {
         return trimmed;
     }
 }
+

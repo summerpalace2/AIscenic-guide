@@ -1,7 +1,7 @@
 package com.ai.guide.domain.search.api;
 
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.planner.service.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import com.ai.guide.domain.search.service.BaiduSearchService;
@@ -53,3 +53,4 @@ public class SearchController {
         }
     }
 }
+

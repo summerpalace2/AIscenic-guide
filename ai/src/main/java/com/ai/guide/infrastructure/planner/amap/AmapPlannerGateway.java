@@ -1,6 +1,10 @@
-package com.ai.guide.domain.planner.service;
+package com.ai.guide.infrastructure.planner.amap;
 
+import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
+import com.ai.guide.domain.planner.model.HydrationResult;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
+import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
 import com.ai.guide.domain.attraction.model.Attraction;
@@ -91,7 +95,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     }
 
     /** Compatibility constructor allowing tests to assert the batch executor boundary. */
-    AmapPlannerGateway(AmapRouteService routeService, ItineraryBuilderPort itineraryBuilder,
+    public AmapPlannerGateway(AmapRouteService routeService, ItineraryBuilderPort itineraryBuilder,
                        int maxPoiKeywords, Executor hydrationExecutor) {
         this(routeService, new AttractionService(null, null) {
             @Override
@@ -609,9 +613,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return value == null ? "" : String.valueOf(value).trim();
     }
 
-    public record HydrationResult(String mode, int poiSuccess, int routeSuccess,
-                                  int weatherSuccess, boolean fallback) {
-    }
+
 
     private record ScoredPoi(AmapResponseNormalizer.PoiCandidate candidate, int score) {
     }

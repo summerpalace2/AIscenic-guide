@@ -1,6 +1,6 @@
 package com.ai.guide.domain.search.service;
 
-import com.ai.guide.domain.planner.service.AmapRouteService;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
@@ -118,3 +118,4 @@ public class BaiduSearchService {
         return results.subList(0, Math.min(results.size(), maxItems));
     }
 }
+

@@ -1,16 +1,18 @@
-package com.ai.guide.domain.planner.service;
+package com.ai.guide.domain.planner.gateway;
 
+import com.ai.guide.domain.planner.model.HydrationResult;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import java.util.Map;
 
 /**
  * 路线计算网关标准端口接口
  *
- * 所属领域：domain.planner.service（规划引擎服务层）
+ * 架构定位：COLA 领域网关端口 (Domain Gateway Port)
+ * 职责：定义地图服务水化（POI/路线/天气）与动态周边排程的抽象协议，彻底消除对高德等具体第三方 SDK 的反向依赖。
  */
 public interface RouteGatewayPort {
 
-    AmapPlannerGateway.HydrationResult hydrate(Map<String, Object> trip);
+    HydrationResult hydrate(Map<String, Object> trip);
 
     /**
      * Builds a runtime nearby plan when the user supplied an explicit start

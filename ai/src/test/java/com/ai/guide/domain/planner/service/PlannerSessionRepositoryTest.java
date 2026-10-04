@@ -1,7 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
-import com.ai.guide.domain.planner.repository.PlannerSessionRepository;
+import com.ai.guide.infrastructure.planner.repository.PlannerSessionRepository;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -88,3 +88,4 @@ class PlannerSessionRepositoryTest {
         assertTrue(legacy.appliedPreferences().isEmpty());
     }
 }
+

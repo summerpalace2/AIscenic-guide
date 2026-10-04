@@ -1,5 +1,9 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.planner.model.HydrationResult;
+import com.ai.guide.infrastructure.planner.amap.AmapPlannerGateway;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+
 
 
 
@@ -108,7 +112,7 @@ class AmapPlannerGatewayTest {
         trip.put("qualityMetrics", new LinkedHashMap<>());
         trip.put("retrieval", new LinkedHashMap<>());
 
-        AmapPlannerGateway.HydrationResult result = gateway.hydrate(trip);
+        HydrationResult result = gateway.hydrate(trip);
 
         assertEquals(2, result.poiSuccess());
         assertEquals(1, result.routeSuccess());
@@ -140,7 +144,7 @@ class AmapPlannerGatewayTest {
         trip.put("qualityMetrics", new LinkedHashMap<>());
         trip.put("retrieval", new LinkedHashMap<>());
 
-        AmapPlannerGateway.HydrationResult result = gateway.hydrate(trip);
+        HydrationResult result = gateway.hydrate(trip);
 
         assertEquals(0, result.weatherSuccess());
         assertEquals("未知", ((Map<?, ?>) day.get("weather")).get("status"));
@@ -178,7 +182,7 @@ class AmapPlannerGatewayTest {
         trip.put("qualityMetrics", new LinkedHashMap<>());
         trip.put("retrieval", new LinkedHashMap<>());
 
-        AmapPlannerGateway.HydrationResult result = gateway.hydrate(trip);
+        HydrationResult result = gateway.hydrate(trip);
 
         assertEquals(1, result.poiSuccess());
         server.verify();
@@ -206,7 +210,7 @@ class AmapPlannerGatewayTest {
         trip.put("qualityMetrics", new LinkedHashMap<>());
         trip.put("retrieval", new LinkedHashMap<>());
 
-        AmapPlannerGateway.HydrationResult result = gateway.hydrate(trip);
+        HydrationResult result = gateway.hydrate(trip);
 
         assertEquals(0, result.weatherSuccess());
         Map<?, ?> weather = (Map<?, ?>) day.get("weather");
@@ -245,7 +249,7 @@ class AmapPlannerGatewayTest {
         trip.put("qualityMetrics", new LinkedHashMap<>());
         trip.put("retrieval", new LinkedHashMap<>());
 
-        AmapPlannerGateway.HydrationResult result = gateway.hydrate(trip);
+        HydrationResult result = gateway.hydrate(trip);
 
         assertEquals(0, result.poiSuccess());
         assertEquals(1, result.weatherSuccess());
@@ -290,3 +294,4 @@ class AmapPlannerGatewayTest {
                 """;
     }
 }
+

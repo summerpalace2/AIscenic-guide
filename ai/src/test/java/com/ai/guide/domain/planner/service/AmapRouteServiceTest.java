@@ -1,5 +1,8 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.amap.AmapRequestCache;
+import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+
 
 
 import com.ai.guide.domain.rag.pipeline.AmapWebServiceClient;
@@ -324,3 +327,4 @@ class AmapRouteServiceTest {
                 """;
     }
 }
+

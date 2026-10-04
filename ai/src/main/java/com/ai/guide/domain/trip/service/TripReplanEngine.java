@@ -4,7 +4,7 @@ import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.trip.model.TripVersion;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
-import com.ai.guide.domain.planner.service.RouteGatewayPort;
+import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;

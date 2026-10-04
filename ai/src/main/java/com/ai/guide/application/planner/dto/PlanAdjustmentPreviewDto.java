@@ -1,4 +1,4 @@
-package com.ai.guide.domain.planner.api;
+package com.ai.guide.application.planner.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -47,3 +47,4 @@ public class PlanAdjustmentPreviewDto {
     @Builder.Default
     private String message = "";
 }
+
