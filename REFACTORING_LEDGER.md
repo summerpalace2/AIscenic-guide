@@ -11,10 +11,10 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 13: 领域层纯洁度治理与 DIP 彻底闭环 (消除领域层所有反向跨层依赖、纯化 GeoRouteGatewayPort、解耦 ChatMessageRecord、命令模型归位)** |
-| **当前推进状态** | **阶段 2·第六步：红方审查通过，全量 13 切片重构圆满完成 (Final Passed)** |
-| **全量自动化测试结果** | **507 passed / 0 failed / 0 error / 10 skipped (24.3s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 22:00 |
+| **当前重构切片** | **Slice 13: 领域层纯洁度治理与 DIP 彻底闭环 + ArchUnit 架构看门狗守卫落地** |
+| **当前推进状态** | **阶段 2·第六步：红方审查通过，全量 13 切片重构与物理看门狗圆满完成 (Final Passed)** |
+| **全量自动化测试结果** | **513 passed / 0 failed / 0 error / 10 skipped (24.0s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 22:12 |
 
 ---
 
