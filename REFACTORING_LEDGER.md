@@ -11,43 +11,44 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 6: User 用户认证与鉴权域 (认证控制器迁移至适配层、抽象用户应用服务、纯化密码校验端口、下沉Scrypt加密验证器至基础设施层)** |
-| **当前推进状态** | **阶段 2·第六步：独立质检子智能体二次复核通过 (Final Passed - Ready to Commit)** |
-| **全量自动化测试结果** | **390 passed / 0 failed / 0 error / 10 skipped (21.3s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 20:35 |
+| **当前重构切片** | **Slice 7: Search 文旅多源搜索域 (控制器迁移适配层、抽象搜索应用服务、纯化POI领域端口、解耦基础设施)** |
+| **当前推进状态** | **阶段 2·第六步：独立质检子智能体复核通过 (Final Passed - Ready to Commit)** |
+| **全量自动化测试结果** | **401 passed / 0 failed / 0 error / 10 skipped (23.3s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 20:45 |
 
 ---
 
-## 一、 当前切片核验项清单 (User 用户认证与鉴权域)
+## 一、 当前切片核验项清单 (Search 文旅多源搜索域)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-USER-01 | `POST /ai/auth/register`<br/>新用户注册与凭证签发 | 校验 body 判空、username 与 password 非空且非 blank（返回 400 "用户名和密码不能为空"）；唯一性冲突抛 `IllegalArgumentException` 返回 400；成功返回 200 "注册成功" 及包含 userId/username/token/role 的 Map；异常捕获返回 500 "注册失败，请稍后重试"。 | `AuthController` 迁入适配层，委派 `UserApplicationService`，参数判空、400 校验异常文案及 500 异常回退完全一致。 | `AuthControllerTest.testRegister*` + `UserApplicationServiceImplTest.testRegister*` | `[已验证一致]` |
-| V-USER-02 | `POST /ai/auth/login`<br/>用户登录鉴权与哈希升级 | 校验 body 判空、username 与 password 非空（返回 400 "用户名和密码不能为空"；注：原代码对登录仅判 null，注册判 null 或 blank，严格保留）；账密错误/用户不存在抛出异常时返回 **401**；成功返回 200 "登录成功"；内部异常返回 500。 | 保持完全一致的 400/401/500 状态码映射，保留对 `IllegalArgumentException` 映射 401 的切斯特顿围栏。 | `AuthControllerTest.testLogin*` + `UserApplicationServiceImplTest.testLogin*` | `[已验证一致]` |
-| V-USER-03 | `POST /ai/auth/logout`<br/>登出与 JWT 令牌注销 | 提取 `Authorization` 请求头；缺失或非 `Bearer ` 前缀返回 401 "请提供有效的登录凭据"；Token 解析失败返回 401 "登录凭据无效或已过期"；黑名单写入失败返回 503 "退出登录暂不可用，请稍后重试"；成功返回 200 "退出成功"。 | 保持完全一致的 401、503、200 状态码映射与微观提示文案。 | `AuthControllerTest.testLogout*` + `UserApplicationServiceImplTest.testLogout*` | `[已验证一致]` |
-| V-USER-04 | `GET /ai/auth/me`<br/>当前登录用户信息查询 | 校验 `UserContext.isAnonymous()`，未登录返回 401 "未登录"；已登录调用 `userService.getUserById(userId)` 返回 200 "查询成功"；异常捕获返回 500 "查询失败，请稍后重试"。 | `UserProfileController` 迁入适配层，委派 `UserApplicationService`，保持完全相同的 401/200/500 逻辑。 | `UserProfileControllerTest.testGetCurrentUser*` + `UserApplicationServiceImplTest.testGetCurrentUser*` | `[已验证一致]` |
-| V-USER-05 | 适配层重构 (Adapter) | 原 `AuthController` 与 `UserProfileController` 位于 `domain.user.api`，混合领域层代码。 | 统一迁移至 `com.ai.guide.adapter.user.web`，彻底物理删除旧 `domain.user.api` 目录。 | 架构包扫描校验 | `[明确获准的变化]` |
-| V-USER-06 | 应用层服务提炼 (Application) | 领域层 `UserService` 直接被 Controller 与外部过滤器穿透调用。 | 提取 `UserApplicationService` 门面接口及实现类 `UserApplicationServiceImpl`，统筹注册、登录、登出与用户信息用例，隔离控制层与领域核心。 | 架构分层校验 | `[明确获准的变化]` |
-| V-USER-07 | 加密技术设施下沉 (Infrastructure) | `LegacyNodeScryptVerifier`（BouncyCastle Scrypt 加密技术组件）原放置在 `domain.user.security`。 | 统一下沉至 `com.ai.guide.infrastructure.user.security`，测试用例同步镜像迁移至基础设施测试包，领域层不再混杂具体加解密底层工具。 | 依赖图检查通过 | `[明确获准的变化]` |
-| V-USER-08 | 全量回归与测试安全基线 | 确保全工程密码升级、角色权限、JWT 过滤与新老切片全链路测试 100% 绿灯。 | 全工程 390 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.3s），新增 8 项认证控制与应用服务自动化用例。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-SEARCH-01 | `GET /ai/search/baidu`<br/>百度与本地文旅融合搜索 | 参数 `q`（必填）与 `limit`（默认 10）；聚合本地知识检索、高德实景 POI 与百度全网直达卡片；结果条数限制在 `[3, 15]` 之间；返回 200 "百度文旅检索成功" 与卡片列表。 | `SearchController` 迁入适配层，委派 `SearchApplicationService` 与领域服务 `BaiduSearchService`，参数默认值、卡片来源类型与成功文案 100% 一致。 | `SearchControllerTest.testSearchBaidu` + `SearchApplicationServiceImplTest.testSearchBaidu` + `BaiduSearchServiceTest` | `[已验证一致]` |
+| V-SEARCH-02 | `GET /ai/search/amap`<br/>高德实景 POI 地理搜索 | 参数 `q`（必填）、`city`（默认 "重庆市"）、`types`（可选）；<br/>• `q` 为空或空白：返回 **200** "请输入搜索关键词" 与空列表（切斯特顿围栏：非 400！）；<br/>• 成功：返回 200 "高德POI检索成功" 与候选列表；<br/>• 非法：返回 200 "请输入有效搜索关键词" 与空列表；<br/>• 失败/未配置密钥：返回 **503** "高德检索暂不可用: ..."。 | 保持完全一致的 200/503 状态码映射，严格保留对空 query 响应 200 的历史契约。 | `SearchControllerTest.testSearchAmap*` + `SearchApplicationServiceImplTest.testSearchAmap*` | `[已验证一致]` |
+| V-SEARCH-03 | 适配层迁移 (Adapter) | 原 `SearchController` 位于 `domain.search.api`，混合领域层代码。 | 统一迁移至 `com.ai.guide.adapter.search.web`，彻底物理删除旧 `domain.search.api` 目录。 | 架构包扫描校验 | `[明确获准的变化]` |
+| V-SEARCH-04 | 应用层服务提炼 (Application) | 控制器直接编排 `BaiduSearchService` 与底层 `AmapRouteService`。 | 提取 `SearchApplicationService` 门面与 `SearchApplicationServiceImpl`，隔离 Web 请求与业务编排。 | 架构分层校验 | `[明确获准的变化]` |
+| V-SEARCH-05 | 领域端口依赖倒置 (DIP) | 原 `BaiduSearchService` 直接 import 底层设施 `infrastructure.planner.amap.AmapRouteService`。 | 在 `domain.search.gateway` 建立 `PoiSearchGatewayPort` 接口，`AmapRouteService` 实现该端口，`domain.search` 对 `infrastructure` 反向依赖归零。 | 反向依赖扫描通过 | `[明确获准的变化]` |
+| V-SEARCH-06 | 全量回归与测试安全基线 | 原系统无搜索域单元测试。 | 新增 11 项全覆盖自动化测试（控制器、应用层、领域服务各层单测），全工程 401 项测试 100% 绿灯（0 errors, 0 failures, 10 skipped，耗时 23.3s）。 | `mvn test` 自动化验证 | `[已验证一致]` |
 
 ---
 
 ## 二、 历史切片核验项清单
 
-### 1. RAG 知识检索增强域 (Slice 5)
+### 1. User 用户身份认证与账户鉴权域 (Slice 6)
+- V-USER-01 ~ V-USER-08：4 个 REST 认证端点、切斯特顿围栏校验差异、Scrypt 验证器下沉、`LegacyPasswordVerifierPort` 领域端口依赖倒置全部通过验收（Commit `0cf2008`）。
+
+### 2. RAG 知识检索增强域 (Slice 5)
 - V-RAG-01 ~ V-RAG-13：19 个 REST 端点（检索、指标、文档生命周期、碎片分页、双清空端点）、管理员 403 文案围栏差异、Qdrant 客户端与高德客户端下沉全部通过验收（Commit `3b2179c`）。
 
-### 2. Planner 规划引擎域 (Slice 4)
+### 3. Planner 规划引擎域 (Slice 4)
 - V-PLAN-01 ~ V-PLAN-14：14 个 REST 端点、X-Plan-Session-Token 请求头自动注入、空 Body 兜底、DIP 纯净化 `RouteGatewayPort`/`HydrationResult`、高德与会话仓储下沉全部通过验收（Commit `9b6fefd`）。
 
-### 3. Trip 行程生命周期域 (Slice 3)
+### 4. Trip 行程生命周期域 (Slice 3)
 - V-TRIP-01 ~ V-TRIP-12：9 大 REST 动词、401/404/409 异常映射、局部重规划数据外露、PDF 导出、CAS 并发控制、仓储与 PDF 基础设施下沉全部通过验收（Commit `2afbe66`）。
 
-### 4. Preferences 偏好画像域 (Slice 2)
+### 5. Preferences 偏好画像域 (Slice 2)
 - V-PREF-01 ~ V-PREF-09：5 大 REST 动词、401 鉴权拦截、409 OCC 冲突结构、400 校验、200/201 状态码、仓储端口依赖倒置全部通过验收（Commit `bfbb2ef`）。
 
-### 5. Chat 对话流试点 (Slice 1)
+### 6. Chat 对话流试点 (Slice 1)
 - V-CHAT-01 ~ V-CHAT-08：10 参数流式契约、槽位隔离、情绪分流、双层超时容灾、RedisChatMemory 基础设施下沉全部通过验收（Commit `eda0277`）。
 
 ---
@@ -63,6 +64,7 @@
 | ISSUE-04 | POST `/ai/planner/v1/sessions/{sessionId}/save`<br/>(匿名会话转正限制) | 匿名用户调用 `/save` 时返回 401“请先登录后保存行程”，草稿不会丢失，需带 Token 在登录后由同一用户调用 `/open` 重新绑定。 | A/B 完全保留现状 | 匿名用户创建会话后直接调用 `/save` | 属于既有鉴权契约，原样保留 |
 | ISSUE-05 | 管理员鉴权拦截文案微小差异<br/>(`/ai/rag/*` vs `/ai/knowledge/*`) | 原工程中 `RagController` 的鉴权拦截文案为 `"无管理员权限"`，而 `KnowledgeController` 与 `ImportController` 的鉴权拦截文案为 `"需要管理员权限"`。 | A/B 完全保留现状 | 分别以非管理员身份请求 `/ai/rag/stats` 与 `/ai/knowledge` 创建端点，验证文案分毫不差 | 属于切斯特顿围栏保护范畴，严格分别保留原样 |
 | ISSUE-06 | 注册与登录输入校验差异<br/>(`/register` vs `/login`) | 注册端点同时校验 `null || isBlank()`，如果为空字符串返回 400；而登录端点仅校验了 `null`，如果密码传入空字符串 `""` 则会进入 `UserService.login` 触发后续密码比对失败逻辑（返回 401）。 | A/B 完全保留现状 | 传入 `password: ""` 分别请求 `/register` 与 `/login`，观察状态码差异（400 vs 401） | 属于切斯特顿围栏保护范畴，忠实保留历史行为差异 |
+| ISSUE-07 | GET `/ai/search/amap`<br/>(空查询返回200状态码) | 原 `SearchController.java` [L43-45] 在 `q == null || q.isBlank()` 时返回 `Result.success("请输入搜索关键词", List.of())`，HTTP 状态码为 200 而非 400。 | A/B 完全保留现状 | 传入空字符串请求 `/ai/search/amap` 验证响应 200 与提示文案 | 属于切斯特顿围栏保护范畴，原样保留 |
 
 ---
 
@@ -80,4 +82,11 @@
   - 物理清理旧 `domain.user.api` 与 `domain.user.security` 目录。
   - 全工程 390 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.3s），新增 8 项控制器与应用服务自动化用例。
   - 红方独立质检审查员现场比对与二次复核，判定最终 PASS（准予合并）。
+- `2026-10-04 (Slice 7 - Search 域)`:
+  - `com.ai.guide.adapter.search.web`: 承接 `SearchController`，处理 `/ai/search/baidu` 与 `/ai/search/amap` 检索请求。
+  - `com.ai.guide.application.search`: 抽象 `SearchApplicationService` 门面及 `SearchApplicationServiceImpl`，编排本地知识库、高德POI与百度搜索聚合。
+  - `com.ai.guide.domain.search.gateway`: 定义 `PoiSearchGatewayPort` 领域端口，`AmapRouteService` 实现该端口，彻底消除 `domain.search` 对基础设施层的依赖。
+  - 物理清理旧 `domain.search.api` 目录。
+  - 全工程 401 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.3s），新增 11 项全覆盖自动化测试。
+
 

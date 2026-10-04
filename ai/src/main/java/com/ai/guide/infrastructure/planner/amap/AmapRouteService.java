@@ -1,6 +1,7 @@
 package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.annotation.PreDestroy;
@@ -35,7 +36,7 @@ import java.util.function.Supplier;
  * 所属领域：domain.planner.service（规划引擎服务层）
  */
 @Service
-public class AmapRouteService {
+public class AmapRouteService implements PoiSearchGatewayPort {
 
     private static final Logger log = LoggerFactory.getLogger(AmapRouteService.class);
 
@@ -143,6 +144,12 @@ public class AmapRouteService {
 
     public PoiOutcome searchPoi(String keywords, String city) {
         return searchPoi(keywords, city, null);
+    }
+
+    @Override
+    public List<AmapResponseNormalizer.PoiCandidate> searchPoiCandidates(String keywords, String city) {
+        PoiOutcome outcome = searchPoi(keywords, city);
+        return (outcome != null && outcome.candidates() != null) ? outcome.candidates() : List.of();
     }
 
     public PoiOutcome searchPoi(String keywords, String city, String types) {

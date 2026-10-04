@@ -1,8 +1,8 @@
 package com.ai.guide.domain.search.service;
 
-import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
 import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
+import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,12 +31,12 @@ public class BaiduSearchService {
     @Value("${baidu.secret-key:}")
     private String secretKey;
 
-    private final AmapRouteService amapRouteService;
+    private final PoiSearchGatewayPort poiSearchGatewayPort;
     private final KnowledgeDocumentService knowledgeDocumentService;
 
-    public BaiduSearchService(AmapRouteService amapRouteService,
+    public BaiduSearchService(PoiSearchGatewayPort poiSearchGatewayPort,
                               KnowledgeDocumentService knowledgeDocumentService) {
-        this.amapRouteService = amapRouteService;
+        this.poiSearchGatewayPort = poiSearchGatewayPort;
         this.knowledgeDocumentService = knowledgeDocumentService;
     }
 
@@ -75,10 +75,10 @@ public class BaiduSearchService {
 
         // 2. 高德实时 POI 与实景影像检索（为搜索结果提供权威地理与真实照片）
         try {
-            if (amapRouteService != null) {
-                AmapRouteService.PoiOutcome outcome = amapRouteService.searchPoi(cleanQ, "重庆市");
-                if (outcome != null && outcome.candidates() != null) {
-                    for (AmapResponseNormalizer.PoiCandidate poi : outcome.candidates()) {
+            if (poiSearchGatewayPort != null) {
+                List<AmapResponseNormalizer.PoiCandidate> candidates = poiSearchGatewayPort.searchPoiCandidates(cleanQ, "重庆市");
+                if (candidates != null) {
+                    for (AmapResponseNormalizer.PoiCandidate poi : candidates) {
                         if (results.size() >= maxItems) break;
                         boolean duplicate = results.stream().anyMatch(r -> r.getTitle().contains(poi.name()));
                         if (duplicate) continue;
@@ -118,4 +118,3 @@ public class BaiduSearchService {
         return results.subList(0, Math.min(results.size(), maxItems));
     }
 }
-
