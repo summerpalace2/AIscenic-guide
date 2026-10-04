@@ -11,29 +11,38 @@
 |---|---|
 | **A 的对照基准版本** | `42d69a9` (已包含环境自适应加载与意图规则基线修复) |
 | **B 的当前分支** | `refactor/cola-architecture` |
-| **当前重构切片** | **Slice 9: Voice 语音识别与合成域 (语音控制器迁移至适配层、抽象语音应用服务、纯化语音网关端口、下沉百度语音客户端至基础设施层)** |
+| **当前重构切片** | **Slice 10: Memory 旅行记忆与偏好沉淀域 (记忆控制器迁移至适配层、抽象旅行记忆应用服务、纯化用例编排、物理清理旧 api 包)** |
 | **当前推进状态** | **阶段 2·第六步：独立质检子智能体复核通过 (Final Passed - Ready to Commit)** |
-| **全量自动化测试结果** | **425 passed / 0 failed / 0 error / 10 skipped (23.1s, BUILD SUCCESS)** |
-| **最后更新时间** | 2026-10-04 21:05 |
+| **全量自动化测试结果** | **454 passed / 0 failed / 0 error / 10 skipped (21.1s, BUILD SUCCESS)** |
+| **最后更新时间** | 2026-10-04 21:12 |
 
 ---
 
-## 一、 当前切片核验项清单 (Voice 语音识别与合成域)
+## 一、 当前切片核验项清单 (Memory 旅行记忆与偏好沉淀域)
 
 | 编号 | 条件与操作 | A 的表现与依据 (`42d69a9`) | B 的表现 (`refactor/cola-architecture`) | 核验方式与版本 | 结果 |
 |---|---|---|---|---|---|
-| V-VOICE-01 | `POST /ai/asr`<br/>语音识别端点 | 接收 JSON body（`audio`, `dev_pid`）；audio 为空返回 400 "音频数据为空"；非法 base64 在 A 中抛异常落入 500，B 防御性捕获返回 400 "音频格式参数异常，请重新录制"；dev_pid 白名单校验（1537, 1737, 1637, 1837），非法值静默回落默认 1537；调用百度语音识别；百度特定错误码精准映射（3001/3301->400, 3002/3100/3102->401, 3003/3005/3303->429 等）；成功返回 200 与 Result<String> 识别文本。 | `AsrController` 迁入 `adapter.voice.web`，委派 `VoiceApplicationService`；参数校验、白名单回退、百度错误码映射完全一致。 | `AsrControllerTest` + `VoiceApplicationServiceImplTest` + `BaiduVoiceClientTest` | `[已验证一致]` |
-| V-VOICE-02 | `POST /ai/tts`<br/>语音合成端点 | 接收 JSON body（`text`, `voice`, `lang`）；text 为空返回 400；voice 校验白名单 `[0, 1, 3, 4, 5, 103, 106, 110, 111]` 且默认 106；lang 仅支持 "zh"/"en" 默认 "zh"；调用百度 TTS 合成 MP3；响应包含 `Content-Type: application/octet-stream` 与 `Content-Disposition: attachment; filename=tts.mp3`；成功返回 200 与音频二进制流。 | `TtsController` 迁入 `adapter.voice.web`，委派 `VoiceApplicationService`；入参校验、白名单、响应头、流式传输完全一致。 | `TtsControllerTest` + `VoiceApplicationServiceImplTest` + `BaiduVoiceClientTest` | `[已验证一致]` |
-| V-VOICE-03 | 适配层迁移 (Adapter) | 原 `AsrController` 与 `TtsController` 位于 `domain.voice.api`，混合领域代码。 | 统一迁移至 `com.ai.guide.adapter.voice.web`，彻底物理删除旧 `domain.voice.api` 目录。 | 架构包结构核验 | `[明确获准的变化]` |
-| V-VOICE-04 | 领域网关依赖倒置 (DIP) | 语音识别与合成直接通过具体类调用百度外部 HTTP 客户端。 | 在 `domain.voice.gateway` 抽象 `VoiceGatewayPort`，`BaiduVoiceClient` 实现该端口，彻底阻断领域层对百度客户端的依赖。 | 架构单向依赖校验 | `[明确获准的变化]` |
-| V-VOICE-05 | 基础设施层下沉 (Infrastructure) | 百度语音 HTTP API 调用细节直接散落在旧 API/Service 中。 | 百度语音客户端 `BaiduVoiceClient` 下沉至 `com.ai.guide.infrastructure.voice.baidu`，封装 Token 刷新、HTTP 调用、多模态协议。 | 依赖倒置原则核验 | `[明确获准的变化]` |
-| V-VOICE-06 | 全量回归与测试安全基线 | 确保既有语音识别、语音合成、异常码映射全链路 100% 稳定。 | 全工程 425 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.1s），新增 13 项单元与应用层测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
+| V-MEM-01 | `GET /ai/memories`<br/>已确认记忆列表 | 已登录返回 200 与记忆列表（7 天 TTL）；匿名请求拦截返回 401 "请先登录后查看旅行记忆"。 | `TravelMemoryController` 迁入 `adapter.memory.web`，委派应用服务，状态码与文案完全一致。 | `TravelMemoryControllerTest.testList*` + `TravelMemoryApplicationServiceImplTest.testList` | `[已验证一致]` |
+| V-MEM-02 | `GET /ai/memories/candidates`<br/>待确认记忆建议列表 | 已登录返回 200 与 MemoryCandidate 列表；匿名请求拦截返回 401 "请先登录后查看记忆建议"。 | 委派应用服务，状态码与文案完全一致。 | `TravelMemoryControllerTest.testCandidates*` + `TravelMemoryApplicationServiceImplTest.testCandidates` | `[已验证一致]` |
+| V-MEM-03 | `POST /ai/memories/candidate`<br/>单句记忆即时提取推荐 | 切斯特顿围栏：**无需登录即可使用**；提取 message 入参；调用 fast-path 规则或 smart-path LLM；返回 200 与 Candidate 对象。 | 保持免登开放契约，入参提取与返回完全一致。 | `TravelMemoryControllerTest.testCandidateSuggest_NoLoginRequired` + `TravelMemoryApplicationServiceImplTest.testSuggest` | `[已验证一致]` |
+| V-MEM-04 | `POST /ai/memories/observations`<br/>后台记忆线索捕获 | 已登录接收 message 与 sessionId，入队并返回 HTTP 202 "记忆线索已进入后台整理队列"；参数异常返回 400；匿名拦截返回 401 "请先登录后使用旅行记忆"。 | 严格保持 HTTP 202 异步接收语义、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testObserve*` + `TravelMemoryApplicationServiceImplTest.testCaptureObservation` | `[已验证一致]` |
+| V-MEM-05 | `POST /ai/memories`<br/>显式新增已确认记忆 | 接收 content, category (默认 CUSTOM), sourceType (默认 CHAT_CONFIRMED), sourceRef；已登录返回 HTTP 201 "旅行记忆已保存"；参数异常 400；匿名拦截 401 "请先登录后保存旅行记忆"。 | 严格保持 HTTP 201 创建状态码、参数默认值、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testConfirm*` + `TravelMemoryApplicationServiceImplTest.testConfirm` | `[已验证一致]` |
+| V-MEM-06 | `PATCH /ai/memories/{id}`<br/>更新已确认记忆 | 接收 content, category；已登录返回 200 "旅行记忆已更新"；参数异常 400；匿名拦截 401 "请先登录后编辑旅行记忆"。 | 严格保持 PATCH 动词、更新行为、异常 400 与 401 鉴权文案。 | `TravelMemoryControllerTest.testUpdate*` + `TravelMemoryApplicationServiceImplTest.testUpdate` | `[已验证一致]` |
+| V-MEM-07 | `DELETE /ai/memories/{id}`<br/>删除旅行记忆 | 已登录调用 delete 并返回 200 "旅行记忆已删除"；匿名拦截 401 "请先登录后删除旅行记忆"。 | 严格保持 DELETE 动词、删除调用与 401 鉴权文案。 | `TravelMemoryControllerTest.testDelete*` + `TravelMemoryApplicationServiceImplTest.testDelete` | `[已验证一致]` |
+| V-MEM-08 | `POST /ai/memories/candidates/{id}/(confirm\|dismiss)`<br/>建议确认与忽略 | 确认：已登录返回 200 "旅行记忆已确认"（参数异常 400，匿名 401 "请先登录后确认记忆建议"）；<br/>忽略：已登录返回 200 "记忆建议已忽略"（匿名 401 "请先登录后忽略记忆建议"）。 | 严格区分确认与忽略两个端点操作、状态码与细微提示文案。 | `TravelMemoryControllerTest.test*Candidate*` + `TravelMemoryApplicationServiceImplTest.test*Candidate*` | `[已验证一致]` |
+| V-MEM-09 | `(GET\|POST) /ai/memories/prepend-prompt`<br/>前置提示词管理 | GET：查看前置提示词，匿名 401 "请先登录后查看旅行偏好提示词"；<br/>POST：保存或重生成前置提示词（action=resynthesize 返回 200 "偏好提示词已重新生成"，默认 save 返回 200 "旅行偏好提示词已保存"；匿名 401 "请先登录后保存旅行偏好提示词"）。 | 保持完全一致的 action 分支判断、返回值 Map key（prependPrompt）与提示文案。 | `TravelMemoryControllerTest.test*PrependPrompt*` + `TravelMemoryApplicationServiceImplTest.testPromptMethods` | `[已验证一致]` |
+| V-MEM-10 | 适配层迁移 (Adapter) | 原 `TravelMemoryController` 位于 `domain.memory.api`，混合领域代码。 | 统一迁移至 `com.ai.guide.adapter.memory.web`，彻底物理删除旧 `domain.memory.api` 目录。 | 架构包扫描核验 | `[明确获准的变化]` |
+| V-MEM-11 | 应用层服务提炼 (Application) | 控制器直接依赖领域服务 `TravelMemoryService` 暴露领域实现细节。 | 抽象 `TravelMemoryApplicationService` 门面及 `TravelMemoryApplicationServiceImpl`，隔离 Web 层与 Domain 核心。 | 架构分层校验 | `[明确获准的变化]` |
+| V-MEM-12 | 全量回归与测试安全基线 | 确保既有 7 天记忆淘汰定时任务、规则直通车、大模型提炼等核心逻辑全量通过。 | 全工程 454 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 29 项端点与应用层测试。 | `mvn test` 自动化验证 | `[已验证一致]` |
 
 ---
 
 ## 二、 历史切片核验项清单
 
-### 1. Attraction 文旅地标与百科域 (Slice 8)
+### 1. Voice 语音识别与合成域 (Slice 9)
+- V-VOICE-01 ~ V-VOICE-06：ASR 与 TTS 双端点、Base64 防御转译、dev_pid 与 voice 白名单、BaiduVoiceClient 基础设施下沉全部通过验收（Commit `9feb197`）。
+
+### 2. Attraction 文旅地标与百科域 (Slice 8)
 - V-ATTR-01 ~ V-ATTR-06：多条件景点列表、受控与动态详情分支路由、跨域事实投影与匿名登录态隔离、应用层编排全部通过验收（Commit `c9e4515`）。
 
 ### 2. Search 文旅多源综合搜索域 (Slice 7)
@@ -111,5 +120,11 @@
   - 物理清理旧 `domain.voice.api` 目录。
   - 全工程 425 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 23.1s），新增 13 项单元与端点覆盖测试。
   - 红方独立质检审查员现场比对复核：纠正账本文档契约漂移，确认代码实现忠实一致，判定准予放行 (CONDITIONAL PASS)。
+- `2026-10-04 (Slice 10 - Memory 域)`:
+  - `com.ai.guide.adapter.memory.web`: 承接 `TravelMemoryController`，映射 11 大记忆生命周期端点（列表、建议、即时提取、线索收集、确认、编辑、删除、前置提示词管理）。
+  - `com.ai.guide.application.memory`: 抽象 `TravelMemoryApplicationService` 门面及 `TravelMemoryApplicationServiceImpl`，隔离 Web 请求与底层记忆规则/LLM/仓储服务。
+  - 严格保持切斯特顿围栏：单句记忆即时提取 `/ai/memories/candidate` 无需登录；后台线索收集返回 HTTP 202；显式确认返回 HTTP 201。
+  - 物理清理旧 `domain.memory.api` 目录。
+  - 全工程 454 项测试全部绿灯通过（0 errors, 0 failures, 10 skipped，耗时 21.1s），新增 29 项单元与端点覆盖测试。
 
 
