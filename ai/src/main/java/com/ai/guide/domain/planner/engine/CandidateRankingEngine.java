@@ -145,6 +145,41 @@ public class CandidateRankingEngine {
         return district.contains("涪陵") || district.contains("武隆") || district.contains("大足");
     }
 
+    public boolean isOpeningCompatible(Attraction attraction, String slotTime, ItineraryTimeEngine timeEngine) {
+        if (attraction == null || slotTime == null || slotTime.isBlank()) return true;
+        int slotMinutes = timeEngine == null ? 720 : timeEngine.parseTimeMinutes(slotTime);
+        if (slotMinutes <= 0) return true;
+
+        // 跨午夜拦截：当天排程大于等于 24:00 (1440 分钟) 或携带跨天标记视为不可行
+        if (slotMinutes >= 24 * 60 || slotTime.contains("(+")) {
+            return false;
+        }
+
+        // 索道与高空观光设施官方营业时间门禁：通常 08:00 - 22:00（21:30 停止检票/售票）
+        String attrName = safe(attraction.getName());
+        String attrCat = safe(attraction.getCategory());
+        boolean isCableway = attrName.contains("索道") || attrCat.contains("索道")
+                || (attraction.getTags() != null && attraction.getTags().contains("索道"));
+        if (isCableway) {
+            if (slotMinutes < 8 * 60 || slotMinutes >= 22 * 60) {
+                return false;
+            }
+        }
+
+        // 博物馆/陈列馆/科技馆类通常 17:00 闭馆
+        String bestTime = safe(attraction.getBestTime());
+        String category = safe(attraction.getCategory());
+        String name = safe(attraction.getName());
+        if (bestTime.contains("17:00") || category.contains("博物馆") || name.contains("博物馆") || name.contains("陈列馆")) {
+            if (slotMinutes >= 17 * 60) {
+                return false;
+            }
+        }
+
+        boolean isEve = timeEngine != null && timeEngine.isEveningSlot(slotTime);
+        return !(bestTime.contains("17:00") && isEve);
+    }
+
     private String safe(Object val) {
         return val == null ? "" : String.valueOf(val).trim();
     }

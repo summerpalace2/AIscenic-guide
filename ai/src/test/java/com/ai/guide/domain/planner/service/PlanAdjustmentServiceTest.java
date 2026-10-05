@@ -2216,6 +2216,99 @@ class PlanAdjustmentServiceTest {
             assertNotEquals(Boolean.TRUE, cand.get("directReplacement"), "泛需求绝不能标记为 directReplacement=true");
         }
     }
+
+    @Test
+    void test56_genericBurgerCravingDoesNotBecomeStoreName() {
+        PlannerService.ServiceResult created = createTestSession("1天行程，市区游览");
+        String sessionId = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+
+        PlanConversationRequestDto convReq = PlanConversationRequestDto.builder()
+                .sessionId(sessionId)
+                .baseRevision(1)
+                .message("我想吃汉堡")
+                .context(PlanPageContext.builder().activeDay(1).build())
+                .sessionAccessToken(token)
+                .build();
+
+        PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
+        assertEquals(200, convRes.status());
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")));
+
+        String message = String.valueOf(convRes.body().get("message"));
+        assertFalse(message.contains("安排【汉堡】"), "绝不能将‘汉堡’直接作为店铺名安排: " + message);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) convRes.body().get("candidateReplacements");
+        assertNotNull(candidates);
+        assertFalse(candidates.isEmpty());
+        for (Map<String, Object> cand : candidates) {
+            String name = String.valueOf(cand.get("name"));
+            assertFalse(name.endsWith("【汉堡】") || "汉堡".equals(name), "候选店名不能为纯品类‘汉堡’");
+            assertNotEquals(Boolean.TRUE, cand.get("directReplacement"), "泛需求不能标记为直接精确替换");
+        }
+    }
+
+    @Test
+    void test57_replaceLunchWithPizzaDoesNotCreateFakeStore() {
+        PlannerService.ServiceResult created = createTestSession("1天行程，中午吃点清淡的");
+        String sessionId = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+
+        PlanConversationRequestDto convReq = PlanConversationRequestDto.builder()
+                .sessionId(sessionId)
+                .baseRevision(1)
+                .message("把午餐改成披萨")
+                .context(PlanPageContext.builder().activeDay(1).build())
+                .sessionAccessToken(token)
+                .build();
+
+        PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
+        assertEquals(200, convRes.status());
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")));
+
+        String message = String.valueOf(convRes.body().get("message"));
+        assertFalse(message.contains("替换为“披萨”") || message.contains("安排【披萨】"),
+                "绝不能将纯品类‘披萨’当作独立店铺名称: " + message);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) convRes.body().get("candidateReplacements");
+        assertNotNull(candidates);
+        assertFalse(candidates.isEmpty());
+        for (Map<String, Object> cand : candidates) {
+            assertNotEquals(Boolean.TRUE, cand.get("directReplacement"), "泛品类披萨不能标记为直接替换");
+        }
+    }
+
+    @Test
+    void test58_eveningBarbecueCravingResolvesToRecommendations() {
+        PlannerService.ServiceResult created = createTestSession("1天行程，晚上看洪崖洞夜景");
+        String sessionId = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+
+        PlanConversationRequestDto convReq = PlanConversationRequestDto.builder()
+                .sessionId(sessionId)
+                .baseRevision(1)
+                .message("晚上来点烧烤")
+                .context(PlanPageContext.builder().activeDay(1).build())
+                .sessionAccessToken(token)
+                .build();
+
+        PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
+        assertEquals(200, convRes.status());
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")));
+
+        String message = String.valueOf(convRes.body().get("message"));
+        assertFalse(message.contains("安排【烧烤】"), "绝不能将‘烧烤’作为商户名: " + message);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> candidates = (List<Map<String, Object>>) convRes.body().get("candidateReplacements");
+        assertNotNull(candidates);
+        assertFalse(candidates.isEmpty());
+        for (Map<String, Object> cand : candidates) {
+            assertNotEquals(Boolean.TRUE, cand.get("directReplacement"));
+        }
+    }
 }
 
 

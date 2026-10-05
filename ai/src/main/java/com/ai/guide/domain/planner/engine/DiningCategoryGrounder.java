@@ -27,26 +27,36 @@ public class DiningCategoryGrounder {
     );
 
     /**
-     * 判断某个名称是风味/品类泛需求（true），还是具体明确的商户实体（false）
+     * 判断某个名称是风味/品类泛需求（true），还是具体明确的商户实体或非餐饮地点（false）
      */
     public boolean isGenericDiningCraving(String name) {
         if (name == null || name.isBlank()) return true;
         String trimmed = name.trim().replaceAll("^[【\\[“\"']|[】\\]”\"']$", "").trim();
         if (trimmed.isBlank()) return true;
 
-        // 1. 明确分店标识（如 "较场口店", "(总店)", "黄桷小区店", "时代天街分店"）-> 具体门店
+        // 1. 排除非餐饮实体（如博物馆、纪念馆、科技馆、大学、电视塔、大剧院、景区、古镇等）
+        if (isNonDiningPlace(trimmed)) {
+            return false;
+        }
+
+        // 2. 检查是否具备餐饮/美食/茶饮相关语义；若完全不含餐饮字样，绝不能作为餐饮泛需求
+        if (!hasDiningKeywords(trimmed)) {
+            return false;
+        }
+
+        // 3. 明确分店标识（如 "较场口店", "(总店)", "黄桷小区店", "时代天街分店"）-> 具体门店
         boolean hasBranchSuffix = trimmed.matches(".*[（(][^）)]*(?:店|分店|总店)[）)]$")
                 || trimmed.matches(".+(?:分店|总店|旗舰店)$");
         if (hasBranchSuffix) {
             return false;
         }
 
-        // 2. 知名纯品牌商户（如 "肯德基"、"麦当劳"、"外婆家"）-> 具体门店
+        // 4. 知名纯品牌商户（如 "肯德基"、"麦当劳"、"外婆家"）-> 具体门店
         if (KNOWN_DINING_BRANDS.contains(trimmed)) {
             return false;
         }
 
-        // 3. 常见泛化/模糊修饰短语（如 "附近"、"随便"、"推荐"、"吃点"）-> 泛需求
+        // 5. 常见泛化/模糊修饰短语（如 "附近"、"随便"、"推荐"、"吃点"）-> 泛需求
         if (trimmed.matches(".*(附近|周边|同片区|其他|别的|或者|还是|随便|推荐|老字号|中餐|正餐|美食|快餐|吃点|来点|来个|吃个|想吃|想喝|去吃|品尝).*")) {
             return true;
         }
@@ -54,26 +64,46 @@ public class DiningCategoryGrounder {
             return true;
         }
 
-        // 4. 以“的”结尾的修饰动宾短语（如 "点甜食的"、"吃甜的"、"吃辣的"、"清淡的"）-> 泛需求
+        // 6. 以“的”结尾的修饰动宾短语（如 "点甜食的"、"吃甜的"、"吃辣的"、"清淡的"）-> 泛需求
         if (trimmed.endsWith("的")) {
             return true;
         }
 
-        // 5. 动宾短语（如 "吃火锅"、"喝咖啡"、"来个汉堡"）-> 泛需求
+        // 7. 动宾短语（如 "吃火锅"、"喝咖啡"、"来个汉堡"）-> 泛需求
         if (trimmed.matches("^(?:想|要|去|来|选)?(?:吃|喝|尝|品)(?:点|个|下)?.*")) {
             return true;
         }
 
-        // 6. 明确的商户机构专有名词后缀（如 "宏盛餐馆"、"老茶舍"、"川菜大酒楼"），且字数大于等于4 -> 具体门店
+        // 8. 明确的商户机构专有名词后缀（如 "宏盛餐馆"、"老茶舍"、"川菜大酒楼"），且字数大于等于4 -> 具体门店
         boolean hasEstablishmentSuffix = trimmed.matches(".{2,}(?:餐馆|酒楼|大酒楼|饭店|大饭店|茶舍|茶馆|茶楼|茶室|咖啡馆|咖啡厅|甜品店|糖水铺|糕点铺|大排档|火锅馆|面庄|面馆)$");
         if (hasEstablishmentSuffix) {
             return false;
         }
 
-        // 7. 默认策略倒置（Default Fallback）：
-        // 任何无分店后缀、无机构名词修饰的单域名词（如 "汉堡"、"火锅"、"披萨"、"甜食"、"炸鸡"、"日料"、"小面"）
+        // 9. 默认策略倒置（Default Fallback for Food Terms）：
+        // 任何包含餐饮词汇、但无分店后缀、无机构名词修饰的单域名词（如 "汉堡"、"火锅"、"披萨"、"甜食"、"炸鸡"、"日料"、"小面"）
         // 一律视为品类/风味泛需求，坚决不凭空捏造商户！
         return true;
+    }
+
+    /**
+     * 判断是否是明确的非餐饮地名/场馆
+     */
+    public boolean isNonDiningPlace(String text) {
+        if (text == null || text.isBlank()) return false;
+        if (text.matches(".*(博物馆|纪念馆|美术馆|图书馆|科技馆|展览馆|体育馆|文化馆|档案馆|天文馆|水族馆|大剧院|大剧场|剧院|剧场|广场|景区|公园|索道|码头|古镇|老街|步道|城门|故居|遗址|大学|学院|校区|教学楼|四教|一教|二教|三教|电视塔|观光塔).*")) {
+            // 除非明确有餐饮修饰（例如“三峡博物馆附近吃火锅”）
+            return !text.matches(".*(吃|喝|餐|饭|火锅|小吃|美食|茶|咖啡|甜品|糖水).*");
+        }
+        return false;
+    }
+
+    /**
+     * 判断是否包含餐饮相关词根
+     */
+    public boolean hasDiningKeywords(String text) {
+        if (text == null || text.isBlank()) return false;
+        return text.matches(".*(餐|饭|吃|喝|尝|品|食|肉|菜|面|粉|串|锅|茶|咖啡|奶茶|甜|糖水|点心|糕|烘焙|烤|烧|排档|快餐|酒楼|料理|料|汉堡|披萨|炸鸡|小吃|美食|风味|老字号|海鲜|生鲜|宵夜|夜宵|早点|正餐|餐馆|面馆|饭馆|茶馆|火锅馆|菜馆).*");
     }
 
     /**
