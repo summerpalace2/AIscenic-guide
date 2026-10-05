@@ -43,8 +43,11 @@ public class RemoveStopAdjustmentStrategy implements AdjustmentStrategy {
 
         String targetId = intent.getTargetStopId();
         StopLocation target = locateStop(draftTrip, targetId);
+        if (target == null && targetId != null && !targetId.isBlank()) {
+            target = locateStopByVenue(draftTrip, targetId);
+        }
         if (target == null) {
-            ctx.setFatalError(error(400, "未在行程中找到要移除的站点。", ctx));
+            ctx.setFatalError(error(400, "目标景点不存在。", ctx));
             return;
         }
 

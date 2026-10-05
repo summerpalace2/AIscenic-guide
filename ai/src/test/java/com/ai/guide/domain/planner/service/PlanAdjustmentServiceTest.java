@@ -2309,6 +2309,42 @@ class PlanAdjustmentServiceTest {
             assertNotEquals(Boolean.TRUE, cand.get("directReplacement"));
         }
     }
+
+    @Test
+    void test59_removeStopByVenueIdFallback() {
+        PlannerService.ServiceResult created = createTestSession("3天行程，想去洪崖洞和解放碑");
+        String sessionId = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> initialTrip = (Map<String, Object>) created.body().get("trip");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> initialDays = (List<Map<String, Object>>) initialTrip.get("days");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> day1Stops = (List<Map<String, Object>>) initialDays.get(0).get("stops");
+        assertTrue(day1Stops.size() > 1, "第 1 天需有多于 1 站以便测试删除");
+
+        // 故意使用 venueId 而非 stopId 作为 targetStopId
+        String venueIdToRemove = String.valueOf(day1Stops.get(0).get("venueId"));
+        assertNotNull(venueIdToRemove);
+
+        PlanConversationRequestDto convReq = PlanConversationRequestDto.builder()
+                .sessionId(sessionId)
+                .baseRevision(1)
+                .message("移除这个景点")
+                .context(PlanPageContext.builder()
+                        .activeDay(1)
+                        .selectedStopId(venueIdToRemove)
+                        .build())
+                .sessionAccessToken(token)
+                .build();
+
+        PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
+        assertEquals(200, convRes.status());
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("ok")));
+        String propId = String.valueOf(convRes.body().get("proposalId"));
+        assertNotNull(propId);
+    }
 }
 
 
