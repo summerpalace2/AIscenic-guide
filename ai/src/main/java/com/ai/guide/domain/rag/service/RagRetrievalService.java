@@ -88,13 +88,8 @@ public class RagRetrievalService {
         if (DISTANCE_QUERY_PATTERN.matcher(query).find()) {
             return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|公里|千米|km|m))|平路|步道").matcher(corpus).find();
         }
-        if (Pattern.compile("(?:恐龙|化石|骨架|标本)").matcher(query).find()) {
-            return Pattern.compile("(?:恐龙|化石|骨架|标本).*(?:\\d+(?:\\.\\d+)?\\s*(?:米|m|厘米|cm)|长达|高达|体长)").matcher(corpus).find();
-        }
-        if (Pattern.compile("(?:大桥|天桥|索道|建筑|高楼|大礼堂)").matcher(query).find()) {
-            return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|m|厘米|cm|层)|高差|垂直|跨度)").matcher(corpus).find();
-        }
-        return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|厘米|公分|m|cm|高度|长达|高达|长度))").matcher(corpus).find();
+        // 通用尺寸与度量证据判定：覆盖化石标本、桥梁建筑、索道缆车、地貌高差等所有度量场景，消除特定关键词过拟合
+        return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|公里|千米|厘米|公分|m|cm|km|层))|高差|垂直|跨度|长达|高达|体长|高度|长度|平路|步道").matcher(corpus).find();
     }
 
     public static GateDecision evaluateEvidenceGate(String queryText, List<String> retrievedTexts, String retrievalSource) {

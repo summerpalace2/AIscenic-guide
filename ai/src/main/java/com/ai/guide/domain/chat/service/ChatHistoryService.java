@@ -54,7 +54,14 @@ public class ChatHistoryService {
     }
 
     private String sessionsKey() {
-        return SESSIONS_KEY_PREFIX + UserContext.getUserId();
+        if (UserContext.isAnonymous()) {
+            return null;
+        }
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank() || "null".equalsIgnoreCase(userId) || "anonymous".equalsIgnoreCase(userId)) {
+            return null;
+        }
+        return SESSIONS_KEY_PREFIX + userId;
     }
 
     /**
@@ -71,6 +78,9 @@ public class ChatHistoryService {
     public List<ConversationVO> getAllSessions(int limit) {
         try {
             String sKey = sessionsKey();
+            if (sKey == null) {
+                return List.of();
+            }
             log.info("[DEBUG-HISTORY] userId=" + UserContext.getUserId() + ", sessionsKey=" + sKey);
             Set<String> sessionIds = redisTemplate.opsForZSet()
                     .reverseRange(sKey, 0, -1);
@@ -178,7 +188,10 @@ public class ChatHistoryService {
         try {
             String key = messageKey(sessionId);
             redisTemplate.delete(key);
-            redisTemplate.opsForZSet().remove(sessionsKey(), sessionId);
+            String sKey = sessionsKey();
+            if (sKey != null) {
+                redisTemplate.opsForZSet().remove(sKey, sessionId);
+            }
             // 同时清除摘要
             redisTemplate.delete(sessionId + ":summary");
             redisTemplate.delete(sessionId + ":compressed_count");

@@ -75,10 +75,17 @@ public class RedisChatMemory implements ChatMemory {
     }
 
     /**
-     * 获取当前用户的会话 ZSet key
+     * 获取当前用户的会话 ZSet key（匿名游客不写入全局列表）
      */
     private String sessionsKey() {
-        return SESSIONS_KEY_PREFIX + UserContext.getUserId();
+        if (UserContext.isAnonymous()) {
+            return null;
+        }
+        String userId = UserContext.getUserId();
+        if (userId == null || userId.isBlank() || "null".equalsIgnoreCase(userId) || "anonymous".equalsIgnoreCase(userId)) {
+            return null;
+        }
+        return SESSIONS_KEY_PREFIX + userId;
     }
 
     /**
@@ -96,10 +103,13 @@ public class RedisChatMemory implements ChatMemory {
                 String json = serializeMessage(message);
                 redisTemplate.opsForList().rightPush(key, json);
             }
-            redisTemplate.opsForZSet().add(
-                    sessionsKey(),
-                    conversationId,
-                    Instant.now().toEpochMilli());
+            String sKey = sessionsKey();
+            if (sKey != null) {
+                redisTemplate.opsForZSet().add(
+                        sKey,
+                        conversationId,
+                        Instant.now().toEpochMilli());
+            }
         } catch (Exception e) {
             log.error("[RedisChatMemory] 写入失败: {}", e.getMessage());
         }
@@ -120,16 +130,21 @@ public class RedisChatMemory implements ChatMemory {
      * 带 userId 的写入方法（供异步线程使用）
      */
     private void addWithUserId(String conversationId, List<Message> messages, String userId) {
-        String key = MESSAGE_KEY_PREFIX + conversationId;
-        String sessionsKey = SESSIONS_KEY_PREFIX + userId;
-        try {
-            for (Message message : messages) {
-                String json = serializeMessage(message);
-                redisTemplate.opsForList().rightPush(key, json);
+        if (conversationId == null) return;
+        synchronized (conversationId.intern()) {
+            String key = MESSAGE_KEY_PREFIX + conversationId;
+            try {
+                for (Message message : messages) {
+                    String json = serializeMessage(message);
+                    redisTemplate.opsForList().rightPush(key, json);
+                }
+                if (userId != null && !userId.isBlank() && !"null".equalsIgnoreCase(userId) && !"anonymous".equalsIgnoreCase(userId)) {
+                    String sessionsKey = SESSIONS_KEY_PREFIX + userId;
+                    redisTemplate.opsForZSet().add(sessionsKey, conversationId, Instant.now().toEpochMilli());
+                }
+            } catch (Exception e) {
+                log.error("[RedisChatMemory] 异步写入失败: {}", e.getMessage());
             }
-            redisTemplate.opsForZSet().add(sessionsKey, conversationId, Instant.now().toEpochMilli());
-        } catch (Exception e) {
-            log.error("[RedisChatMemory] 异步写入失败: {}", e.getMessage());
         }
     }
 
@@ -167,7 +182,10 @@ public class RedisChatMemory implements ChatMemory {
     public void clear(String conversationId) {
         String key = messageKey(conversationId);
         redisTemplate.delete(key);
-        redisTemplate.opsForZSet().remove(sessionsKey(), conversationId);
+        String sKey = sessionsKey();
+        if (sKey != null) {
+            redisTemplate.opsForZSet().remove(sKey, conversationId);
+        }
     }
 
     /**

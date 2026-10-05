@@ -92,7 +92,13 @@ final class ChatDomainPolicy {
         if (messages == null || messages.isEmpty()) return List.of();
         return messages.stream()
                 .filter(Objects::nonNull)
-                .filter(message -> !containsLegacyDomain(message.getContent()))
+                .filter(message -> {
+                    // 用户本人的发言绝不能被丢弃
+                    if (message.getMessageType() == org.springframework.ai.chat.messages.MessageType.USER) {
+                        return true;
+                    }
+                    return !containsLegacyDomain(message.getContent());
+                })
                 .toList();
     }
 }

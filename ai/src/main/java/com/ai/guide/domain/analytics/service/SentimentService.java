@@ -80,10 +80,19 @@ public class SentimentService {
      * @return 提示词文本
      */
     public String toPromptHint(Sentiment sentiment) {
+        return toPromptHint(sentiment, false);
+    }
+
+    public String toPromptHint(Sentiment sentiment, boolean hasInquiry) {
         switch (sentiment.ordinal()) {
             case 0: // POSITIVE
                 return "\n【用户情绪：正面，回复可以轻松愉快】\n";
             case 2: // NEGATIVE
+                if (hasInquiry) {
+                    return "\n【用户情绪：带负面情绪的求助/咨询】用户在此前体验中有不快或困扰。\n"
+                            + "你的回复<b>开头必须先真诚共情安抚与关怀</b>（如\"非常理解您的感受/千万照顾好身体\"）。\n"
+                            + "但在安抚之后，<b>必须积极正面地回应用户当前提出的具体咨询或诉求</b>，基于检索到的知识与客观事实给出贴心、针对性的替代建议，帮助用户解决问题。";
+                }
                 return "\n【最高优先级：用户情绪负面】用户感到失望或不愉快。\n"
                         + "你的回复<b>开头必须先共情安抚</b>（如\"非常抱歉\"\"我完全理解您的感受\"）。\n"
                         + "<b>不要推荐任何具体项目、菜品或路线</b>——不要提价格、不要提\"背景知识里有\"。\n"
@@ -98,7 +107,16 @@ public class SentimentService {
      * 重载：直接传入文本生成情感提示
      */
     public String toPromptHint(String text) {
-        return toPromptHint(analyze(text));
+        if (text == null || text.isBlank()) return "";
+        Sentiment sentiment = analyze(text);
+        return toPromptHint(sentiment, hasSubstantiveInquiry(text));
+    }
+
+    public boolean hasSubstantiveInquiry(String text) {
+        if (text == null || text.isBlank()) return false;
+        String t = text.trim();
+        return t.matches(".*(有什么|怎么|哪|推荐|换个|换成|想吃|想去|路线|有没有|能不能|可否|多少|门票|几点|好玩吗|好吃吗|合适吗|[?？]).*")
+                || t.length() >= 8;
     }
 
     /**

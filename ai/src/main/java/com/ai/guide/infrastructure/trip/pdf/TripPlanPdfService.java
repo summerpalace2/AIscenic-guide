@@ -35,14 +35,24 @@ import java.util.Map;
 @Service
 public class TripPlanPdfService implements TripPlanPdfExportPort {
 
+    private static volatile BaseFont CACHED_FONT;
+    private static final Object FONT_LOCK = new Object();
+    private static final java.util.concurrent.Semaphore PDF_SEMAPHORE = new java.util.concurrent.Semaphore(4);
+
     @Override
     public byte[] export(Map<String, Object> plan) {
         if (plan == null) plan = Map.of();
+        try {
+            PDF_SEMAPHORE.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("导出 PDF 线程被中断", e);
+        }
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 36, 36, 40, 36);
             PdfWriter writer = PdfWriter.getInstance(document, output);
 
-            BaseFont baseFont = createChineseFont();
+            BaseFont baseFont = getChineseFont();
             String nowStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(LocalDateTime.now());
             String sourceMode = text(plan.get("sourceMode"), "高德地图联动");
             writer.setPageEvent(new PageHeaderFooterEvent(baseFont, nowStr, sourceMode));
@@ -319,7 +329,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
                         rightCell.addElement(dishPara);
                     }
 
-                    String summary = text(stop.get("summary"), text(stop.get("detail"), ""));
+                    String summary = truncate(text(stop.get("description"), text(stop.get("summary"), text(stop.get("detail"), ""))), 600);
                     if (!summary.isBlank() && !summary.equals(specialtyDish)) {
                         Paragraph summaryPara = new Paragraph(summary, cardBodyFont);
                         summaryPara.setSpacingBefore(1);
@@ -327,7 +337,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
                         rightCell.addElement(summaryPara);
                     }
 
-                    String reason = text(stop.get("recommendationReason"), "");
+                    String reason = truncate(text(stop.get("recommendationReason"), ""), 600);
                     if (!reason.isBlank() && !reason.equals(summary)) {
                         Paragraph reasonPara = new Paragraph("💡 推荐理由：" + reason, cardMutedFont);
                         reasonPara.setSpacingAfter(2);
@@ -405,7 +415,27 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             return output.toByteArray();
         } catch (Exception e) {
             throw new IllegalStateException("行程 PDF 生成失败", e);
+        } finally {
+            PDF_SEMAPHORE.release();
         }
+    }
+
+    private BaseFont getChineseFont() throws Exception {
+        if (CACHED_FONT != null) {
+            return CACHED_FONT;
+        }
+        synchronized (FONT_LOCK) {
+            if (CACHED_FONT == null) {
+                CACHED_FONT = createChineseFont();
+            }
+            return CACHED_FONT;
+        }
+    }
+
+    private static String truncate(String text, int maxLength) {
+        if (text == null) return "";
+        if (text.length() <= maxLength) return text;
+        return text.substring(0, maxLength);
     }
 
     private static boolean isDiningStop(Map<?, ?> stop) {

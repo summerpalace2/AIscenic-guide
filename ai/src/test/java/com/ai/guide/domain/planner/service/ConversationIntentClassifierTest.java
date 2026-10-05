@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ConversationIntentClassifierTest {
 
@@ -278,5 +279,80 @@ class ConversationIntentClassifierTest {
         assertEquals("cq-museum", intent.getTargetAttractionId());
         assertTrue(intent.getPreferences().contains("INDOOR"));
         assertTrue(intent.getPreferences().contains("HISTORY"));
+    }
+
+    @Test
+    void replanDayWithOptimizationAndAvoidingStairsMatchesReplanDay() {
+        var intent = classifier.classify("优化洪崖洞行程，避免爬台阶，电梯下行", PlanPageContext.builder()
+                .activeDay(1)
+                .build());
+
+        assertEquals(ConversationIntentType.REPLAN_DAY, intent.getType());
+        assertEquals("REPLAN_DAY", intent.getOperation());
+        assertEquals("DAY", intent.getScope());
+        assertTrue(intent.getPreferences().contains("LOW_WALKING"));
+    }
+
+    @Test
+    void pureWordTripDoesNotMisclassifyAsPlan() {
+        var intent = classifier.classify("洪崖洞这一段优化路线", PlanPageContext.builder()
+                .activeDay(1)
+                .build());
+
+        assertEquals(ConversationIntentType.REPLAN_DAY, intent.getType());
+    }
+
+    @Test
+    void test_zeroWidthCharacterSanitizationNeutralizesEvasionAttack() {
+        var intent = classifier.classify("在去洪\u200B崖\u200B洞之\u200D前，先\uFEFF去南滨路", PlanPageContext.builder()
+                .activeDay(1)
+                .build());
+
+        assertEquals(ConversationIntentType.ADD_STOP, intent.getType(), "零宽字符混淆攻击必须被完全净化并正确分类为 ADD_STOP");
+    }
+
+    @Test
+    void test_transitWaypointWithPunctuationAndCommas() {
+        var intent = classifier.classify("我们想先回解放碑，换件厚衣服再吃个火锅，之后接上南滨路动线", PlanPageContext.builder()
+                .activeDay(1)
+                .build());
+
+        assertEquals(ConversationIntentType.ADD_STOP, intent.getType(), "包含标点逗号的先回中继点指令必须识别为 ADD_STOP，不被餐饮或普通返程吞噬");
+    }
+
+    @Test
+    void test_chenPangziReplacement() {
+        var intent = classifier.classify("把午餐改成【陈胖子火锅(总店)】", PlanPageContext.builder()
+                .activeDay(1)
+                .selectedStopId("day1-dinner")
+                .build());
+        System.out.println("DEBUG INTENT: type=" + intent.getType() + ", op=" + intent.getOperation()
+                + ", targetStopRef=" + intent.getTargetStopReference()
+                + ", targetStopId=" + intent.getTargetStopId()
+                + ", replName=" + intent.getReplacementPlaceName()
+                + ", replId=" + intent.getReplacementPlaceId()
+                + ", prefs=" + intent.getPreferences());
+        assertEquals("陈胖子火锅(总店)", intent.getReplacementPlaceName());
+    }
+
+    @Test
+    void test_genericCravingDoesNotSetRequestedVenueName() {
+        var intentSweet = classifier.classify("我想吃点甜食的", PlanPageContext.builder().activeDay(1).build());
+        assertEquals(ConversationIntentType.ADD_STOP, intentSweet.getType());
+        assertNull(intentSweet.getRequestedVenueName(), "泛品类短语‘点甜食的’绝不能设为 requestedVenueName");
+        assertTrue(intentSweet.getPreferences().contains("FOOD"));
+        assertTrue(intentSweet.getPreferences().contains("TEA_BREAK"));
+
+        var intentHotpot = classifier.classify("我想吃火锅", PlanPageContext.builder().activeDay(1).build());
+        assertEquals(ConversationIntentType.ADD_STOP, intentHotpot.getType());
+        assertNull(intentHotpot.getRequestedVenueName(), "单品类词‘火锅’绝不能设为 requestedVenueName");
+        assertTrue(intentHotpot.getPreferences().contains("FOOD"));
+    }
+
+    @Test
+    void test_explicitRestaurantSetsRequestedVenueName() {
+        var intent = classifier.classify("想去【陈胖子火锅(总店)】", PlanPageContext.builder().activeDay(1).build());
+        assertEquals(ConversationIntentType.ADD_STOP, intent.getType());
+        assertEquals("陈胖子火锅(总店)", intent.getRequestedVenueName());
     }
 }

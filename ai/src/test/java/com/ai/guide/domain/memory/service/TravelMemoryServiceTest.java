@@ -1,9 +1,19 @@
 package com.ai.guide.domain.memory.service;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import com.ai.guide.domain.memory.model.TravelMemory;
+import com.ai.guide.domain.preferences.model.UserPreferences;
+import com.ai.guide.domain.preferences.service.PreferencesService;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TravelMemoryServiceTest {
 
@@ -42,6 +52,15 @@ class TravelMemoryServiceTest {
     }
 
     @Test
+    void nonSpicyHotpotStatementProducesNonSpicyCandidate() {
+        TravelMemoryService.Candidate candidate = service.suggest("我不吃辣，我想去吃火锅");
+        org.junit.jupiter.api.Assertions.assertNotNull(candidate);
+        assertEquals("DIET", candidate.category());
+        assertTrue(candidate.content().contains("清淡少辣"));
+        org.junit.jupiter.api.Assertions.assertFalse(candidate.content().contains("麻辣"));
+    }
+
+    @Test
     void accessibilityAndPhotographyStatementsProduceCandidates() {
         TravelMemoryService.Candidate access = service.suggest("家里老人腿脚不便，以后出行需要无障碍安排");
         org.junit.jupiter.api.Assertions.assertNotNull(access);
@@ -63,5 +82,53 @@ class TravelMemoryServiceTest {
         org.junit.jupiter.api.Assertions.assertNotNull(coffee);
         assertEquals("DIET", coffee.category());
         assertEquals("偏好景观咖啡馆、独立特调与下午茶小憩", coffee.content());
+    }
+
+    @Test
+    void testSynthesizePrependPromptMultipleDietsCoexist() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        PreferencesService prefService = Mockito.mock(PreferencesService.class);
+        TravelMemoryService memService = new TravelMemoryService(jdbc, prefService);
+
+        List<TravelMemory> mockMemories = List.of(
+                new TravelMemory("m1", "DIET", "麻辣火锅", "CHAT_CONFIRMED", "", "CONFIRMED", 1.0, 1000L, 1000L),
+                new TravelMemory("m2", "DIET", "特色甜品冰粉", "CHAT_CONFIRMED", "", "CONFIRMED", 1.0, 1000L, 2000L),
+                new TravelMemory("m3", "DIET", "街头小吃小面", "CHAT_CONFIRMED", "", "CONFIRMED", 1.0, 1000L, 3000L)
+        );
+
+        Mockito.when(jdbc.query(Mockito.anyString(), Mockito.any(RowMapper.class), Mockito.eq("user-1")))
+                .thenReturn(mockMemories);
+        Mockito.when(prefService.get("user-1")).thenReturn(UserPreferences.empty("user-1", 1L, System.currentTimeMillis()));
+
+        String prompt = memService.synthesizePrependPrompt("user-1", false);
+        assertTrue(prompt.contains("饮食偏好麻辣火锅与地道巴渝风味"));
+        assertTrue(prompt.contains("喜好特色甜品糖水与点心"));
+        assertTrue(prompt.contains("地道特色小吃"));
+    }
+
+    @Test
+    void testConflictingMemoriesCancellationSpicyVsBland() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        TravelMemoryService memService = new TravelMemoryService(jdbc);
+
+        Mockito.when(jdbc.queryForList(Mockito.anyString(), Mockito.eq("user-1")))
+                .thenReturn(List.of(Map.of("id", "m-spicy", "content", "麻辣火锅与吃辣")));
+
+        memService.confirm("user-1", "清淡少辣不吃辣", "DIET", "USER_EDIT");
+
+        Mockito.verify(jdbc).update(Mockito.contains("status = 'DELETED'"), Mockito.anyLong(), Mockito.eq("m-spicy"), Mockito.eq("user-1"));
+    }
+
+    @Test
+    void testConflictingMemoriesCancellationStaminaVsRest() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        TravelMemoryService memService = new TravelMemoryService(jdbc);
+
+        Mockito.when(jdbc.queryForList(Mockito.anyString(), Mockito.eq("user-1")))
+                .thenReturn(List.of(Map.of("id", "m-tired", "content", "少走路少爬坡避台阶")));
+
+        memService.confirm("user-1", "特种兵暴走多走走", "PACE", "USER_EDIT");
+
+        Mockito.verify(jdbc).update(Mockito.contains("status = 'DELETED'"), Mockito.anyLong(), Mockito.eq("m-tired"), Mockito.eq("user-1"));
     }
 }

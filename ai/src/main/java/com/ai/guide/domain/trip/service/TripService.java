@@ -13,9 +13,12 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -117,8 +120,42 @@ public class TripService {
         long now = System.currentTimeMillis();
         OperationResult reserved = reserveIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey(), fingerprint, tripId, now);
         if (reserved != null) return reserved;
-        int updated = repository.advanceCurrentVersion(effectiveOwner, tripId, expected,
-                nextVersion, title, now);
+
+        int updated = 0;
+        int maxCasRetries = 3;
+        for (int attempt = 0; attempt < maxCasRetries; attempt++) {
+            updated = repository.advanceCurrentVersion(effectiveOwner, tripId, expected,
+                    nextVersion, title, now);
+            if (updated > 0) {
+                break;
+            }
+            // CAS 失败时轻量重试循环（最多 3 次，10~30ms Jitter）
+            try {
+                Thread.sleep(java.util.concurrent.ThreadLocalRandom.current().nextInt(10, 31));
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            Trip latest = repository.find(effectiveOwner, tripId);
+            if (latest == null) {
+                break;
+            }
+            if (sameSnapshot(latest.plan(), snapshot) && latest.title().equals(title)) {
+                completeIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey(), latest);
+                return OperationResult.success(200, "行程未发生变化", "NOOP", latest);
+            }
+            Map<String, Object> rebased = tryRebase(current.plan(), latest.plan(), snapshot);
+            if (rebased != null) {
+                snapshot = withFormalId(rebased, tripId);
+                expected = latest.currentVersion();
+                nextVersion = expected + 1;
+                now = System.currentTimeMillis();
+                current = latest;
+            } else {
+                break;
+            }
+        }
+
         if (updated == 0) {
             repository.deleteIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey());
             Trip latest = repository.find(effectiveOwner, tripId);
@@ -258,7 +295,89 @@ public class TripService {
         request.put("expectedVersion", expectedVersion);
         request.put("idempotencyKey", key);
         request.put("changeReason", "PlannerSession 保存");
-        return update(ownerId, formalTripId, request);
+        OperationResult res = update(ownerId, formalTripId, request);
+        if (res.status() == 409 && (sourceTripVersion == null || sourceTripVersion != current.currentVersion())) {
+            Trip latest = get(ownerId, formalTripId);
+            if (latest != null && latest.currentVersion() != expectedVersion) {
+                TripVersion baseVersion = (sourceTripVersion != null)
+                        ? version(ownerId, formalTripId, sourceTripVersion) : null;
+                Map<String, Object> basePlan = baseVersion != null ? baseVersion.snapshot() : current.plan();
+                Map<String, Object> rebased = tryRebase(basePlan, latest.plan(), snapshot);
+                if (rebased != null) {
+                    Map<String, Object> retrySnapshot = withFormalId(rebased, formalTripId);
+                    retrySnapshot.put("sourceTripVersion", latest.currentVersion());
+                    Map<String, Object> retryRequest = new LinkedHashMap<>();
+                    retryRequest.put("plan", retrySnapshot);
+                    String baseTitle = basePlan.get("title") != null ? text(basePlan.get("title")) : "";
+                    boolean titleModifiedByIncoming = !title.isBlank() && !title.equals(baseTitle);
+                    String mergedTitle = titleModifiedByIncoming ? title : latest.title();
+                    retryRequest.put("title", mergedTitle);
+                    retryRequest.put("expectedVersion", latest.currentVersion());
+                    retryRequest.put("idempotencyKey", key);
+                    retryRequest.put("changeReason", "PlannerSession 变基合并保存");
+                    return update(ownerId, formalTripId, retryRequest);
+                }
+            }
+        }
+        return res;
+    }
+
+    private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
+            "id", "formalTripId", "sourceTripVersion", "plannerSessionId",
+            "plannerVersion", "appliedPreferences", "plannerSessionRestoreSource",
+            "sourceTripId", "sourcePlannerRevision", "version", "status", "createdAt", "updatedAt"
+    );
+
+    private Map<String, Object> tryRebase(Map<String, Object> base, Map<String, Object> latest, Map<String, Object> incoming) {
+        if (base == null) base = Map.of();
+        if (latest == null || incoming == null) return null;
+
+        Map<String, Object> merged = new LinkedHashMap<>(latest);
+        Set<String> allKeys = new HashSet<>();
+        allKeys.addAll(base.keySet());
+        allKeys.addAll(latest.keySet());
+        allKeys.addAll(incoming.keySet());
+
+        boolean incomingHasChanges = false;
+        for (String key : allKeys) {
+            if (INTERNAL_METADATA_KEYS.contains(key)
+                    || key.startsWith("planner")
+                    || key.startsWith("source")
+                    || key.startsWith("applied")
+                    || key.startsWith("formal")) {
+                continue;
+            }
+
+            Object baseVal = base.get(key);
+            Object latestVal = latest.get(key);
+            Object incVal = incoming.get(key);
+
+            boolean latestChanged = !Objects.equals(baseVal, latestVal);
+            boolean incChanged = !Objects.equals(baseVal, incVal);
+
+            if (incChanged) {
+                incomingHasChanges = true;
+            }
+
+            if (latestChanged && incChanged) {
+                if (!Objects.equals(latestVal, incVal)) {
+                    return null;
+                }
+                merged.put(key, incVal);
+            } else if (incChanged) {
+                merged.put(key, incVal);
+            } else {
+                if (latestVal != null) {
+                    merged.put(key, latestVal);
+                } else {
+                    merged.remove(key);
+                }
+            }
+        }
+        if (!incomingHasChanges) {
+            return null;
+        }
+        return merged;
     }
 
     private Integer sourceTripVersion(Object value) {

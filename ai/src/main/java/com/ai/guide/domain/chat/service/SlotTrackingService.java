@@ -31,9 +31,12 @@ public class SlotTrackingService {
     /** 槽位匹配正则：字段名 → {预编译正则 → 标准值} */
     private static final Map<String, Map<Pattern, String>> SLOT_PATTERNS;
 
-    /** 区域名称正则 */
+    /** 区域与核心地标名称正则（覆盖全重庆核心景区与主城九区） */
     private static final Pattern AREA_PATTERN =
-            Pattern.compile("洪崖洞|解放碑|李子坝|鹅岭二厂|山城巷|湖广会馆|长江索道|三峡博物馆|磁器口|南山一棵树");
+            Pattern.compile("洪崖洞|解放碑|李子坝|鹅岭二?厂?|山城巷|湖广会馆|长江索道|三峡博物馆|磁器口|南山一棵树|" +
+                    "朝天门|大剧院|白象居|龙门浩|下浩老街|魁星楼|两路口|三峡广场|观音桥|中山四路|" +
+                    "重庆人民大礼堂|重庆美术馆|南滨路|弹子石|融汇温泉|红岩革命纪念馆|歌乐山|渣滓洞|白公馆|" +
+                    "南岸区?|九龙坡区?|沙坪坝区?|渝中区?|江北区?|渝北区?|巴南区?|北碚区?|大渡口区?");
 
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -84,13 +87,21 @@ public class SlotTrackingService {
      */
     public void extractAndSave(String userId, String message) {
         if (message == null || message.isBlank()) return;
+        message = java.text.Normalizer.normalize(message, java.text.Normalizer.Form.NFKC)
+                .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "");
+        if (message.isBlank()) return;
 
         String key = slotsKey(userId);
 
-        // interest → 滑动窗口 3 条（直接使用预编译正则）
+        // interest → 滑动窗口 3 条（带否定语义识别与自愈剔除，DEF-R3-01）
         for (Map.Entry<Pattern, String> entry : SLOT_PATTERNS.get("interest").entrySet()) {
-            if (entry.getKey().matcher(message).find()) {
-                pushSlotItemLimited(key, "interest", entry.getValue(), MAX_INTEREST_ITEMS);
+            Matcher m = entry.getKey().matcher(message);
+            while (m.find()) {
+                if (isNegatedPrefix(message, m.start())) {
+                    removeSlotItem(key, "interest", entry.getValue());
+                } else {
+                    pushSlotItemLimited(key, "interest", entry.getValue(), MAX_INTEREST_ITEMS);
+                }
             }
         }
 
@@ -110,7 +121,9 @@ public class SlotTrackingService {
         Matcher matcher = AREA_PATTERN.matcher(message);
         String lastArea = null;
         while (matcher.find()) {
-            lastArea = matcher.group();
+            if (!isNegatedPrefix(message, matcher.start())) {
+                lastArea = matcher.group();
+            }
         }
         if (lastArea != null) {
             redisTemplate.opsForHash().put(key, "area", lastArea);
@@ -131,6 +144,19 @@ public class SlotTrackingService {
         } catch (Exception e) {
             redisTemplate.opsForHash().put(redisKey, slotName, value);
         }
+    }
+
+    /**
+     * 从指定槽位剔除否定项（自愈剔除，DEF-R3-01）
+     */
+    private synchronized void removeSlotItem(String redisKey, String slotName, String value) {
+        try {
+            String raw = (String) redisTemplate.opsForHash().get(redisKey, slotName);
+            List<String> items = parseList(raw);
+            if (items.remove(value)) {
+                redisTemplate.opsForHash().put(redisKey, slotName, objectMapper.writeValueAsString(items));
+            }
+        } catch (Exception ignored) {}
     }
 
     // ==================== 读取 ====================
@@ -252,11 +278,37 @@ public class SlotTrackingService {
         }
     }
 
+    private boolean isNegatedPrefix(String message, int start) {
+        if (message == null || start <= 0) return false;
+        int checkStart = Math.max(0, start - 16);
+        String prefix = message.substring(checkStart, start);
+        prefix = java.text.Normalizer.normalize(prefix, java.text.Normalizer.Form.NFKC)
+                .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "")
+                .trim();
+        if (prefix.matches(".*(不是不|并非不|不会不|没有不).*")) {
+            return false;
+        }
+        if (prefix.matches(".*(不要|别|不带|不用|拒绝|不想|讨厌|不打算|不考虑|不建议|不去|排除|除外|别去|莫去|别到|放弃|避开|忽略|不选).*")) {
+            return true;
+        }
+        return prefix.endsWith("不") || prefix.endsWith("不用")
+                || prefix.endsWith("不带") || prefix.endsWith("不要")
+                || prefix.endsWith("无") || prefix.endsWith("免")
+                || prefix.endsWith("非") || prefix.endsWith("没有")
+                || prefix.endsWith("别") || prefix.endsWith("讨厌")
+                || prefix.endsWith("拒绝") || prefix.endsWith("不去")
+                || prefix.endsWith("别去") || prefix.endsWith("避开")
+                || prefix.endsWith("排除");
+    }
+
     private String matchSlot(String message, Map<Pattern, String> patterns) {
-        if (patterns == null) return null;
+        if (patterns == null || message == null) return null;
         for (Map.Entry<Pattern, String> entry : patterns.entrySet()) {
-            if (entry.getKey().matcher(message).find()) {
-                return entry.getValue();
+            Matcher matcher = entry.getKey().matcher(message);
+            while (matcher.find()) {
+                if (!isNegatedPrefix(message, matcher.start())) {
+                    return entry.getValue();
+                }
             }
         }
         return null;

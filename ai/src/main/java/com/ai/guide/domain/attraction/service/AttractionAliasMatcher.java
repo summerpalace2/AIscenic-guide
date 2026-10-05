@@ -110,6 +110,7 @@ public class AttractionAliasMatcher {
         safePut("二厂", "cq-erling");
         safePut("贰厂", "cq-erling");
         safePut("鹅岭", "cq-erling");
+        safePut("鹅岭二厂", "cq-erling");
         safePut("一棵树", "cq-nanshan-yikeshu");
         safePut("索道", "cq-changjiang-cable");
         safePut("天坑", "cq-wulong-tiankeng");
@@ -176,16 +177,32 @@ public class AttractionAliasMatcher {
         safePut("聂帅陈列馆", "cq-jiangjin-nie-memorial");
         safePut("几江半岛", "cq-jiangjin-binjiang-night");
         safePut("几江夜景", "cq-jiangjin-binjiang-night");
+        safePut("南滨路", "cq-nanbinlu");
+        safePut("南滨路江岸", "cq-nanbinlu");
+        safePut("龙门浩", "cq-longmenhao");
+        safePut("龙门浩老街", "cq-longmenhao");
+        safePut("长江索道", "cq-changjiang-cable");
+        safePut("索道北站", "cq-changjiang-cable");
+        safePut("索道南站", "cq-changjiang-cable");
+        venueIdToCanonical.put("cq-nanbinlu", "南滨路");
+        venueIdToCanonical.put("cq-longmenhao", "龙门浩老街");
+        venueIdToCanonical.put("cq-changjiang-cable", "长江索道");
     }
 
     private void safePut(String alias, String venueId) {
         aliasToVenueId.put(alias, venueId);
     }
 
+    private String sanitizeInput(String s) {
+        if (s == null) return null;
+        return s.replaceAll("[\\u200B-\\u200D\\uFEFF]", "");
+    }
+
     public String extractMentionedVenueId(String text) {
-        if (text == null || text.isBlank()) return null;
+        String clean = sanitizeInput(text);
+        if (clean == null || clean.isBlank()) return null;
         for (String alias : sortedAliases) {
-            if (text.contains(alias)) {
+            if (clean.contains(alias)) {
                 return aliasToVenueId.get(alias);
             }
         }
@@ -193,9 +210,10 @@ public class AttractionAliasMatcher {
     }
 
     public String extractMentionedVenueAlias(String text) {
-        if (text == null || text.isBlank()) return null;
+        String clean = sanitizeInput(text);
+        if (clean == null || clean.isBlank()) return null;
         for (String alias : sortedAliases) {
-            if (text.contains(alias)) {
+            if (clean.contains(alias)) {
                 String venueId = aliasToVenueId.get(alias);
                 return venueIdToCanonical.getOrDefault(venueId, alias);
             }
@@ -204,12 +222,13 @@ public class AttractionAliasMatcher {
     }
 
     public boolean containsAnotherVenue(String text, String selectedStopId) {
-        if (text == null || text.isBlank()) return false;
+        String clean = sanitizeInput(text);
+        if (clean == null || clean.isBlank()) return false;
         String stop = selectedStopId == null ? "" : selectedStopId.toLowerCase(Locale.ROOT)
                 .replace("cq-", "").replace("day1-", "").replace("day2-", "").replace("day3-", "").trim();
 
         for (String alias : sortedAliases) {
-            if (text.contains(alias)) {
+            if (clean.contains(alias)) {
                 String venueId = aliasToVenueId.get(alias);
                 String normalizedVenue = venueId != null ? venueId.toLowerCase(Locale.ROOT).replace("cq-", "") : "";
                 boolean isCurrent = (selectedStopId != null && selectedStopId.contains(alias))
@@ -224,10 +243,11 @@ public class AttractionAliasMatcher {
     }
 
     public List<String> findExplicitAttractionIds(String prompt, Set<String> validIds) {
-        if (prompt == null || prompt.isBlank()) return Collections.emptyList();
+        String clean = sanitizeInput(prompt);
+        if (clean == null || clean.isBlank()) return Collections.emptyList();
         Set<String> matched = new LinkedHashSet<>();
         for (String alias : sortedAliases) {
-            if (prompt.contains(alias)) {
+            if (clean.contains(alias)) {
                 String venueId = aliasToVenueId.get(alias);
                 if (venueId != null && (validIds == null || validIds.contains(venueId))) {
                     matched.add(venueId);
@@ -235,6 +255,27 @@ public class AttractionAliasMatcher {
             }
         }
         return new ArrayList<>(matched);
+    }
+
+    public List<String> findExplicitAttractionIdsInOrder(String prompt, Set<String> validIds) {
+        String clean = sanitizeInput(prompt);
+        if (clean == null || clean.isBlank()) return Collections.emptyList();
+        record MatchPos(String venueId, int index) {}
+        List<MatchPos> matches = new ArrayList<>();
+        Set<String> seenVenues = new HashSet<>();
+        for (String alias : sortedAliases) {
+            int idx = clean.indexOf(alias);
+            if (idx >= 0) {
+                String venueId = aliasToVenueId.get(alias);
+                if (venueId != null && (validIds == null || validIds.contains(venueId))) {
+                    if (seenVenues.add(venueId)) {
+                        matches.add(new MatchPos(venueId, idx));
+                    }
+                }
+            }
+        }
+        matches.sort(Comparator.comparingInt(MatchPos::index));
+        return matches.stream().map(MatchPos::venueId).toList();
     }
 
     public Map<String, String> getAliasToVenueIdMap() {

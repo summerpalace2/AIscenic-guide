@@ -182,11 +182,8 @@ public class PlanVerifier {
                 }
             }
 
-            // Check 4: Cross-district extreme bounce in same half-day (GS-01)
+            // Check 4: Cross-district extreme bounce in same half-day (GS-01, 包括餐饮站点)
             for (int j = 1; j < stops.size(); j++) {
-                if (isDiningStop(stops.get(j - 1)) || isDiningStop(stops.get(j))) {
-                    continue;
-                }
                 String prevDist = safeText(stops.get(j - 1).get("district"));
                 String currDist = safeText(stops.get(j).get("district"));
                 boolean isPrevSuburban = isDistantSuburban(prevDist);
@@ -197,7 +194,7 @@ public class PlanVerifier {
                             dayNumber,
                             safeText(stops.get(j).get("id")),
                             safeText(stops.get(j).get("venueId")),
-                            "景点" + stops.get(j - 1).get("name") + "（" + prevDist + "）与" + stops.get(j).get("name") + "（" + currDist + "）相距远且交通耗时极长，在同一日紧凑切换不可行。",
+                            "站点" + stops.get(j - 1).get("name") + "（" + prevDist + "）与" + stops.get(j).get("name") + "（" + currDist + "）相距远且交通耗时极长，在同一日紧凑切换不可行。",
                             true
                     ));
                 }

@@ -105,6 +105,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
+        <!-- Caffeine 高性能本地内存缓存 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <!-- Jackson JSR310（Java 8 时间类型序列化支持） -->
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>

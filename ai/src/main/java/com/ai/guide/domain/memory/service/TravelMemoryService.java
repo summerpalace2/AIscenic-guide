@@ -85,29 +85,19 @@ public class TravelMemoryService {
 
     public List<TravelMemory> list(String userId) {
         if (!validUser(userId) || jdbc == null) return List.of();
-        // 7 天滚动保留（7-Day Retention TTL）：右侧记忆流只展示 7 天内的近期记录
-        long sevenDaysAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L;
         return jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
-                        "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' AND created_at >= ? ORDER BY updated_at DESC LIMIT 30",
+                        "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC LIMIT 50",
                 (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
                         rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
-                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId, sevenDaysAgo);
+                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
     }
 
     /**
-     * 7天自动淘汰任务：每小时执行一次，自动清理创建满 7 天的近期记忆记录。
-     * 注意：左侧由此提炼出的前置提示词（profilePrependPrompt）永久有效，不受影响。
+     * 废除 7 天过期限制与清理，记忆长期永久保存。
      */
     @Scheduled(fixedDelay = 60 * 60 * 1000L, initialDelay = 5 * 60 * 1000L)
     public void cleanupExpiredMemories() {
-        if (jdbc == null) return;
-        long sevenDaysAgo = System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L;
-        try {
-            jdbc.update("DELETE FROM travel_memory WHERE created_at < ?", sevenDaysAgo);
-            jdbc.update("DELETE FROM travel_memory_candidate WHERE created_at < ? AND status != 'PENDING'", sevenDaysAgo);
-        } catch (Exception e) {
-            log.warn("[TravelMemory] Expired memories cleanup skipped: {}", e.getMessage());
-        }
+        // 废除 7 天过期限制与清理，记忆长期永久保存
     }
 
     public Candidate suggest(String message) {
@@ -138,19 +128,27 @@ public class TravelMemoryService {
             return new Candidate("ACCESSIBILITY", "出行需要无障碍、少台阶与便于休息的安排", 0.95);
         }
 
-        // 饮食偏好：火锅、重辣、江湖菜
-        if (text.matches(".*(火锅|老火锅|九宫格|串串|冷锅串串|美蛙鱼头|麻辣|喜辣|爱吃辣|能吃辣|喜欢.*辣|多点辣|偏好.*辣|推荐.*辣|辣的食物|重口味|重辣|微辣|无辣不欢|嗜辣|江湖菜|毛血旺|辣子鸡|水煮鱼|川菜|烧烤).*")) {
-            return new Candidate("DIET", "饮食偏好麻辣、地道重庆火锅与江湖菜风味", 0.94);
-        }
-
-        // 饮食偏好：过敏、忌口、禁忌
+        // 饮食偏好：过敏、忌口、禁忌（最高优门禁，DEF-R3-03）
         if (text.matches(".*(过敏|忌口|清真|素食|纯素|不能吃花生|海鲜过敏|不吃内脏|忌内脏|乳糖不耐).*")) {
             return new Candidate("DIET", "饮食有明确限制或过敏禁忌，需优先确认可选餐食", 0.96);
         }
 
-        // 饮食偏好：清淡、少辣、少油
-        if (text.matches(".*(不吃辣|不能吃辣|少辣|清淡|不辣|不吃香菜|不吃.*海鲜|不吃肉|少油|少盐|免葱|养生餐).*")) {
+        // 饮食偏好：双重否定吃辣（如：“不是不吃辣”、“并非不吃辣”，识别为吃辣偏好）
+        if (text.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*")) {
+            return new Candidate("DIET", "饮食偏好麻辣、地道重庆火锅与江湖菜风味", 0.94);
+        }
+
+        // 饮食偏好：清淡、少辣、不吃辣（否定优先门禁，DEF-R3-03）
+        if (text.matches(".*(不吃辣|不能吃辣|少辣|清淡|不辣|免辣|怕辣|不能碰辣|不吃香菜|不吃.*海鲜|不吃肉|少油|少盐|免葱|养生餐).*")) {
+            if (text.matches(".*(火锅|串串|汤锅).*")) {
+                return new Candidate("DIET", "饮食偏好清淡少辣（火锅偏好清汤或番茄锅，避开辛辣刺激）", 0.94);
+            }
             return new Candidate("DIET", "饮食偏好清淡少辣，避开刺激性食物与忌口", 0.92);
+        }
+
+        // 饮食偏好：火锅、重辣、江湖菜（排除否定语义后的正向偏好）
+        if (text.matches(".*(火锅|老火锅|九宫格|串串|冷锅串串|美蛙鱼头|麻辣|喜辣|爱吃辣|能吃辣|喜欢.*辣|多点辣|偏好.*辣|推荐.*辣|辣的食物|重口味|重辣|微辣|无辣不欢|嗜辣|江湖菜|毛血旺|辣子鸡|水煮鱼|川菜|烧烤).*")) {
+            return new Candidate("DIET", "饮食偏好麻辣、地道重庆火锅与江湖菜风味", 0.94);
         }
 
         // 饮食/休闲偏好：老茶馆、盖碗茶、茶楼、品茗慢生活
@@ -299,6 +297,52 @@ public class TravelMemoryService {
         }
     }
 
+    private void handleConflictingMemories(String userId, String newContent) {
+        if (!validUser(userId) || newContent == null || newContent.isBlank() || jdbc == null) return;
+        long now = System.currentTimeMillis();
+        List<Map<String, Object>> active = jdbc.queryForList(
+                "SELECT id, content FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED'", userId);
+        boolean anyCancelled = false;
+        for (Map<String, Object> row : active) {
+            String oldId = (String) row.get("id");
+            String oldContent = (String) row.get("content");
+            if (oldContent == null) continue;
+
+            boolean conflict = false;
+            // 辣度相反：若新确认的记忆包含“清淡|少辣|不吃辣|免辣”，查询该用户已有 CONFIRMED 记忆中若包含“麻辣|喜辣|爱吃辣|辣味|吃辣”，将其 UPDATE status = 'DELETED'；反之，若新记忆包含“麻辣|辣味|吃辣|火锅”，则将包含“清淡|不吃辣”的旧记录 UPDATE status = 'DELETED'
+            boolean newDoubleNegSpicy = newContent.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
+            boolean oldDoubleNegSpicy = oldContent.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
+
+            boolean newIsMild = !newDoubleNegSpicy && newContent.matches(".*(清淡|少辣|不吃辣|免辣).*");
+            boolean newIsSpicy = newDoubleNegSpicy || newContent.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|火锅).*");
+
+            boolean oldIsMild = !oldDoubleNegSpicy && oldContent.matches(".*(清淡|少辣|不吃辣|免辣).*");
+            boolean oldIsSpicy = oldDoubleNegSpicy || oldContent.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|火锅).*");
+
+            if (newIsMild && oldIsSpicy) {
+                conflict = true;
+            } else if (newIsSpicy && oldIsMild) {
+                conflict = true;
+            }
+
+            // 体力相反：若新记忆是“少走路|少爬坡|平路|避台阶”，则将已有的“特种兵|暴走|多走走”更新为 DELETED；反之亦然
+            if (newContent.matches(".*(少走路|少爬坡|平路|避台阶).*") && oldContent.matches(".*(特种兵|暴走|多走走).*")) {
+                conflict = true;
+            } else if (newContent.matches(".*(特种兵|暴走|多走走).*") && oldContent.matches(".*(少走路|少爬坡|平路|避台阶).*")) {
+                conflict = true;
+            }
+
+            if (conflict) {
+                jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ?", now, oldId, userId);
+                anyCancelled = true;
+                log.info("[TravelMemory] Cancelled conflicting memory id={}, oldContent='{}' due to newContent='{}'", oldId, oldContent, newContent);
+            }
+        }
+        if (anyCancelled) {
+            try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
+        }
+    }
+
     public TravelMemory confirm(String userId, String content, String category, String sourceType) {
         return confirm(userId, content, category, sourceType, "");
     }
@@ -309,6 +353,7 @@ public class TravelMemoryService {
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
         String safeCategory = normalizeCategory(category);
         long now = System.currentTimeMillis();
+        handleConflictingMemories(userId, safeContent);
         List<TravelMemory> same = jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
                         "FROM travel_memory WHERE user_id = ? AND category = ? AND content = ? AND status = 'CONFIRMED' LIMIT 1",
                 (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
@@ -333,6 +378,7 @@ public class TravelMemoryService {
         requireUser(userId);
         String safeContent = clean(content, 240);
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
+        handleConflictingMemories(userId, safeContent);
         int changed = jdbc.update("UPDATE travel_memory SET content = ?, category = ?, source_type = 'USER_EDIT', confidence = 1.0, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'",
                 safeContent, normalizeCategory(category), System.currentTimeMillis(), id, userId);
         if (changed == 0) throw new IllegalArgumentException("旅行记忆不存在或无权修改");
@@ -439,7 +485,7 @@ public class TravelMemoryService {
                         rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
                         rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
 
-        String tasteTrait = null;
+        java.util.LinkedHashSet<String> tasteTraits = new java.util.LinkedHashSet<>();
         java.util.LinkedHashSet<String> diningTraits = new java.util.LinkedHashSet<>();
         String paceTrait = null;
         String scheduleTrait = null;
@@ -451,11 +497,16 @@ public class TravelMemoryService {
             String text = item.content();
             if (text == null || text.isBlank()) continue;
 
-            // 1. 口味与辣度冲突替换（以最新出现的记忆为准）
-            if (text.matches(".*(清淡|少辣|微辣|不吃辣|不能吃辣|怕辣|不喜辣|免辣).*")) {
-                tasteTrait = "饮食偏好清淡温润与少辣";
-            } else if (text.matches(".*(麻辣|地道火锅|重辣|特辣|喜辣|爱吃辣|九宫格|江湖菜).*")) {
-                tasteTrait = "饮食偏好麻辣浓郁与地道火锅";
+            // 1. 口味与辣度（集合化收集）
+            boolean doubleNegSpicy = text.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
+            if (doubleNegSpicy || text.matches(".*(麻辣|火锅|重辣|特辣|喜辣|爱吃辣|辣味|吃辣|九宫格|江湖菜).*")) {
+                tasteTraits.add("饮食偏好麻辣火锅与地道巴渝风味");
+            }
+            if (!doubleNegSpicy && text.matches(".*(清淡|少辣|微辣|不吃辣|不能吃辣|怕辣|免辣).*")) {
+                tasteTraits.add("饮食偏好清淡少辣");
+            }
+            if (text.matches(".*(甜品|甜食|糖水|吃甜|冰粉|凉糕).*")) {
+                tasteTraits.add("喜好特色甜品糖水与点心");
             }
 
             // 2. 餐饮特色品类
@@ -463,7 +514,6 @@ public class TravelMemoryService {
             if (text.matches(".*(老火锅|九宫格|串串).*")) diningTraits.add("地道老火锅");
             if (text.matches(".*(茶馆|老茶馆|盖碗茶|喝茶).*")) diningTraits.add("特色老茶馆与品茗");
             if (text.matches(".*(咖啡|下午茶).*")) diningTraits.add("特色咖啡与下午茶");
-            if (text.matches(".*(甜品|糖水).*")) diningTraits.add("甜品糖水");
             if (text.matches(".*(小吃|小面|抄手).*")) diningTraits.add("地道特色小吃");
 
             // 3. 体力节奏冲突替换（以最新出现的记忆为准）
@@ -502,8 +552,8 @@ public class TravelMemoryService {
         StringBuilder sb = new StringBuilder();
         sb.append("【用户专属旅行偏好画像】\n");
 
-        List<String> diets = new ArrayList<>();
-        if (tasteTrait != null) diets.add(tasteTrait);
+        java.util.LinkedHashSet<String> diets = new java.util.LinkedHashSet<>();
+        diets.addAll(tasteTraits);
         diets.addAll(diningTraits);
         if (!diets.isEmpty()) {
             sb.append("• 饮食喜好：").append(String.join("、", diets)).append("；\n");
@@ -596,7 +646,9 @@ public class TravelMemoryService {
     }
     private String clean(String value, int max) {
         if (value == null) return "";
-        String compact = value.replaceAll("[\\r\\n\\t]+", " ").trim().replaceAll("\\s{2,}", " ");
+        String normalized = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
+                .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "");
+        String compact = normalized.replaceAll("[\\r\\n\\t]+", " ").trim().replaceAll("\\s{2,}", " ");
         return compact.substring(0, Math.min(Math.max(0, max), compact.length()));
     }
     private boolean validUser(String userId) { return userId != null && !userId.isBlank() && !"anonymous".equalsIgnoreCase(userId); }

@@ -65,15 +65,15 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     @org.springframework.beans.factory.annotation.Autowired
     public AmapRouteService(
             AmapWebServiceClient client,
-            @Value("${amap.web-service.timeout-ms:6000}") int requestTimeoutMs,
-            @Value("${amap.web-service.route-timeout-ms:6500}") int routeTimeoutMs,
-            @Value("${amap.web-service.max-concurrency:4}") int maxConcurrency,
+            @Value("${amap.web-service.timeout-ms:5000}") int requestTimeoutMs,
+            @Value("${amap.web-service.route-timeout-ms:4500}") int routeTimeoutMs,
+            @Value("${amap.web-service.max-concurrency:16}") int maxConcurrency,
             @Value("${amap.web-service.request-cache.enabled:true}") boolean requestCacheEnabled,
             @Value("${amap.web-service.request-cache.dedup-enabled:true}") boolean requestDedupEnabled,
-            @Value("${amap.web-service.request-cache.max-entries:256}") int requestCacheMaxEntries,
-            @Value("${amap.web-service.request-cache.poi-ttl-ms:60000}") long poiCacheTtlMs,
-            @Value("${amap.web-service.request-cache.route-ttl-ms:10000}") long routeCacheTtlMs,
-            @Value("${amap.web-service.request-cache.weather-ttl-ms:60000}") long weatherCacheTtlMs,
+            @Value("${amap.web-service.request-cache.max-entries:2048}") int requestCacheMaxEntries,
+            @Value("${amap.web-service.request-cache.poi-ttl-ms:1800000}") long poiCacheTtlMs,
+            @Value("${amap.web-service.request-cache.route-ttl-ms:1800000}") long routeCacheTtlMs,
+            @Value("${amap.web-service.request-cache.weather-ttl-ms:600000}") long weatherCacheTtlMs,
             @Value("${amap.web-service.qps-cooldown-ms:2000}") long qpsCooldownMs) {
         this(client, requestTimeoutMs, routeTimeoutMs, maxConcurrency,
                 new AmapRequestCache(requestCacheMaxEntries), requestCacheEnabled,
@@ -83,8 +83,8 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
 
     /** Convenient constructor for focused unit tests. */
     public AmapRouteService(AmapWebServiceClient client) {
-        this(client, 6000, 6500, 2, new AmapRequestCache(256), true, true,
-                60000, 10000, 60000, 2000);
+        this(client, 5000, 4500, 16, new AmapRequestCache(2048), true, true,
+                1800000L, 1800000L, 600000L, 2000);
     }
 
     AmapRouteService(AmapWebServiceClient client,
@@ -117,7 +117,15 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         this.requestTimeoutMs = Math.max(500, requestTimeoutMs);
         this.routeTimeoutMs = Math.max(500, routeTimeoutMs);
         this.maxConcurrency = Math.max(1, maxConcurrency);
-        this.executor = Executors.newFixedThreadPool(this.maxConcurrency, daemonThreadFactory("amap-route-"));
+        this.executor = new ThreadPoolExecutor(
+                this.maxConcurrency,
+                this.maxConcurrency,
+                60L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(256),
+                daemonThreadFactory("amap-route-"),
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
         int orchestrationThreads = Math.max(2, this.maxConcurrency);
         this.orchestrationExecutor = new ThreadPoolExecutor(
                 orchestrationThreads,
@@ -366,9 +374,11 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
 
     private RouteOutcome routeTransit(String origin, String destination, String city,
                                       String originPoi, String destinationPoi) {
+        // 增加 15 分钟时变桶因子，保障公交/地铁在末班车停运或高峰切换时动态刷新，杜绝长 TTL 导致停运误导
+        long timeBucket = System.currentTimeMillis() / (15 * 60 * 1000L);
         AmapRequestCache.RequestKey key = key("route-transit", "v5+v3/direction/transit/integrated",
-                origin, destination, city, "0", originPoi, destinationPoi, "cost,polyline");
-        return requestCache.getOrLoad(key, routeCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+                origin, destination, city, "0", originPoi, destinationPoi, "cost,polyline", "slot-" + timeBucket);
+        return requestCache.getOrLoad(key, Math.min(routeCacheTtlNanos, ttlNanos(15 * 60 * 1000L)), requestCacheEnabled, requestDedupEnabled,
                 () -> loadTransit(origin, destination, city, originPoi, destinationPoi), this::successful);
     }
 

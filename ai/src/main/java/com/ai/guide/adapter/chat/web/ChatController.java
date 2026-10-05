@@ -57,6 +57,46 @@ public class ChatController {
         return chatApplicationService.streamChat(command);
     }
 
+    public record ChatStreamRequest(
+            String message,
+            String sessionId,
+            String mode,
+            String plannerSessionId,
+            String tripId,
+            String currentVersion,
+            String activeDay,
+            String activeStopId,
+            String activeStopName,
+            String planContext
+    ) {}
+
+    /**
+     * SSE 流式对话端点（POST 请求，避免超长大模型上下文与敏感数据产生 414 URI Too Long）
+     */
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> chatStreamPost(@RequestBody(required = false) ChatStreamRequest request) {
+        ChatStreamRequest req = request != null ? request : new ChatStreamRequest("", "default", "normal", "", "", "", "", "", "", "");
+        String userId = UserContext.getUserId();
+        String username = UserContext.getUsername();
+        String role = UserContext.getRole();
+
+        ChatStreamCommand command = ChatStreamCommand.of(
+                req.message() == null ? "" : req.message(),
+                req.sessionId() == null ? "default" : req.sessionId(),
+                req.mode() == null ? "normal" : req.mode(),
+                req.plannerSessionId() == null ? "" : req.plannerSessionId(),
+                req.tripId() == null ? "" : req.tripId(),
+                req.currentVersion() == null ? "" : req.currentVersion(),
+                req.activeDay() == null ? "" : req.activeDay(),
+                req.activeStopId() == null ? "" : req.activeStopId(),
+                req.activeStopName() == null ? "" : req.activeStopName(),
+                req.planContext() == null ? "" : req.planContext(),
+                userId, username, role
+        );
+
+        return chatApplicationService.streamChat(command);
+    }
+
     /**
      * 结构化对话接口
      */

@@ -6,6 +6,9 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -110,7 +113,14 @@ public final class AmapRequestCache {
 
     private static <T> T join(CompletableFuture<Object> future) {
         try {
-            return value(future.join());
+            return value(future.get(7, TimeUnit.SECONDS));
+        } catch (TimeoutException failure) {
+            throw new RuntimeException("高德接口请求防抖等待超时", failure);
+        } catch (ExecutionException failure) {
+            throw propagate(failure.getCause() == null ? failure : failure.getCause());
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("高德接口请求防抖等待被中断", failure);
         } catch (CompletionException failure) {
             throw propagate(failure.getCause() == null ? failure : failure.getCause());
         }

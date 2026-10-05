@@ -316,6 +316,7 @@
     "district": "渝中区",
     "category": "休闲茶歇",
     "mealTypes": [
+      "TEA_BREAK",
       "LUNCH",
       "DINNER"
     ],
@@ -342,6 +343,7 @@
     "district": "渝中区",
     "category": "休闲茶歇",
     "mealTypes": [
+      "TEA_BREAK",
       "LUNCH",
       "DINNER"
     ],
@@ -445,6 +447,7 @@
     "district": "南岸区",
     "category": "清淡不辣",
     "mealTypes": [
+      "TEA_BREAK",
       "LUNCH",
       "DINNER"
     ],
@@ -462,7 +465,40 @@
       "龙门浩江景",
       "老妈蹄花",
       "清淡轻餐",
+      "老茶馆",
+      "盖碗茶",
+      "特色茶歇",
       "长辈少走路"
+    ]
+  },
+  {
+    "id": "dining-na-tea-nanbinlu",
+    "name": "南滨路江畔特色老茶馆与观景茶舍(龙门浩店)",
+    "district": "南岸区",
+    "category": "休闲茶歇",
+    "mealTypes": [
+      "TEA_BREAK",
+      "LUNCH",
+      "DINNER"
+    ],
+    "location": "106.592000,29.549000",
+    "specialtyDish": "原盅重庆沱茶、碧潭飘雪盖碗茶、传统桃片糕、温热醪糟小汤圆、老红糖手工糍粑",
+    "averageCost": "人均约 25-38 元",
+    "duration": "约 60 分钟",
+    "distanceDesc": "步行约 120 米即达",
+    "summary": "坐拥南滨路一线江景与两江汇合开阔视野，紧邻长江索道南站与龙门浩老街，竹椅方桌，微风拂面。",
+    "recommendationReason": "全平街无陡坡台阶，长椅与观江茶席密集，极其适合长辈索道过江后品茗歇脚，静赏渝中半岛璀璨夜景。",
+    "spicinessLevel": "NONE",
+    "elderFriendly": true,
+    "tone": "gold",
+    "tags": [
+      "江景茶馆",
+      "传统盖碗茶",
+      "休闲茶歇",
+      "长辈友好",
+      "南滨路夜景",
+      "特色甜点",
+      "特色老茶馆"
     ]
   },
   {
@@ -1222,6 +1258,7 @@
     "district": "沙坪坝区",
     "category": "休闲茶歇",
     "mealTypes": [
+      "TEA_BREAK",
       "LUNCH",
       "DINNER"
     ],
@@ -1251,6 +1288,7 @@
     "district": "渝中区",
     "category": "休闲茶歇",
     "mealTypes": [
+      "TEA_BREAK",
       "LUNCH",
       "DINNER"
     ],

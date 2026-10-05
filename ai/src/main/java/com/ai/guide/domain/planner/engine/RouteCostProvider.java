@@ -112,8 +112,9 @@ public class RouteCostProvider {
         if (geoRouteGateway == null || !geoRouteGateway.isConfigured()) return null;
         finalEdgeProviderCalls.incrementAndGet();
         try {
+            String city = resolveCity(origin, destination);
             RoutePairOutcome outcome = geoRouteGateway.routePair(
-                    origin.getLocation(), destination.getLocation(), "重庆市",
+                    origin.getLocation(), destination.getLocation(), city,
                     queryKeyword(origin), queryKeyword(destination), preference
             );
             if (outcome == null || outcome.selected() == null
@@ -131,6 +132,51 @@ public class RouteCostProvider {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String resolveCity(Attraction origin, Attraction destination) {
+        String city = detectCityFromAttraction(origin);
+        if (city != null) return city;
+        city = detectCityFromAttraction(destination);
+        if (city != null) return city;
+        return "重庆市";
+    }
+
+    private String detectCityFromAttraction(Attraction attraction) {
+        if (attraction == null) return null;
+        String id = safe(attraction.getId()).toLowerCase(java.util.Locale.ROOT);
+        String name = safe(attraction.getName());
+        String district = safe(attraction.getDistrict());
+        String location = safe(attraction.getLocation());
+
+        if (id.startsWith("cd-") || name.contains("成都") || district.contains("成都")
+                || district.matches(".*(锦江|青羊|金牛|武侯|成华|高新|天府新区|双流|郫都|温江|新都|龙泉驿|都江堰).*")) {
+            return "成都市";
+        }
+        if (id.startsWith("xa-") || name.contains("西安") || district.contains("西安")
+                || district.matches(".*(碑林|雁塔|新城|莲湖|未央|灞桥|长安|临潼).*")) {
+            return "西安市";
+        }
+        if (id.startsWith("cq-") || name.contains("重庆") || district.contains("重庆")
+                || district.matches(".*(渝中|江北|南岸|沙坪坝|九龙坡|大渡口|渝北|巴南|北碚).*")) {
+            return "重庆市";
+        }
+
+        if (location.contains(",")) {
+            try {
+                String[] parts = location.split(",");
+                double lng = Double.parseDouble(parts[0].trim());
+                double lat = Double.parseDouble(parts[1].trim());
+                if (lng >= 103.0 && lng <= 104.9 && lat >= 30.0 && lat <= 31.5) {
+                    return "成都市";
+                }
+                if (lng >= 108.0 && lng <= 109.8 && lat >= 33.8 && lat <= 34.9) {
+                    return "西安市";
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
     public RouteCost estimateFromCoordinates(Attraction origin, Attraction destination, String preference) {

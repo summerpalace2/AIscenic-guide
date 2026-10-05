@@ -252,9 +252,12 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("time", time);
         stop.put("startTime", time);
         stop.put("duration", dining.duration());
+        boolean isTeaBreakStop = "TEA_BREAK".equalsIgnoreCase(dining.diningType())
+                || "休闲茶歇".equals(dining.diningType())
+                || (dining.name() != null && (dining.name().contains("茶") || dining.name().contains("咖啡")));
         stop.put("type", "DINING");
-        stop.put("category", "美食");
-        stop.put("icon", "餐");
+        stop.put("category", isTeaBreakStop ? "茶歇" : "美食");
+        stop.put("icon", isTeaBreakStop ? "茶" : "餐");
         stop.put("tone", dining.tone());
         stop.put("summary", dining.summary());
         stop.put("detail", dining.specialtyDish() + " · " + dining.summary());

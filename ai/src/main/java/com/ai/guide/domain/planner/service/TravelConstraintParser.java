@@ -235,7 +235,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
         List<String> mustVisit = extractMustVisit(source);
         Map<String, ConstraintOrigin> origins = new LinkedHashMap<>();
-        if (source.contains("重庆")) origins.put("destination", ConstraintOrigin.PROMPT);
+        if (source.contains("重庆") || source.contains("成都") || source.contains("西安")) origins.put("destination", ConstraintOrigin.PROMPT);
         if (startPlaceFound) origins.put("startPlace", ConstraintOrigin.PROMPT);
         if (timeBudgetFound) origins.put("timeBudgetMinutes", ConstraintOrigin.PROMPT);
         if (arrivalFound || intervalArrival != null) origins.put("arrivalAt", ConstraintOrigin.PROMPT);
@@ -256,8 +256,14 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
                 ? shadowExtractor.extractShadowPreferences(source)
                 : null;
 
+        String resolvedDestination = "重庆";
+        if (source != null) {
+            if (source.contains("成都")) resolvedDestination = "成都";
+            else if (source.contains("西安")) resolvedDestination = "西安";
+        }
+
         return TravelConstraints.builder()
-                .destination("重庆")
+                .destination(resolvedDestination)
                 .startPlace(extractedStartPlace)
                 .timeBudgetMinutes(timeBudgetMinutes)
                 .arrivalAt(arrivalAt)

@@ -43,12 +43,12 @@ public class ConversationIntentClassifier {
 
     private static final Pattern COUNT_PATTERN = Pattern.compile("少(?:推荐|安排|去|逛|看)?\\s*([一二两123456789\\d]+)\\s*个");
     private static final Pattern CANDIDATE_INDEX_PATTERN = Pattern.compile("(?:换成|选|应用)第?\\s*([一二两三四五12345])\\s*个?(?:方案|候选)?");
-    private static final Pattern REPLACEMENT_CONNECTOR_PATTERN = Pattern.compile("替换成|替换为|换成|换为|改成|改为|替代");
+    private static final Pattern REPLACEMENT_CONNECTOR_PATTERN = Pattern.compile("替换成|替换为|换成|换为|改成|改为|替代|调整为|调整成|换作|换到|改到");
     private static final Pattern GENERIC_DAY_PATTERN = Pattern.compile("(?:第\\s*([一二三四五六七八九十\\d]+)\\s*天|day\\s*(\\d+))", Pattern.CASE_INSENSITIVE);
 
 
     public PlanAdjustmentIntent classify(String message, PlanPageContext context) {
-        String text = message == null ? "" : message.trim();
+        String text = message == null ? "" : message.replaceAll("[\\u200B-\\u200D\\uFEFF]", "").trim();
         PlanPageContext effectiveContext = context == null ? new PlanPageContext() : context;
         Integer activeDay = effectiveContext.getActiveDay() == null ? 1 : effectiveContext.getActiveDay();
         String selectedStop = effectiveContext.getSelectedStopId();
@@ -77,31 +77,39 @@ public class ConversationIntentClassifier {
         if (bm.find()) {
             bracketedTarget = bm.group(1).trim();
         }
+        boolean mentionsMealSlot = text.matches(".*(午餐|午饭|中餐|中午|早餐|早点|早饭|晚餐|晚饭|夜宵|宵夜).*");
         String targetStop = mentionsSelectedStop && selectedStop != null && !selectedStop.isBlank()
-                ? selectedStop : (selectedStop != null && !selectedStop.isBlank() && !hasOtherVenue(text, selectedStop) ? selectedStop : null);
-        if (targetStop == null && selectedStop != null && !selectedStop.isBlank() && bracketedTarget != null) {
+                ? selectedStop : (selectedStop != null && !selectedStop.isBlank() && !hasOtherVenue(text, selectedStop) && !mentionsMealSlot ? selectedStop : null);
+        if (targetStop == null && selectedStop != null && !selectedStop.isBlank() && bracketedTarget != null && !mentionsMealSlot) {
             targetStop = selectedStop;
         }
 
-        // 明确的“源景点 -> 目标景点”替换必须优先于泛化的候选推荐。
-        // 例如“把三峡博物馆替换成大剧院”“把最后一个晚间行程改成大剧院”。
+        // 明确的“源景点/餐饮 -> 目标景点/餐饮”替换必须优先于泛化的候选推荐。
+        // 例如“把三峡博物馆替换成大剧院”“把午餐改成【陈胖子火锅(总店)】”。
         Matcher replacementMatcher = REPLACEMENT_CONNECTOR_PATTERN.matcher(text);
         if (replacementMatcher.find()) {
             String sourceText = text.substring(0, replacementMatcher.start());
             String replacementText = text.substring(replacementMatcher.end());
+            boolean isGenericAlt = replacementText.matches(".*(同片区|附近|其他|别的|更多|不同|室内|低步行|少走路|小众|平替).*(景点|地点|室内|场馆|候选|备选|方案).*");
             String sourceVenueId = extractMentionedVenueId(sourceText);
             String sourceVenueAlias = extractMentionedVenueAlias(sourceText);
             String replacementVenueId = extractMentionedVenueId(replacementText);
-            String replacementVenueName = cleanVenueText(replacementText);
+            String replacementVenueName = isGenericAlt ? null : cleanVenueText(replacementText);
             boolean relativeSource = sourceText.matches(".*(最后一个|最后一站|末尾|收尾|晚间最后|晚上最后).*");
-            if (replacementVenueId != null && (sourceVenueId != null || relativeSource || targetStop != null)) {
+            boolean mealSource = sourceText.matches(".*(午餐|午饭|中餐|中午|早餐|早饭|早点|晚餐|晚饭|夜宵|宵夜).*");
+            if ((replacementVenueId != null || (replacementVenueName != null && !replacementVenueName.isBlank()))
+                    && (sourceVenueId != null || relativeSource || mealSource || targetStop != null || bracketedTarget != null)) {
+                String targetRef = mentionsSelectedStop ? "当前景点"
+                        : (sourceVenueAlias != null ? sourceVenueAlias
+                        : (mealSource ? (sourceText.contains("午") || sourceText.contains("中") ? "午餐" : (sourceText.contains("早") ? "早餐" : "晚餐"))
+                        : (relativeSource ? sourceText.trim() : null)));
                 return PlanAdjustmentIntent.builder()
                         .type(ConversationIntentType.SUGGEST_REPLACEMENTS)
                         .operation("REPLACE_STOP")
                         .scope("STOP")
                         .dayNumber(targetDay)
-                        .targetStopId(targetStop)
-                        .targetStopReference(mentionsSelectedStop ? "当前景点" : (sourceVenueAlias != null ? sourceVenueAlias : (relativeSource ? sourceText.trim() : null)))
+                        .targetStopId(mealSource ? null : targetStop)
+                        .targetStopReference(targetRef)
                         .targetAttractionId(replacementVenueId)
                         .replacementPlaceName(replacementVenueName)
                         .replacementPlaceId(replacementVenueId)
@@ -116,12 +124,14 @@ public class ConversationIntentClassifier {
 
         // A normal chat answer can contain a narrative plan such as “方案A：文化室内线” or “方案A：南山本地辣味收尾，泉水鸡正餐”.
         // When the user then says “选这个帮我改行程”, there is no server-side Proposal yet.
-        boolean selectsNarrativePlan = (text.matches(".*(?:方案\\s*[A-Za-zＡ-Ｚ]|选(?:择)?(?:这个|它|这套|这条)|就(?:选|用)这个|按这个(?:方案)?|采用这个(?:方案)?).*")
+        boolean selectsNarrativePlan = !text.contains("之后接") && !text.contains("后面接") && !text.contains("接上") && !text.contains("接入")
+                && ((text.matches(".*(?:方案\\s*[A-Za-zＡ-Ｚ]|选(?:择)?(?:这个|它|这套|这条)|就(?:选|用)这个|按这个(?:方案)?|采用这个(?:方案)?).*")
                 && text.matches(".*(?:改|调整|修改|应用|重排|重新规划|行程|安排).*"))
-                || text.matches(".*(?:在当前行程草稿中|在行程中|在当前行程中)?(?:补充|新增|添加|加入|安排|串联|安排上|排入|纳入).*(?:段|线|片区|行程|观展|打卡).*")
-                || text.matches(".*在当前行程草稿中(?:补充|新增|添加|加入|调整|安排|放入).*");
+                || text.matches(".*(?:在当前行程草稿中|在行程中|在当前行程中)(?:补充|新增|添加|加入|安排|串联|安排上|排入|纳入).*(?:段|线|片区|行程|观展|打卡).*")
+                || text.matches(".*在当前行程草稿中(?:补充|新增|添加|加入|调整|安排|放入).*"));
         if (selectsNarrativePlan) {
-            boolean hasAttractionsInPlan = text.matches(".*(?:补充|新增|添加|加入|安排).*")
+            boolean hasAttractionsInPlan = text.matches(".*(?:补充|新增|添加|加入|安排|接入|接上|串联|排入|纳入).*")
+                    || aliasMatcher.extractMentionedVenueId(text) != null
                     || text.matches(".*(?:三峡博物馆|陈列馆|美术馆|博物馆|科技馆|动物园|大礼堂).*");
             boolean selectsDiningPlan = !hasAttractionsInPlan && text.matches(".*(美食|小吃|火锅|江湖菜|泉水鸡|辣子鸡|烤鱼|正餐|晚餐|午餐|早餐|早点|早饭|小面|面馆|面条|抄手|豆花|包子|油条|茶歇|饮品|餐厅|特色菜|辣味).*");
             if (selectsDiningPlan) {
@@ -195,7 +205,7 @@ public class ConversationIntentClassifier {
             // 快捷入口会把当前卡片名称写进文案，例如“请推荐【南温泉风景区】的
             // 同片区可替换景点”。这仍是在询问该卡片的替换候选，不能把名称误判
             // 为另一个目标而丢弃页面已选站点。
-            if (selectedStop != null && !selectedStop.isBlank()) {
+            if (selectedStop != null && !selectedStop.isBlank() && !mentionsMealSlot) {
                 targetStop = selectedStop;
             }
 
@@ -212,13 +222,16 @@ public class ConversationIntentClassifier {
                         .confidence(0.9)
                         .build();
             }
+            String reqPlaceName = (bracketedTarget != null && (bracketedTarget.contains("火锅") || bracketedTarget.contains("餐") || bracketedTarget.contains("店") || bracketedTarget.contains("馆")))
+                    ? bracketedTarget : null;
             return PlanAdjustmentIntent.builder()
                     .type(ConversationIntentType.SUGGEST_REPLACEMENTS)
                     .operation("REPLACE_STOP")
                     .scope("STOP")
                     .dayNumber(targetDay)
-                    .targetStopId(targetStop)
+                    .targetStopId(mentionsMealSlot ? null : targetStop)
                     .targetStopReference(bracketedTarget != null ? bracketedTarget : (mentionsSelectedStop ? "当前景点" : extractMentionedVenueAlias(text)))
+                    .replacementPlaceName(reqPlaceName)
                     .preferences(preferences)
                     .conditions(conditions)
                     .pinnedStopIds(new ArrayList<>(pinned))
@@ -351,7 +364,31 @@ public class ConversationIntentClassifier {
             }
         }
 
-        // 2. 景点替换与重排意图 (REPLACE_STOP / REPLAN_DAY)
+        // 2. 局部重排与优化意图 (REPLAN_DAY)
+        boolean hasReplanOrOptimize = text.matches(".*(优化.*(行程|段落|路线)|避免爬台阶|电梯下行).*");
+        if (hasReplanOrOptimize) {
+            int effectiveTargetDay = targetDay != null ? targetDay : (activeDay > 0 ? activeDay : 1);
+            List<String> replanPrefs = new ArrayList<>(preferences);
+            if (text.matches(".*(避免爬台阶|少走路|平路|电梯下行).*")) {
+                addIfMissing(replanPrefs, true, "LOW_WALKING");
+            }
+            return PlanAdjustmentIntent.builder()
+                    .type(ConversationIntentType.REPLAN_DAY)
+                    .operation("REPLAN_DAY")
+                    .scope("DAY")
+                    .dayNumber(effectiveTargetDay)
+                    .targetDayReference("第" + effectiveTargetDay + "天")
+                    .targetAttractionId(matchedVenueId)
+                    .targetStopId(targetStop)
+                    .preferences(replanPrefs)
+                    .conditions(conditions)
+                    .pinnedStopIds(new ArrayList<>(pinned))
+                    .rawMessage(text)
+                    .confidence(0.93)
+                    .build();
+        }
+
+        // 3. 景点替换与重排意图 (REPLACE_STOP / REPLAN_DAY)
         boolean hasReplaceKeywords = text.matches(".*(不想去|换一个|替换|换掉|有没有替换|有替换方案吗|换个地方|推荐其他|改一下|改一改|调整一下|调整|重新排).*")
                 || text.matches(".*(改|调整).*(第[一二三四五六七八九十\\d]+天|今天|明天|首日|末日|最后一天).*");
         if (hasReplaceKeywords) {
@@ -406,7 +443,10 @@ public class ConversationIntentClassifier {
         }
 
         // 3. 添加景点或餐饮 (ADD_STOP)
-        if (text.matches(".*(加上|添加|新增|加入|放进|排入|安排上|想去|想吃|想喝|去吃|去喝|来点|来个|安排个|加个|多安排|多去|把.*加到|增加|补充|补上|纳入).*") && !text.contains("不想去") && !text.contains("删除") && !text.contains("去掉")) {
+        if ((text.matches(".*(加上|添加|新增|加入|放进|排入|安排上|想去|想吃|想喝|想看|想逛|看演出|观演|看剧|去看|逛街|逛商圈|逛逛|购物|去吃|去喝|来点|来个|安排个|加个|多安排|多去|把.*加到|增加|补充|补上|纳入|接着去|接上|接入|衔接|串联|游览|之后接|后面接|先去|先到|先逛|顺路去|顺道去|之前去|前去|入住|想住|→|->).*")
+                || text.matches(".*(?:在|去).*(?:逛街|购物|看演出|看剧|看电影|玩).*")
+                || text.matches(".*(?:接入动线|接入行程|确认接入|接入这一段|按此接入|去.*之前.*去|在.*前.*去|在.*之前.*).*"))
+                && !text.contains("不想去") && !text.contains("删除") && !text.contains("去掉") && !text.contains("删掉")) {
             if (targetStop != null && mentionsSelectedStop) {
                 return PlanAdjustmentIntent.builder()
                         .type(ConversationIntentType.ADD_STOP)
@@ -422,30 +462,41 @@ public class ConversationIntentClassifier {
                         .build();
             }
 
-            if (matchedVenueId != null || !preferences.isEmpty()) {
-                return PlanAdjustmentIntent.builder()
-                        .type(ConversationIntentType.ADD_STOP)
-                        .operation("ADD_STOP")
-                        .scope("DAY")
-                        .dayNumber(explicitDay)
-                        .targetAttractionId(matchedVenueId)
-                        .requestedVenueName(matchedVenueId)
-                        .preferences(preferences)
-                        .conditions(conditions)
-                        .pinnedStopIds(new ArrayList<>(pinned))
-                        .rawMessage(text)
-                        .confidence(0.9)
-                        .build();
+            // 若提到了具体的景点或加站目标
+            Matcher addPoiMatcher = Pattern.compile("(?:加上|添加|加入|放进|排入|安排上|想去|想吃|想喝|想看|想逛|看演出|观演|看剧|去看|逛街|购物|去吃|去喝|来点|来个|安排个|加个|多安排|多去|把|增加)(?:一个)?(.+?)(?:加到|放到|排进|吧|啊|呢|。|！|!|\\?|？|$)").matcher(text);
+            Matcher atPoiMatcher = Pattern.compile("(?:在|去)(.+?)(?:逛街|购物|看演出|看剧|看戏|玩|溜达|打卡)(?:\\s*\\d+(?:个)?(?:小时|钟头|分钟))?").matcher(text);
+            String potentialPoi = null;
+            if (addPoiMatcher.find()) {
+                potentialPoi = addPoiMatcher.group(1).trim();
+            } else if (atPoiMatcher.find()) {
+                potentialPoi = atPoiMatcher.group(1).trim();
             }
 
-            // 若提到了具体的景点名称
-            Matcher addPoiMatcher = Pattern.compile("(?:加上|添加|加入|放进|排入|安排上|想去|想吃|想喝|去吃|去喝|来点|来个|安排个|加个|多安排|多去|把|增加)(?:一个)?(.+?)(?:加到|放到|排进|吧|啊|呢|。|！|!|\\?|？|$)").matcher(text);
-            if (addPoiMatcher.find()) {
-                String potentialPoi = addPoiMatcher.group(1).trim();
-                // 剔除后缀噪声词，如“的景点”、“景点”、“打卡点”
-                potentialPoi = potentialPoi.replaceAll("(?:的景点|的打卡点|景点|打卡点)+$", "").trim();
+            if (potentialPoi != null) {
+                // 剔除前缀量词与后缀噪声词，如“一处”、“停留”、“的景点”、“打卡点”
+                potentialPoi = potentialPoi.replaceAll("^[《<【\\[]|[》>】\\]]$", "").trim();
+                potentialPoi = potentialPoi.replaceAll("^(?:一处|一个|一家|一间|个)?", "").trim();
+                // 避免复合长句污染（如：洪崖洞看夜景，中途吃个甜品）
+                potentialPoi = potentialPoi.split("[，,、]|(?:中途|顺便|顺路|然后|接着|并|之后|并且|顺带|同时|吃个|喝个)")[0].trim();
+                potentialPoi = potentialPoi.replaceAll("(?:大剧场演出|大剧场|剧场演出|演出|看夜景|看江景|赏夜景|看日落|看日出|看表演|看演出|打卡|游玩|看看|逛逛|逛街|观光|游览|散步|拍照|停留|小歇|的景点|的打卡点|景点|打卡点)+$", "").trim();
+                potentialPoi = potentialPoi.replaceAll("^[《<【\\[]|[》>】\\]]$", "").trim();
+
                 if (!potentialPoi.isBlank() && !potentialPoi.contains("地方") && !potentialPoi.contains("什么")) {
                     String dynamicVenueId = extractMentionedVenueId(potentialPoi);
+                    String venueAlias = extractMentionedVenueAlias(potentialPoi);
+                    if (venueAlias == null && dynamicVenueId != null) {
+                        venueAlias = extractMentionedVenueAlias(text);
+                    }
+                    String finalPoiName = venueAlias != null ? venueAlias : potentialPoi;
+
+                    List<String> enrichedPrefs = new ArrayList<>(preferences);
+                    if (text.matches(".*(演出|剧场|剧院|看剧|观演|大剧院|看戏).*") && !enrichedPrefs.contains("THEATER")) {
+                        enrichedPrefs.add("THEATER");
+                    }
+                    if (text.matches(".*(逛街|购物|商圈|步行街|买买买).*") && !enrichedPrefs.contains("SHOPPING")) {
+                        enrichedPrefs.add("SHOPPING");
+                    }
+
                     if (dynamicVenueId != null) {
                         return PlanAdjustmentIntent.builder()
                                 .type(ConversationIntentType.ADD_STOP)
@@ -453,24 +504,28 @@ public class ConversationIntentClassifier {
                                 .scope("DAY")
                                 .dayNumber(explicitDay)
                                 .targetAttractionId(dynamicVenueId)
-                                .requestedVenueName(potentialPoi)
-                                .preferences(preferences)
+                                .requestedVenueName(finalPoiName)
+                                .preferences(enrichedPrefs)
                                 .conditions(conditions)
                                 .pinnedStopIds(new ArrayList<>(pinned))
                                 .rawMessage(text)
                                 .confidence(0.92)
                                 .build();
                     }
-                    if (potentialPoi.matches(".*(甜点|甜食|糖水|小吃|美食|茶馆|咖啡|下午茶|小憩|火锅|老火锅|早点|餐饮|歇脚).*")) {
-                        List<String> diningPrefs = new ArrayList<>(preferences);
-                        if (!diningPrefs.contains("FOOD")) diningPrefs.add("FOOD");
+                    boolean isGenericCraving = PlanAdjustmentService.isGenericDiningCraving(potentialPoi);
+                    if (isGenericCraving || potentialPoi.matches(".*(甜点|甜食|糖水|小吃|美食|茶馆|茶室|茶楼|盖碗茶|品茗|喝茶|老茶馆|咖啡|下午茶|小憩|火锅|老火锅|早点|餐饮|歇脚).*")) {
+                        if (!enrichedPrefs.contains("FOOD")) enrichedPrefs.add("FOOD");
+                        if (potentialPoi.matches(".*(茶|茶馆|茶室|茶楼|盖碗茶|品茗|喝茶|老茶馆|咖啡|下午茶|小憩|歇脚|甜|糖水|冰粉|凉糕|点心).*")
+                                && !enrichedPrefs.contains("TEA_BREAK")) {
+                            enrichedPrefs.add("TEA_BREAK");
+                        }
                         return PlanAdjustmentIntent.builder()
                                 .type(ConversationIntentType.ADD_STOP)
                                 .operation("ADD_STOP")
                                 .scope("DAY")
                                 .dayNumber(explicitDay)
-                                .requestedVenueName(potentialPoi)
-                                .preferences(diningPrefs)
+                                .requestedVenueName(isGenericCraving ? null : finalPoiName)
+                                .preferences(enrichedPrefs)
                                 .conditions(conditions)
                                 .pinnedStopIds(new ArrayList<>(pinned))
                                 .rawMessage(text)
@@ -483,14 +538,34 @@ public class ConversationIntentClassifier {
                             .operation("ADD_STOP")
                             .scope("DAY")
                             .dayNumber(explicitDay)
-                            .requestedVenueName(potentialPoi)
-                            .preferences(preferences)
+                            .requestedVenueName(finalPoiName)
+                            .preferences(enrichedPrefs)
                             .conditions(conditions)
                             .pinnedStopIds(new ArrayList<>(pinned))
                             .rawMessage(text)
                             .confidence(0.92)
                             .build();
                 }
+            }
+
+            if (matchedVenueId != null || !preferences.isEmpty() || text.contains("动线") || text.contains("接入")) {
+                String venueAlias = extractMentionedVenueAlias(text);
+                String fallbackName = preferences.contains("FOOD")
+                        ? (text.matches(".*(茶|盖碗茶|品茗).*") ? "特色老茶馆" : (text.matches(".*(甜|糖水|冰粉).*") ? "特色糖水甜品" : "特色美食"))
+                        : (text.contains("动线") ? "新动线" : "新增推荐点");
+                return PlanAdjustmentIntent.builder()
+                        .type(ConversationIntentType.ADD_STOP)
+                        .operation("ADD_STOP")
+                        .scope("DAY")
+                        .dayNumber(explicitDay)
+                        .targetAttractionId(matchedVenueId)
+                        .requestedVenueName(venueAlias != null ? venueAlias : (matchedVenueId != null ? matchedVenueId : fallbackName))
+                        .preferences(preferences)
+                        .conditions(conditions)
+                        .pinnedStopIds(new ArrayList<>(pinned))
+                        .rawMessage(text)
+                        .confidence(0.9)
+                        .build();
             }
 
             // 未说明增加哪个景点
@@ -508,7 +583,22 @@ public class ConversationIntentClassifier {
         }
 
         // 4. 删除景点 (REMOVE_STOP)
-        if (text.matches(".*(删除|去掉|不要|取消|移除).*(景点|站点|卡片|这个).*") || text.startsWith("删除") || text.startsWith("去掉") || text.startsWith("移除")) {
+        boolean isRemoveIntent = text.matches(".*(删除|删掉|去掉|不要|取消|移除|拿掉|去除).*(景点|站点|卡片|这个).*")
+                || text.matches(".*(?:把|将).*(景点|站点|卡片|地标|那个).*(删除|删掉|去掉|不要|取消|移除|拿掉|去除).*")
+                || text.matches(".*(?:把|将)(.+?)(?:删除|删掉|去掉|拿掉|去除).*")
+                || text.startsWith("删除") || text.startsWith("删掉") || text.startsWith("去掉") || text.startsWith("移除");
+        if (isRemoveIntent) {
+            String targetStopRef = null;
+            Matcher mRef1 = Pattern.compile("(?:把|将)(.+?)(?:删除|删掉|去掉|拿掉|去除|不要|取消|移除)").matcher(text);
+            if (mRef1.find()) {
+                targetStopRef = mRef1.group(1).trim();
+            } else {
+                Matcher mRef2 = Pattern.compile("(?:删除|删掉|去掉|拿掉|去除|不要|取消|移除)(.+?)(?:吧|啊|呢|。|！|!|\\?|？|$)").matcher(text);
+                if (mRef2.find()) {
+                    targetStopRef = mRef2.group(1).trim();
+                }
+            }
+
             if (targetStop != null) {
                 return PlanAdjustmentIntent.builder()
                         .type(ConversationIntentType.REMOVE_STOP)
@@ -516,11 +606,32 @@ public class ConversationIntentClassifier {
                         .scope("STOP")
                         .dayNumber(targetDay)
                         .targetStopId(targetStop)
+                        .targetStopReference(targetStopRef)
                         .pinnedStopIds(new ArrayList<>(pinned))
                         .rawMessage(text)
                         .confidence(0.9)
                         .build();
             }
+
+            String mentionedVenId = targetStopRef != null ? extractMentionedVenueId(targetStopRef) : null;
+            boolean hasRelativeRef = targetStopRef != null && (targetStopRef.contains("午餐") || targetStopRef.contains("午饭")
+                    || targetStopRef.contains("后面") || targetStopRef.contains("前面") || targetStopRef.contains("最后") || targetStopRef.contains("第一")
+                    || targetStopRef.contains("后一个") || targetStopRef.contains("前一个") || targetStopRef.contains("后") || targetStopRef.contains("前"));
+
+            if (mentionedVenId != null || hasRelativeRef) {
+                return PlanAdjustmentIntent.builder()
+                        .type(ConversationIntentType.REMOVE_STOP)
+                        .operation("REMOVE_STOP")
+                        .scope("STOP")
+                        .dayNumber(targetDay)
+                        .targetAttractionId(mentionedVenId)
+                        .targetStopReference(targetStopRef)
+                        .pinnedStopIds(new ArrayList<>(pinned))
+                        .rawMessage(text)
+                        .confidence(0.9)
+                        .build();
+            }
+
             return PlanAdjustmentIntent.builder()
                     .type(ConversationIntentType.CLARIFICATION)
                     .operation("REMOVE_STOP")
@@ -550,11 +661,12 @@ public class ConversationIntentClassifier {
                     .build();
         }
 
-        boolean hasAdjustmentKeywords = text.matches(".*(?:在当前行程草稿中|在行程中)?(?:补充|新增|添加|增加|加上|加入|放入|排入|换成|替换|改成|删除|去掉|减少|调整|修改|重新规划|重排).*");
+        boolean hasAdjustmentKeywords = text.matches(".*(?:在当前行程草稿中|在行程中)?(?:补充|新增|添加|增加|加上|加入|放入|排入|换成|替换|改成|删除|去掉|减少|调整|修改|重新规划|重排|接上|接入|之后接|后面接|接着去|衔接|串联|游览).*");
 
-        boolean isPlaceQuestion = !hasAdjustmentKeywords && (text.matches(".*(为什么|推荐理由|怎么走|几点|门票|多少钱|好吃|好玩|开灯|什么时候|有何特色|值不值得|注意事项|评价|介绍一下|好走吗|方便吗|平不平).*")
+        boolean isPlaceQuestion = !hasAdjustmentKeywords && (text.matches(".*(为什么|推荐理由|怎么走|几点|门票|多少钱|好吃|好玩|开灯|什么时候|有何特色|值不值得|注意事项|评价|介绍一下|好走吗|方便吗|平不平|有没有|有什么|哪些|哪里有|哪儿有|哪有|推荐一下|推荐点|推荐个).*")
                 || text.matches(".*(?:适合|能否|可以).*(?:吗|呢|不|谁|人群).*")
-                || text.matches(".*(?:有什么|什么).*(?:历史|特色|亮点|好玩|推荐).*")
+                || text.matches(".*(?:有什么|什么|有没有|哪些|有啥).*(?:历史|特色|亮点|好玩|推荐|吃|喝|玩|茶|甜|餐|店|馆|小吃|美食|火锅|烧烤|抄手|面).*")
+                || text.matches(".*(?:茶馆|茶楼|茶室|盖碗茶|甜品|甜食|糖水|冰粉|凉糕|火锅|烧烤|小面|小吃|美食).*(?:有没有|推荐|哪家|怎么样|如何).*")
                 || text.endsWith("？") || text.endsWith("?"));
 
         // 5.1 身体受限 / 手术康复 / 行动不便 / 轮椅无障碍低体力减负意图
@@ -634,7 +746,7 @@ public class ConversationIntentClassifier {
         }
 
         // 10. 初始规划或周边规划意图 (PLAN)
-        boolean hasPlanningKeywords = text.matches(".*(规划|旅游规划|行程|攻略|带我玩|怎么玩|玩两天|玩三天|两日游|三日游|自由行|旅游路线|旅行路线).*")
+        boolean hasPlanningKeywords = text.matches(".*(全新规划|从头规划|重新规划|定制行程|做个攻略|规划行程|旅游规划|怎么玩两天|两日游|三日游).*")
                 || text.matches(".*(?:我在|人在|现在在|目前在|从).*(?:规划|推荐|路线|安排|半天|小时|钟头|时|分钟|天).*")
                 || text.matches(".*(?:附近|周边).*(?:逛逛|转转|玩玩|看看|走走|景点|推荐).*");
         if (hasPlanningKeywords) {
@@ -772,6 +884,15 @@ public class ConversationIntentClassifier {
         if (text == null) return null;
         String cleaned = text.trim().replaceFirst("^[：:，,、\\s]+", "");
         cleaned = cleaned.replaceFirst("[。！!？?；;，,、]+$", "").trim();
+        Matcher bm = Pattern.compile("[【\\[](.+?)[】\\]]").matcher(cleaned);
+        if (bm.find()) {
+            return bm.group(1).trim();
+        }
+        if (cleaned.matches(".*[（(].*[）)]?$")) {
+            if (!cleaned.matches(".*[（(][^）)]*店[）)]$")) {
+                cleaned = cleaned.replaceFirst("[（(][^）)]*[）)]?$", "").trim();
+            }
+        }
         return cleaned.isBlank() ? null : cleaned;
     }
 

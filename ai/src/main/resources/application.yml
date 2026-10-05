@@ -99,21 +99,21 @@ amap:
   web-service:
     base-url: "${AMAP_WEB_SERVICE_BASE_URL:https://restapi.amap.com}"
     key: "${AMAP_WEB_SERVICE_KEY:${AMAP_KEY:}}"
-    timeout-ms: "${AMAP_WEB_SERVICE_TIMEOUT_MS:6000}"
-    route-timeout-ms: "${AMAP_WEB_SERVICE_ROUTE_TIMEOUT_MS:6500}"
-    max-concurrency: "${AMAP_WEB_SERVICE_MAX_CONCURRENCY:2}"
+    timeout-ms: "${AMAP_WEB_SERVICE_TIMEOUT_MS:5000}"
+    route-timeout-ms: "${AMAP_WEB_SERVICE_ROUTE_TIMEOUT_MS:4500}"
+    max-concurrency: "${AMAP_WEB_SERVICE_MAX_CONCURRENCY:16}"
     # 规划请求内的路线段批处理调度边界；不使用公共 ForkJoinPool。
-    hydration-concurrency: "${AMAP_WEB_SERVICE_HYDRATION_CONCURRENCY:2}"
-    hydration-queue-capacity: "${AMAP_WEB_SERVICE_HYDRATION_QUEUE_CAPACITY:16}"
+    hydration-concurrency: "${AMAP_WEB_SERVICE_HYDRATION_CONCURRENCY:8}"
+    hydration-queue-capacity: "${AMAP_WEB_SERVICE_HYDRATION_QUEUE_CAPACITY:64}"
     qps-cooldown-ms: "${AMAP_WEB_SERVICE_QPS_COOLDOWN_MS:2000}"
     poi-max-keywords: "${AMAP_WEB_SERVICE_POI_MAX_KEYWORDS:3}"
     request-cache:
       enabled: "${AMAP_WEB_SERVICE_REQUEST_CACHE_ENABLED:true}"
       dedup-enabled: "${AMAP_WEB_SERVICE_REQUEST_DEDUP_ENABLED:true}"
-      max-entries: "${AMAP_WEB_SERVICE_REQUEST_CACHE_MAX_ENTRIES:256}"
-      poi-ttl-ms: "${AMAP_WEB_SERVICE_POI_CACHE_TTL_MS:60000}"
-      route-ttl-ms: "${AMAP_WEB_SERVICE_ROUTE_CACHE_TTL_MS:10000}"
-      weather-ttl-ms: "${AMAP_WEB_SERVICE_WEATHER_CACHE_TTL_MS:60000}"
+      max-entries: "${AMAP_WEB_SERVICE_REQUEST_CACHE_MAX_ENTRIES:2048}"
+      poi-ttl-ms: "${AMAP_WEB_SERVICE_POI_CACHE_TTL_MS:1800000}"
+      route-ttl-ms: "${AMAP_WEB_SERVICE_ROUTE_CACHE_TTL_MS:1800000}"
+      weather-ttl-ms: "${AMAP_WEB_SERVICE_WEATHER_CACHE_TTL_MS:600000}"
 
 # 标准服务探针：BFF/部署平台统一读取 /actuator/health，避免把“接口不存在”误报为后端离线。
 management:

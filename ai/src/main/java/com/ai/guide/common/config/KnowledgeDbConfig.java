@@ -648,7 +648,12 @@ public class KnowledgeDbConfig {
                 List<Map<String, Object>> list = mapper.readValue(is, new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
 
                 String sql = "INSERT INTO dining_venue (id, name, district, category, meal_types, location, specialty_dish, average_cost, duration, distance_desc, summary, recommendation_reason, spiciness_level, elder_friendly, tone, tags) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING";
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT(id) DO UPDATE SET name=excluded.name, district=excluded.district, category=excluded.category, " +
+                        "meal_types=excluded.meal_types, location=excluded.location, specialty_dish=excluded.specialty_dish, " +
+                        "average_cost=excluded.average_cost, duration=excluded.duration, distance_desc=excluded.distance_desc, " +
+                        "summary=excluded.summary, recommendation_reason=excluded.recommendation_reason, " +
+                        "spiciness_level=excluded.spiciness_level, elder_friendly=excluded.elder_friendly, tone=excluded.tone, tags=excluded.tags";
                 int inserted = 0;
                 for (Map<String, Object> map : list) {
                     boolean elder = !Boolean.FALSE.equals(map.get("elderFriendly"));

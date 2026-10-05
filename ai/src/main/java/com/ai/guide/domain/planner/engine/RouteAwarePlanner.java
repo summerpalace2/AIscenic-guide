@@ -6,7 +6,10 @@ import com.ai.guide.domain.planner.model.ScoreBreakdown;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.TravelDateResolver;
-import com.ai.guide.domain.planner.service.ChongqingTopographyKnowledge;
+import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
+import com.ai.guide.domain.planner.model.topography.ElevationFlow;
+import com.ai.guide.domain.planner.service.TopographyStrategyRouter;
+import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
@@ -21,6 +24,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -42,22 +46,34 @@ public class RouteAwarePlanner {
     private final PlanVerifier planVerifier;
     private final LocalPlanRepairer localPlanRepairer;
     private final PlannerMetricsLogger metricsLogger;
+    private final TopographyStrategyRouter topographyStrategyRouter;
 
     @Autowired
     public RouteAwarePlanner(RouteCostProvider routeCostProvider,
                              PlanVerifier planVerifier,
                              LocalPlanRepairer localPlanRepairer,
-                             @Autowired(required = false) PlannerMetricsLogger metricsLogger) {
+                             @Autowired(required = false) PlannerMetricsLogger metricsLogger,
+                             @Autowired(required = false) TopographyStrategyRouter topographyStrategyRouter) {
         this.routeCostProvider = routeCostProvider;
         this.planVerifier = planVerifier;
         this.localPlanRepairer = localPlanRepairer;
         this.metricsLogger = metricsLogger != null ? metricsLogger : new PlannerMetricsLogger();
+        this.topographyStrategyRouter = topographyStrategyRouter;
     }
 
     public RouteAwarePlanner(RouteCostProvider routeCostProvider,
                              PlanVerifier planVerifier,
                              LocalPlanRepairer localPlanRepairer) {
-        this(routeCostProvider, planVerifier, localPlanRepairer, new PlannerMetricsLogger());
+        this(routeCostProvider, planVerifier, localPlanRepairer, new PlannerMetricsLogger(), null);
+    }
+
+    private TopographyStrategyPort resolveTopographyStrategy(TravelConstraints constraints) {
+        String city = (constraints != null && constraints.getDestination() != null)
+                ? constraints.getDestination() : "重庆";
+        if (topographyStrategyRouter != null) {
+            return topographyStrategyRouter.route(city);
+        }
+        return new ChongqingTopographyStrategy();
     }
 
     public record CandidateEvaluation(
@@ -121,7 +137,7 @@ public class RouteAwarePlanner {
                         stop.put("routeDataStatus", best.routeCostFromPrevious().status().name());
                     }
                     if (previousAttraction != null) {
-                        String topographyTransitHint = ChongqingTopographyKnowledge.generateTransitCharacteristicHint(
+                        String topographyTransitHint = resolveTopographyStrategy(constraints).generateTransitCharacteristicHint(
                                 previousAttraction, selected, constraints.getTransportPreference());
                         if (topographyTransitHint != null && !topographyTransitHint.isBlank()) {
                             stop.put("topographyTransitHint", topographyTransitHint);
@@ -177,7 +193,11 @@ public class RouteAwarePlanner {
                     }
                 }
             }
-            currentDays = localPlanRepairer.repair(currentDays, verification, constraints, catalogList);
+            List<Map<String, Object>> nextDays = localPlanRepairer.repair(currentDays, verification, constraints, catalogList);
+            if (Objects.equals(currentDays, nextDays)) {
+                break;
+            }
+            currentDays = nextDays;
         }
 
         return currentDays;
@@ -277,7 +297,8 @@ public class RouteAwarePlanner {
             double timePreferenceBonus = slot.preferredPredicate().test(candidate) ? 25.0 : 0.0;
 
             // 1. 折返惩罚（Zig-zag Penalty）：杜绝同一天在“山顶 ↔ 滨江”反复横跳或频繁来回跨江
-            double zigZagPenalty = ChongqingTopographyKnowledge.calculateZigZagPenalty(currentDayAttractions, candidate);
+            TopographyStrategyPort topoStrategy = resolveTopographyStrategy(constraints);
+            double zigZagPenalty = topoStrategy.calculateZigZagPenalty(currentDayAttractions, candidate);
 
             // 2. 顺势而下加分与爬坡减分（Downhill First for Low-Walking / Elder-Friendly）
             double topographyBonus = 0.0;
@@ -286,11 +307,11 @@ public class RouteAwarePlanner {
                         || (constraints.getCompanions() != null && constraints.getCompanions().contains("父母"))
                         || (constraints.getRawPrompt() != null && (constraints.getRawPrompt().contains("少走")
                                 || constraints.getRawPrompt().contains("轻松") || constraints.getRawPrompt().contains("坡")));
-                ChongqingTopographyKnowledge.ElevationFlow flow = ChongqingTopographyKnowledge.detectElevationFlow(previous, candidate);
+                ElevationFlow flow = topoStrategy.detectElevationFlow(previous, candidate);
                 if (isLowWalking) {
-                    if (flow == ChongqingTopographyKnowledge.ElevationFlow.DOWNHILL) {
+                    if (flow == ElevationFlow.DOWNHILL) {
                         topographyBonus += 25.0; // 顺山势下坡，长辈游极度舒适
-                    } else if (flow == ChongqingTopographyKnowledge.ElevationFlow.UPHILL) {
+                    } else if (flow == ElevationFlow.UPHILL) {
                         topographyBonus -= 30.0; // 逆山势爬坡，长辈体力消耗过大
                     }
                 }
@@ -396,8 +417,9 @@ public class RouteAwarePlanner {
         int districtScore = 0;
         // 起点邻近加分（START_PLACE_DISTRICT_PROXIMITY）仅在第1天起步阶段生效；
         // 当后续已有行程且面临跨江时，严禁因初始起点区位加分而强制跨江拉扯
+        TopographyStrategyPort topoStrategy = resolveTopographyStrategy(c);
         boolean allowStartPlaceProximity = (day == 1)
-                && (previous == null || ChongqingTopographyKnowledge.detectRiverCrossing(previous, a) == ChongqingTopographyKnowledge.RiverCrossingType.NONE);
+                && topoStrategy.allowStartPlaceProximity(previous, a);
         if (allowStartPlaceProximity && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
             String sp = c.getStartPlace();
             if ((sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) && "江津区".equals(a.getDistrict())) {

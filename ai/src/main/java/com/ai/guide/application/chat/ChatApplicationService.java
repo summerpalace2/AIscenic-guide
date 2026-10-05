@@ -97,6 +97,10 @@ public class ChatApplicationService {
     @Autowired(required = false)
     private IntentRadarService intentRadarService;
 
+    public void setGeoRouteGateway(GeoRouteGatewayPort geoRouteGateway) {
+        this.geoRouteGateway = geoRouteGateway;
+    }
+
     @Value("${chat.stream.timeout-ms:45000}")
     private long streamTimeoutMs;
 
@@ -146,12 +150,15 @@ public class ChatApplicationService {
                 .timeout(Duration.ofMillis(pipelineTimeout))
                 .onErrorResume(error -> {
                     boolean timedOut = error instanceof TimeoutException;
+                    String sessionKey = buildSessionKey(command.sessionId(), userId);
+                    String fallbackReply = timedOut ? "本次请求等待超时，可重新提问。" : "AI 服务暂时不可用，请稍后重试";
+                    redisChatMemory.addAsync(sessionKey, List.of(new AssistantMessage(fallbackReply)));
                     log.warn("[CHAT_STREAM_PIPELINE_END] session={} kind={} latencyMs={}",
-                            buildSessionKey(command.sessionId(), userId), timedOut ? "PIPELINE_TIMEOUT" : "PIPELINE_ERROR", pipelineTimeout);
+                            sessionKey, timedOut ? "PIPELINE_TIMEOUT" : "PIPELINE_ERROR", pipelineTimeout);
                     return Flux.just(
                             ServerSentEvent.<String>builder()
                                     .event("error")
-                                    .data(timedOut ? "本次请求等待超时，可重新提问。" : "AI 服务暂时不可用，请稍后重试")
+                                    .data(fallbackReply)
                                     .build(),
                             ServerSentEvent.<String>builder().event("done").data("complete").build());
                 });
@@ -195,9 +202,9 @@ public class ChatApplicationService {
                 retrieval = ChatRetrieval.notNeeded("问候语不需要知识库检索。");
             } else if (ctx.intent() == IntentService.Intent.CHITCHAT) {
                 retrieval = ChatRetrieval.notNeeded("闲聊内容不需要知识库检索。");
-            } else if (ctx.intent() == IntentService.Intent.COMPLAINT) {
-                log.info("[Chat] 负面情绪/投诉 detected, skipping knowledge");
-                retrieval = ChatRetrieval.notNeeded("投诉或情绪表达不需要知识库检索。");
+            } else if (ctx.intent() == IntentService.Intent.COMPLAINT && !hasSubstantiveInquiry(message)) {
+                log.info("[Chat] 纯负面情绪/投诉 detected, skipping knowledge");
+                retrieval = ChatRetrieval.notNeeded("纯情绪表达不需要知识库检索。");
             } else if (shouldSkipKnowledge(message)) {
                 retrieval = ChatRetrieval.notNeeded("简短回应不需要知识库检索。");
             } else {
@@ -277,14 +284,26 @@ public class ChatApplicationService {
                         }
                     }
                 })
+                .doOnCancel(() -> {
+                    String partialReply = fullReply.toString();
+                    log.info("[CHAT_STREAM_CANCEL] session={} latencyMs={} partialLength={}",
+                            sessionKey, System.currentTimeMillis() - streamStart, partialReply.length());
+                    if (!partialReply.isEmpty()) {
+                        redisChatMemory.addAsync(sessionKey, List.of(new AssistantMessage(partialReply + " (已停止生成)")));
+                    } else {
+                        redisChatMemory.addAsync(sessionKey, List.of(new AssistantMessage("(回答已取消)")));
+                    }
+                })
                 .onErrorResume(error -> {
                     long durationMs = System.currentTimeMillis() - streamStart;
                     boolean timedOut = error instanceof TimeoutException;
+                    String fallbackReply = timedOut ? "本次回复等待超时，你可以重新提问。" : "AI 服务暂时不可用，请稍后重试";
+                    redisChatMemory.addAsync(sessionKey, List.of(new AssistantMessage(fallbackReply)));
                     log.warn("[CHAT_STREAM_END] session={} kind={} latencyMs={}",
                             sessionKey, timedOut ? "TIMEOUT" : "PROVIDER_ERROR", durationMs);
                     return Flux.just(ServerSentEvent.<String>builder()
                             .event("error")
-                            .data(timedOut ? "本次回复等待超时，你可以重新提问。" : "AI 服务暂时不可用，请稍后重试")
+                            .data(fallbackReply)
                             .build());
                 });
 
@@ -386,25 +405,41 @@ public class ChatApplicationService {
     private List<Message> buildMessages(String context, String message, String sessionKey, Ctx ctx,
                                         String planContext, boolean hasPlannerContext, String userId) {
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(SYSTEM_PROMPT));
 
+        // 1. 统一收拢系统提示词与元数据约束至首个 SystemMessage（DEF-R3-04，严格保持角色交替）
+        StringBuilder unifiedSystemPrompt = new StringBuilder(SYSTEM_PROMPT);
+
+        if (ctx != null && ctx.sentiment() != null && ctx.sentiment() != SentimentService.Sentiment.NEUTRAL && sentimentService != null) {
+            String hint = sentimentService.toPromptHint(message);
+            if (hint != null && !hint.isBlank()) {
+                unifiedSystemPrompt.append("\n\n").append(hint);
+            }
+        }
+
+        if (hasPlannerContext) {
+            String currentPlanContext = planPreferencePrompt(planContext);
+            if (!currentPlanContext.isEmpty()) {
+                unifiedSystemPrompt.append("\n\n").append(currentPlanContext);
+            }
+        } else {
+            String memoryContext = travelMemoryService == null || !travelMemoryEnabled(userId) ? "" : travelMemoryService.promptContext(userId);
+            if (!memoryContext.isEmpty()) {
+                unifiedSystemPrompt.append("\n\n").append(memoryContext);
+            }
+            String slotContext = slotTrackingService.toPromptContext(userId);
+            if (slotContext != null && !slotContext.isEmpty()
+                    && !ChatDomainPolicy.containsLegacyDomain(slotContext)) {
+                unifiedSystemPrompt.append("\n\n").append(slotContext);
+            }
+        }
+        messages.add(new SystemMessage(unifiedSystemPrompt.toString()));
+
+        // 2. 多轮历史记录（保持严格 User / Assistant 交替契约）
         List<Message> allHistory = redisChatMemory.get(sessionKey, 50);
         var compressed = getContextWithCompressedHistory(sessionKey, allHistory, userId);
         messages.addAll(ChatDomainPolicy.filterLegacyMessages(compressed));
 
-        if (hasPlannerContext) {
-            String currentPlanContext = planPreferencePrompt(planContext);
-            if (!currentPlanContext.isEmpty()) messages.add(new SystemMessage(currentPlanContext));
-        } else {
-            String memoryContext = travelMemoryService == null || !travelMemoryEnabled(userId) ? "" : travelMemoryService.promptContext(userId);
-            if (!memoryContext.isEmpty()) messages.add(new SystemMessage(memoryContext));
-            String slotContext = slotTrackingService.toPromptContext(userId);
-            if (slotContext != null && !slotContext.isEmpty()
-                    && !ChatDomainPolicy.containsLegacyDomain(slotContext)) {
-                messages.add(new SystemMessage(slotContext));
-            }
-        }
-
+        // 3. 当前轮次用户提问
         String userPrompt = buildUserPrompt(context, message);
         messages.add(new UserMessage(userPrompt));
 
@@ -587,21 +622,121 @@ public class ChatApplicationService {
         }
     }
 
+    private String extractExplicitTargetLocation(String text) {
+        if (text == null || text.isBlank()) return null;
+        // 1. Quoted places: 【解放碑】附近, "白象居"周边
+        java.util.regex.Matcher qm = Pattern.compile("【([^】]+)】|[“‘\"']([^”’\"']+)[”’\"']").matcher(text);
+        if (qm.find()) {
+            String q = qm.group(1) != null ? qm.group(1).trim() : qm.group(2).trim();
+            if (!q.isBlank() && q.length() <= 20) return q;
+        }
+
+        // 2. Patterns like "解放碑附近", "观音桥周边", "在南岸附近", "南滨路周边"
+        java.util.regex.Matcher m = Pattern.compile("(?:在|去|问|到|查)?([\\u4e00-\\u9fa5A-Za-z0-9_]{2,16}?)(?:附近|周边)").matcher(text);
+        if (m.find()) {
+            String candidate = m.group(1).trim();
+            // Filter out relative adverbs and pronouns
+            if (!candidate.matches(".*(这|那|我|你|他|她|它|咱们|当前|本地|此处|这里|那里|咱们这|本市|本区).*")) {
+                return candidate;
+            }
+        }
+
+        // 3. 通用行政区划与地标名胜自然问句（消除写死的特定地名列表，支持全国各区县与名胜）
+        java.util.regex.Matcher dm = Pattern.compile("([\\u4e00-\\u9fa5]{2,10}?(?:区|县|市|镇|古镇|老街|广场|商圈|步行街|公园|景区|山|寺|馆|洞|桥|城|村|道|路|街|街区|码头))(?=[\\s，,。！？!?]*?(?:有|没|推荐|怎么|好玩|好吃|能去|附近|周边|可去|必去|必吃|值不值得))").matcher(text);
+        if (dm.find()) {
+            String cand = dm.group(1).trim();
+            if (!cand.matches(".*(这|那|我|你|他|她|它|咱们|当前|本地|此处|这里|那里|咱们这|本市|本区).*")) {
+                return cand;
+            }
+        }
+
+        // 4. 自然问询模式：“[地点]有哪些/有什么[吃/喝/玩/逛/看/推荐]”
+        java.util.regex.Matcher qm2 = Pattern.compile("(?:在|去|到|想去|要去)?([\\u4e00-\\u9fa5A-Za-z0-9_]{2,12}?)(?:有哪些|有什么|好玩的|好吃的|怎么玩|怎么去|好不好玩|值不值得去|推荐吗|有哪些推荐|推荐什么)").matcher(text);
+        if (qm2.find()) {
+            String cand = qm2.group(1).trim();
+            if (!cand.matches(".*(这|那|我|你|他|她|它|咱们|当前|本地|此处|这里|那里|咱们这|本市|本区|今天|明天|后天|早上|中午|晚上|下午).*")) {
+                return cand;
+            }
+        }
+
+        // 5. 口语动词模式：“在/去/到/位于[地点]吃/玩/喝/逛/看/找/打卡”
+        java.util.regex.Matcher vm = Pattern.compile("(?:在|去|到|位于)([\\u4e00-\\u9fa5]{2,10}?)(?:有|吃|玩|喝|逛|看|找|打卡|推荐)").matcher(text);
+        if (vm.find()) {
+            String cand = vm.group(1).trim();
+            if (!cand.matches(".*(这|那|我|你|他|她|它|咱们|当前|本地|此处|这里|那里|咱们这|本市|本区).*")) {
+                return cand;
+            }
+        }
+
+        return null;
+    }
+
     private String appendNearbyPoiContext(String base, String message, String activeDay, String activeStopId, String activeStopName) {
         String text = message == null ? "" : message;
-        boolean food = text.matches(".*(附近|周边).*(吃|餐|美食|饭店|餐厅).*");
-        boolean play = text.matches(".*(附近|周边).*(玩|好玩|游玩|打卡).*");
-        if ((!food && !play) || activeStopName == null || activeStopName.isBlank() || geoRouteGateway == null) return base;
-        String keywords = activeStopName.trim() + (food ? " 附近餐饮" : " 附近景点");
-        PoiOutcome outcome = geoRouteGateway.searchPoi(keywords, "重庆市");
-        if (outcome.status() != OutcomeStatus.SUCCESS || outcome.candidates().isEmpty()) {
-            return base + "\n【当前行程位置】第" + activeDay + "天 · " + activeStopName + "。附近实时推荐暂不可用，请基于已知资料回答并提示用户可稍后查看地图。";
+        boolean food = text.matches(".*(吃|餐|美食|饭店|餐厅|茶馆|茶楼|喝茶|甜品|甜食|糖水|火锅|串串|小吃|烧烤|咖啡|奶茶|饮品|清吧|酒吧|西餐|日料|披萨|小面|快餐|早点|早餐|夜市).*");
+        boolean play = text.matches(".*(玩|好玩|游玩|打卡|景点|逛逛|看头|拍照|看景|观景|夜景|散步|遛弯|溜达|买买买|购物|商场|展|博物馆|艺术馆|大剧院|剧场).*");
+        boolean hasNearbyKeyword = text.matches(".*(附近|周边|周围|这块|片区|一带|路段).*");
+
+        if (!food && !play && !hasNearbyKeyword) return base;
+        if (geoRouteGateway == null) return base;
+
+        String explicitTarget = extractExplicitTargetLocation(text);
+        String anchor;
+        boolean isExplicitTarget = (explicitTarget != null && !explicitTarget.isBlank());
+
+        if (isExplicitTarget) {
+            anchor = explicitTarget;
+        } else if (activeStopName != null && !activeStopName.isBlank()) {
+            anchor = activeStopName.trim();
+        } else {
+            anchor = "重庆市";
         }
-        StringBuilder pois = new StringBuilder("\n【当前行程位置】第").append(activeDay).append("天 · ").append(activeStopName).append("。\n【实时周边推荐】");
+
+        // Determine specific search keyword
+        String suffix;
+        if (text.matches(".*(茶馆|茶楼|喝茶|盖碗茶).*")) {
+            suffix = " 附近茶馆";
+        } else if (text.matches(".*(甜品|甜食|糖水|冰粉|凉糕).*")) {
+            suffix = " 附近甜品";
+        } else if (text.matches(".*(火锅|串串|九宫格).*")) {
+            suffix = " 附近火锅";
+        } else if (text.matches(".*(烧烤|夜市|烤脑花|大排档).*")) {
+            suffix = " 附近烧烤";
+        } else if (food) {
+            suffix = " 附近餐饮";
+        } else {
+            suffix = " 附近景点";
+        }
+
+        String searchCity = "重庆市";
+        if (anchor.contains("成都")) searchCity = "成都市";
+        else if (anchor.contains("西安")) searchCity = "西安市";
+        else if (anchor.endsWith("市")) searchCity = anchor;
+
+        String keywords = anchor + suffix;
+        PoiOutcome outcome = geoRouteGateway.searchPoi(keywords, searchCity);
+        if (outcome.status() != OutcomeStatus.SUCCESS || outcome.candidates().isEmpty()) {
+            if (isExplicitTarget) {
+                return base + "\n【实时检索位置】" + anchor + "。附近实时推荐暂未搜到结果，请结合重庆文旅常识客观回答。";
+            } else if (activeStopName != null && !activeStopName.isBlank()) {
+                return base + "\n【当前行程参考位置】第" + activeDay + "天 · " + activeStopName + "。附近实时推荐暂不可用，请基于已知资料回答并提示用户可稍后查看地图。";
+            }
+            return base;
+        }
+
+        StringBuilder pois = new StringBuilder();
+        if (isExplicitTarget) {
+            pois.append("\n【用户询问目标位置】").append(anchor).append("。\n【实时周边推荐】");
+        } else if (activeStopName != null && !activeStopName.isBlank()) {
+            pois.append("\n【当前行程参考位置】第").append(activeDay).append("天 · ").append(activeStopName).append("。\n【实时周边推荐】");
+        } else {
+            pois.append("\n【实时推荐】");
+        }
+
         for (AmapResponseNormalizer.PoiCandidate poi : outcome.candidates().stream().limit(5).toList()) {
             pois.append("\n- ").append(poi.name()).append("（").append(poi.type()).append("，").append(poi.address()).append("）");
         }
-        pois.append("\n【回答约束】仅推荐以上实时结果；不要编造价格、营业状态或距离，提醒商家信息可能变化。");
+        pois.append("\n【回答约束】优先基于以上高德实时推荐客观解答；不要编造未核验的价格、营业状态或距离，提醒商家营业信息可能变化。");
         return base + pois;
     }
 
@@ -609,22 +744,33 @@ public class ChatApplicationService {
         if (runtimeAttractionDetailService == null) return base;
         String text = message == null ? "" : message;
 
-        String amapPoiId = null;
+        // 1. Check if user explicitly mentioned a specific place name in quotes or direct keywords
+        String explicitPlace = null;
+        java.util.regex.Matcher m = Pattern.compile("【([^】]+)】|[“‘\"']([^”’\"']+)[”’\"']").matcher(text);
+        if (m.find()) {
+            explicitPlace = m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+        }
+
         String targetName = null;
-        if (activeStopId != null && (activeStopId.startsWith("amap-") || activeStopId.startsWith("runtime-stop-"))) {
-            amapPoiId = activeStopId;
-            targetName = activeStopName;
-        }
+        String amapPoiId = null;
 
-        if (targetName == null || targetName.isBlank()) {
-            java.util.regex.Matcher m = Pattern.compile("【([^】]+)】|[“‘\"']([^”’\"']+)[”’\"']").matcher(text);
-            if (m.find()) {
-                targetName = m.group(1) != null ? m.group(1).trim() : m.group(2).trim();
+        if (explicitPlace != null && !explicitPlace.isBlank()) {
+            targetName = explicitPlace;
+            // If explicit place matches activeStopName, we can still use amapPoiId
+            if (activeStopName != null && activeStopName.contains(explicitPlace) && activeStopId != null) {
+                amapPoiId = activeStopId;
             }
-        }
-
-        if ((targetName == null || targetName.isBlank()) && activeStopName != null && !activeStopName.isBlank() && text.contains(activeStopName)) {
+        } else if (activeStopName != null && !activeStopName.isBlank() && text.contains(activeStopName)) {
+            // User explicitly referenced current activeStopName in sentence
             targetName = activeStopName.trim();
+            amapPoiId = activeStopId;
+        } else if (activeStopId != null && (activeStopId.startsWith("amap-") || activeStopId.startsWith("runtime-stop-"))) {
+            // Only if text is a general inquiry like "这个景点怎么样", "这里有什么好玩的", "怎么去" without mentioning a different place
+            String explicitLoc = extractExplicitTargetLocation(text);
+            if (explicitLoc == null || explicitLoc.equals(activeStopName)) {
+                amapPoiId = activeStopId;
+                targetName = activeStopName;
+            }
         }
 
         if (targetName == null || targetName.isBlank()) return base;
@@ -759,6 +905,13 @@ public class ChatApplicationService {
     private boolean shouldSkipKnowledge(String message) {
         if (message == null) return false;
         return CHITCHAT_PATTERN.matcher(message.trim()).find();
+    }
+
+    private boolean hasSubstantiveInquiry(String message) {
+        if (message == null || message.isBlank()) return false;
+        String text = message.trim();
+        return text.matches(".*(有什么|怎么|哪|推荐|换个|换成|想吃|想去|路线|有没有|能不能|可否|多少|门票|几点|好玩吗|好吃吗|合适吗|[?？]).*")
+                || text.length() >= 8;
     }
 }
 

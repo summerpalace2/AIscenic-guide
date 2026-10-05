@@ -300,4 +300,30 @@ class LlmIntentExtractorTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void testExtractBalancedJsonObjectWithMarkdownAndTrailingBraces() {
+        String markdownOutput = """
+                好的，已为您分析：
+                ```json
+                {
+                  "intentType": "ADD_STOP",
+                  "requestedVenueName": "洪崖洞",
+                  "confidence": 0.95
+                }
+                ```
+                说明：{这里是额外补充说明}
+                """;
+        String extracted = LlmIntentExtractor.extractBalancedJsonObject(markdownOutput);
+        assertNotNull(extracted);
+        assertTrue(extracted.contains("\"intentType\": \"ADD_STOP\""));
+        assertFalse(extracted.contains("额外补充说明"));
+    }
+
+    @Test
+    void testExtractBalancedJsonObjectDirectJsonWithTrailingText() {
+        String raw = "{\"intentType\":\"QA\",\"confidence\":0.9} 附带备注: {xyz}";
+        String extracted = LlmIntentExtractor.extractBalancedJsonObject(raw);
+        assertEquals("{\"intentType\":\"QA\",\"confidence\":0.9}", extracted);
+    }
 }
