@@ -63,6 +63,8 @@ public class Attraction {
 
     /** 最佳游览时间 */
     private String bestTime;
+    /** Explicit opening evidence; bestTime remains a recommendation, not a mandatory operating schedule. */
+    private String openingHours;
 
     /** 高德 POI 匹配规则 (包含 keywords, alternatives, matches) */
     private Map<String, Object> amapQuery;

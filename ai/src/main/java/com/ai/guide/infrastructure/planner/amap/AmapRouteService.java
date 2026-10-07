@@ -58,6 +58,8 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     private final boolean requestDedupEnabled;
     private final long poiCacheTtlNanos;
     private final long routeCacheTtlNanos;
+    @Value("${amap.web-service.request-cache.empty-route-ttl-ms:5000}")
+    private long emptyRouteTtlMs = 5000;
     private final long weatherCacheTtlNanos;
     private final long qpsCooldownNanos;
     private final AtomicLong qpsBlockedUntilNanos = new AtomicLong();
@@ -310,8 +312,18 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
 
     private WeatherOutcome loadWeather(String cityCode) {
         try {
+            String resolvedCityCode = cityCode == null ? "" : cityCode.trim();
+            if (!resolvedCityCode.matches("\\d{6}")) {
+                JsonNode geocodeResponse = execute(
+                        () -> client.get(client.buildGeocodeRequest(cityCode, cityCode)), requestTimeoutMs, 0);
+                resolvedCityCode = AmapResponseNormalizer.normalizeGeocode(geocodeResponse).adcode();
+            }
+            if (resolvedCityCode == null || !resolvedCityCode.matches("\\d{6}")) {
+                return new WeatherOutcome(OutcomeStatus.INVALID, null, "无法解析所在城市的天气行政区编码", Instant.now());
+            }
+            final String weatherCityCode = resolvedCityCode;
             JsonNode response = execute(
-                    () -> client.get(client.buildWeatherRequest(cityCode, "all")),
+                    () -> client.get(client.buildWeatherRequest(weatherCityCode, "all")),
                     requestTimeoutMs,
                     0);
             return new WeatherOutcome(OutcomeStatus.SUCCESS,
@@ -353,8 +365,8 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     private RouteOutcome routeWalking(String origin, String destination) {
         AmapRequestCache.RequestKey key = key("route-walking", "v5/direction/walking",
                 origin, destination, "cost,navi,polyline");
-        return requestCache.getOrLoad(key, routeCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
-                () -> loadWalking(origin, destination), this::successful);
+        return requestCache.getOrLoad(key, requestCacheEnabled, requestDedupEnabled,
+                () -> loadWalking(origin, destination), result -> routeResultTtl(result, routeCacheTtlNanos));
     }
 
     private RouteOutcome loadWalking(String origin, String destination) {
@@ -378,8 +390,8 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         long timeBucket = System.currentTimeMillis() / (15 * 60 * 1000L);
         AmapRequestCache.RequestKey key = key("route-transit", "v5+v3/direction/transit/integrated",
                 origin, destination, city, "0", originPoi, destinationPoi, "cost,polyline", "slot-" + timeBucket);
-        return requestCache.getOrLoad(key, Math.min(routeCacheTtlNanos, ttlNanos(15 * 60 * 1000L)), requestCacheEnabled, requestDedupEnabled,
-                () -> loadTransit(origin, destination, city, originPoi, destinationPoi), this::successful);
+        return requestCache.getOrLoad(key, requestCacheEnabled, requestDedupEnabled,
+                () -> loadTransit(origin, destination, city, originPoi, destinationPoi), result -> routeResultTtl(result, Math.min(routeCacheTtlNanos, ttlNanos(15 * 60 * 1000L))));
     }
 
     private RouteOutcome loadTransit(String origin, String destination, String city,
@@ -426,6 +438,12 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     private boolean successful(RouteOutcome outcome) {
         return outcome != null && outcome.status() == OutcomeStatus.SUCCESS
                 && outcome.segment() != null && outcome.segment().metricsComplete();
+    }
+    private long routeResultTtl(RouteOutcome outcome, long successTtl) {
+        if (successful(outcome)) return successTtl;
+        // A successful provider response without a usable route may change shortly.
+        // Authentication, timeout and provider errors are never cached as an empty route.
+        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS ? ttlNanos(emptyRouteTtlMs) : 0L;
     }
 
     private JsonNode execute(Supplier<JsonNode> operation, int timeoutMs, int retries) {

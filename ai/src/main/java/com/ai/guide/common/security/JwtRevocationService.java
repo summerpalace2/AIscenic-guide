@@ -26,6 +26,7 @@ public class JwtRevocationService {
 
     private final RedisTemplate<String, String> redisTemplate;
     private final boolean redisEnabled;
+    private volatile long overflowClosedUntil;
     private final Map<String, Long> localRevoked = new ConcurrentHashMap<>();
 
     public JwtRevocationService(RedisTemplate<String, String> redisTemplate,
@@ -40,7 +41,7 @@ public class JwtRevocationService {
         cleanup(now);
         Long localExpiry = localRevoked.get(key);
         if (localExpiry != null && localExpiry > now) return true;
-        if (!redisEnabled) return false;
+        if (!redisEnabled) return overflowClosedUntil > now;
         try {
             return Boolean.TRUE.equals(redisTemplate.hasKey(key));
         } catch (RuntimeException unavailable) {
@@ -58,8 +59,8 @@ public class JwtRevocationService {
         if (remaining <= 0) return true;
 
         String key = key(token, claims);
-        rememberLocally(key, expiresAt);
-        if (!redisEnabled) return true;
+        boolean remembered=rememberLocally(key, expiresAt);
+        if (!redisEnabled) return remembered;
         try {
             redisTemplate.opsForValue().set(key, "1", remaining, TimeUnit.MILLISECONDS);
             return true;
@@ -72,16 +73,14 @@ public class JwtRevocationService {
         return redisEnabled;
     }
 
-    private void rememberLocally(String key, long expiresAt) {
-        long now = System.currentTimeMillis();
-        cleanup(now);
-        if (localRevoked.size() >= MAX_LOCAL_REVOCATIONS) {
-            localRevoked.entrySet().stream()
-                    .min(Map.Entry.comparingByValue())
-                    .map(Map.Entry::getKey)
-                    .ifPresent(localRevoked::remove);
+    private synchronized boolean rememberLocally(String key, long expiresAt) {
+        cleanup(System.currentTimeMillis());
+        if (!localRevoked.containsKey(key) && localRevoked.size() >= MAX_LOCAL_REVOCATIONS) {
+            // Never make a live revoked token valid again. Local exhaustion rejects authentication until the unrecorded token expires.
+            if (!redisEnabled) overflowClosedUntil=Math.max(overflowClosedUntil,expiresAt);
+            return false;
         }
-        localRevoked.put(key, expiresAt);
+        localRevoked.merge(key,expiresAt,Math::max);return true;
     }
 
     private void cleanup(long now) {

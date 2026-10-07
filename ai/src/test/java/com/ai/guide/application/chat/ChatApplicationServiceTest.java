@@ -29,6 +29,25 @@ import static org.mockito.Mockito.*;
 
 class ChatApplicationServiceTest {
 
+    @Test
+    void structuredMemoryOverflowReturnsActionableErrorBeforeModelCall() {
+        var memories = mock(com.ai.guide.domain.memory.service.TravelMemoryService.class);
+        var preferences = mock(com.ai.guide.domain.preferences.service.PreferencesService.class);
+        var profile = mock(com.ai.guide.domain.preferences.model.UserPreferences.class);
+        when(profile.legacyMetadata()).thenReturn(java.util.Map.of("travelMemoryEnabled", true));
+        when(preferences.get("u")).thenReturn(profile);
+        var scenic = mock(com.ai.guide.domain.rag.service.ScenicDataImportService.class);
+        when(scenic.queryKnowledge(anyString(), anyInt())).thenReturn("");
+        when(memories.promptContext("u")).thenThrow(new com.ai.guide.domain.memory.service.TravelMemoryService.MemoryContextOverflowException());
+        org.springframework.test.util.ReflectionTestUtils.setField(chatApplicationService, "travelMemoryService", memories);
+        org.springframework.test.util.ReflectionTestUtils.setField(chatApplicationService, "preferencesService", preferences);
+        org.springframework.test.util.ReflectionTestUtils.setField(chatApplicationService, "scenicDataImportService", scenic);
+        UserContext.set("u", "USER");
+        var result = chatApplicationService.chatStructured(com.ai.guide.application.chat.dto.ChatStructuredCommand.of("旅行建议", "s", "normal", "u"));
+        assertEquals(422, result.getCode()); assertTrue(result.getMessage().contains("精简画像"));
+        verify(chatClient, never()).prompt();
+    }
+
     private ChatClient.Builder chatClientBuilder;
     private ChatClient chatClient;
     private RedisChatMemory redisChatMemory;
@@ -64,6 +83,8 @@ class ChatApplicationServiceTest {
                 analyticsService,
                 compressionExecutor
         );
+        when(redisChatMemory.historySnapshot(anyString(), eq(50))).thenReturn(new RedisChatMemory.HistorySnapshot(0, List.of()));
+        when(redisChatMemory.summarySnapshot(anyString())).thenReturn(new RedisChatMemory.SummarySnapshot(null, 0));
     }
 
     @AfterEach
@@ -175,5 +196,48 @@ class ChatApplicationServiceTest {
 
         // 核心断言：必须准确将非内置区县“合川”动态识别为 anchor，而非被卡片上的“洪崖洞”给幽灵劫持！
         verify(geoRouteGateway, atLeastOnce()).searchPoi(eq("合川 附近火锅"), eq("重庆市"));
+    }
+    @Test
+    @SuppressWarnings("unchecked")
+    void rollingSummaryIncludesUncoveredMiddleAndThenCompressesIt() throws Exception {
+        var prompt=mock(ChatClient.ChatClientRequestSpec.class);var call=mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(prompt);when(prompt.messages(any(org.springframework.ai.chat.messages.Message[].class))).thenReturn(prompt);when(prompt.call()).thenReturn(call);when(call.content()).thenReturn("新摘要");
+        var history=new java.util.ArrayList<org.springframework.ai.chat.messages.Message>();
+        for(int n=0;n<20;n++)history.add(new org.springframework.ai.chat.messages.UserMessage("新消息"+n));
+        when(redisChatMemory.historySnapshot("s",50)).thenReturn(new RedisChatMemory.HistorySnapshot(100,history));
+        when(redisChatMemory.summarySnapshot("s")).thenReturn(new RedisChatMemory.SummarySnapshot("此前摘要",80));
+        var method=ChatApplicationService.class.getDeclaredMethod("getContextWithCompressedHistory",String.class,List.class,String.class);method.setAccessible(true);
+        var result=(List<org.springframework.ai.chat.messages.Message>)method.invoke(chatApplicationService,"s",history,"u");
+        assertEquals(21,result.size());assertTrue(result.stream().anyMatch(m->m.getContent().equals("新消息0")),"摘要提交前不能丢掉新消息中段");
+        verify(redisChatMemory,timeout(3000)).saveSummarySnapshot(eq("s"),eq("新摘要"),eq(88L));
+    }
+    @Test
+    @SuppressWarnings("unchecked")
+    void recoveryCursorAdvancesOnlyTheContiguousBoundedBatchWhileModelUsesRecentWindow() throws Exception {
+        var prompt=mock(ChatClient.ChatClientRequestSpec.class);var call=mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(prompt);when(prompt.messages(any(org.springframework.ai.chat.messages.Message[].class))).thenReturn(prompt);when(prompt.call()).thenReturn(call);when(call.content()).thenReturn("滚动摘要");
+        var tail=new java.util.ArrayList<org.springframework.ai.chat.messages.Message>();var prefix=new java.util.ArrayList<org.springframework.ai.chat.messages.Message>();
+        for(int n=80;n<100;n++)prefix.add(new org.springframework.ai.chat.messages.UserMessage("消息"+n));
+        for(int n=100;n<150;n++)tail.add(new org.springframework.ai.chat.messages.UserMessage("消息"+n));
+        when(redisChatMemory.historySnapshot("s",50)).thenReturn(new RedisChatMemory.HistorySnapshot(150,tail));
+        when(redisChatMemory.summarySnapshot("s")).thenReturn(new RedisChatMemory.SummarySnapshot("旧摘要",80));when(redisChatMemory.getRange("s",80,20)).thenReturn(prefix);
+        var method=ChatApplicationService.class.getDeclaredMethod("getContextWithCompressedHistory",String.class,List.class,String.class);method.setAccessible(true);
+        var result=(List<org.springframework.ai.chat.messages.Message>)method.invoke(chatApplicationService,"s",tail,"u");
+        assertFalse(result.stream().anyMatch(m->m.getContent().equals("消息80")),"后台恢复队列不能无限灌入模型窗口");assertTrue(result.stream().anyMatch(m->m.getContent().equals("消息149")));
+        assertTrue(result.stream().anyMatch(m->m.getContent().contains("历史窗口已限额")));
+        verify(redisChatMemory,timeout(3000)).saveSummarySnapshot("s","滚动摘要",112L);
+        verify(redisChatMemory,never()).messageCount(anyString());
+    }
+    @Test
+    void emptySummaryDoesNotMarkMessagesCoveredAndCanRetry() throws Exception {
+        var prompt=mock(ChatClient.ChatClientRequestSpec.class);var call=mock(ChatClient.CallResponseSpec.class);
+        when(chatClient.prompt()).thenReturn(prompt);when(prompt.messages(any(org.springframework.ai.chat.messages.Message[].class))).thenReturn(prompt);when(prompt.call()).thenReturn(call);when(call.content()).thenReturn(" ");
+        var history=new java.util.ArrayList<org.springframework.ai.chat.messages.Message>();for(int n=0;n<20;n++)history.add(new org.springframework.ai.chat.messages.UserMessage("message"+n));
+        when(redisChatMemory.historySnapshot("s",50)).thenReturn(new RedisChatMemory.HistorySnapshot(100,history));when(redisChatMemory.summarySnapshot("s")).thenReturn(new RedisChatMemory.SummarySnapshot("previous",80));
+        var method=ChatApplicationService.class.getDeclaredMethod("getContextWithCompressedHistory",String.class,List.class,String.class);method.setAccessible(true);
+        method.invoke(chatApplicationService,"s",history,"u");compressionExecutor.submit(()->{}).get(3,java.util.concurrent.TimeUnit.SECONDS);
+        verify(redisChatMemory,never()).saveSummarySnapshot(anyString(),anyString(),anyLong());
+        when(call.content()).thenReturn("valid summary");method.invoke(chatApplicationService,"s",history,"u");compressionExecutor.submit(()->{}).get(3,java.util.concurrent.TimeUnit.SECONDS);
+        verify(redisChatMemory).saveSummarySnapshot("s","valid summary",88L);
     }
 }

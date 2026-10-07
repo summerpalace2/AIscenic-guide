@@ -58,6 +58,8 @@ import java.util.UUID;
 public class PlannerService {
 
     private static final Logger log = LoggerFactory.getLogger(PlannerService.class);
+    private static final Object[] CREATE_LOCKS = new Object[128];
+    static { java.util.Arrays.setAll(CREATE_LOCKS, i -> new Object()); }
 
     private final TravelConstraintParserPort constraintParser;
     private final ItineraryBuilderPort itineraryBuilder;
@@ -129,14 +131,19 @@ public class PlannerService {
     }
 
     public ServiceResult create(PlanRequest request) {
+        String key = request == null ? "" : safe(request.getIdempotencyKey());
+        if (key.isBlank() || (UserContext.isAnonymous() && safe(request.getSessionAccessToken()).isBlank())) return createInternal(request);
+        String namespace = UserContext.isAnonymous() ? safe(request.getSessionAccessToken()) : UserContext.getUserId();
+        synchronized (CREATE_LOCKS[((namespace + ":" + key).hashCode() & Integer.MAX_VALUE) % CREATE_LOCKS.length]) {
+            return createInternal(request);
+        }
+    }
+
+    private ServiceResult createInternal(PlanRequest request) {
         long startNanos = System.nanoTime();
         String prompt = request == null ? "" : safe(request.effectivePrompt());
         Map<String, Object> overrides = request == null ? Map.of() : request.effectiveConstraints();
         boolean usePreferences = request != null && Boolean.TRUE.equals(request.getUsePreferences());
-        PlanningComputation computation = compute(prompt, overrides, usePreferences);
-        TravelConstraints constraints = computation.constraints();
-        AppliedPreferencesSnapshot appliedPreferences = computation.appliedPreferences();
-        Map<String, Object> trip = computation.trip();
         String ownerType = UserContext.isAnonymous() ? "ANONYMOUS" : "USER";
         String idempotencyKey = request == null ? "" : safe(request.getIdempotencyKey());
         String suppliedCapability = request == null ? "" : safe(request.getSessionAccessToken());
@@ -160,8 +167,25 @@ public class PlannerService {
         } else {
             ownerId = UserContext.getUserId();
         }
+        RequestPreparation prepared = prepare(prompt, overrides, usePreferences);
+        TravelConstraints constraints = prepared.constraints();
+        AppliedPreferencesSnapshot appliedPreferences = prepared.snapshot();
         String fingerprint = fingerprint(prompt, constraints.asMap(), usePreferences, appliedPreferences,
                 request == null ? "" : request.getPreferenceDecision());
+        StoredSession replay = repository.findByIdempotency(ownerType, ownerId, idempotencyKey);
+        if (replay != null) {
+            if (!fingerprint.equals(replay.requestFingerprint())) return error(409, "同一幂等键对应了不同的规划请求。", replay);
+            var response = planResponse(replay, "");
+            response.put("phase", "已生成结构化行程");
+            response.put("source", sourceStatus(replay.trip()));
+            response.put("retrieval", replay.trip().get("retrieval"));
+            response.put("appliedPreferences", replay.appliedPreferences().asMap());
+            response.put("preferenceProposal", null);
+            response.putAll(constraintDiagnostics(constraints));
+            return new ServiceResult(200, response);
+        }
+        PlanningComputation computation = compute(prepared);
+        Map<String, Object> trip = computation.trip();
         CreateResult created = repository.create(ownerType, ownerId, prompt,
                 constraints.asMap(), appliedPreferences, trip, idempotencyKey, fingerprint);
         if ("CONFLICT".equals(created.status())) {
@@ -285,7 +309,7 @@ public class PlannerService {
                 changedId = targetId;
                 label = "替换站点";
             } else {
-                if (usedVenues(trip).contains(attractionId)) return shadowError("该景点已在当前行程中。");
+                if (usedVenues(trip).contains(attractionId) && !effective.isAllowRepeat()) return shadowError("该景点已在当前行程中。");
                 changedId = "day" + dayNumber + "-added-" + attractionId + "-shadow";
                 dayStops(targetDay).add(itineraryBuilder.createStop(attraction, changedId, "待安排",
                         attraction.getDuration(), "将" + attraction.getName() + "加入当前行程，具体停留与开放状态需出发前核验。",
@@ -418,7 +442,8 @@ public class PlannerService {
             int dayNumber = request == null || request.getDay() == null ? 1 : request.getDay();
             Map<String, Object> day = day(trip, dayNumber);
             if (day == null) return error(400, "目标日期不存在。", session);
-            if (usedVenues(trip).contains(attractionId) && !"replace".equals(operation)) return error(400, "该景点已在当前行程中。", session);
+            if (usedVenues(trip).contains(attractionId) && !"replace".equals(operation)
+                    && (request == null || !request.isAllowRepeat())) return error(400, "该景点已在当前行程中；如需再次访问，请明确允许重复访问。", session);
             if ("replace".equals(operation)) {
                 String targetId = request == null ? "" : safe(request.getTargetStopId());
                 StopLocation target = locateStop(trip, targetId);
@@ -431,7 +456,7 @@ public class PlannerService {
                 changedId = targetId;
                 label = "替换站点";
             } else {
-                changedId = "day" + dayNumber + "-added-" + attractionId + "-" + UUID.randomUUID().toString().substring(0, 4);
+                changedId = "day" + dayNumber + "-added-" + attractionId + "-" + UUID.randomUUID();
                 Map<String, Object> stop = itineraryBuilder.createStop(attraction, changedId, "待安排", attraction.getDuration(),
                         "将" + attraction.getName() + "加入当前行程，具体停留与开放状态需出发前核验。", attraction.getIntro());
                 dayStops(day).add(stop);
@@ -489,13 +514,32 @@ public class PlannerService {
         plan.put("formalTripId", saved.trip().id());
         plan.put("sourceTripId", saved.trip().id());
         plan.put("sourceTripVersion", saved.trip().currentVersion());
-        repository.linkFormalTrip(session, plan);
+        boolean linked = repository.linkFormalTrip(session, plan);
+        // A concurrent adjustment owns the newer business snapshot. Retry only the
+        // saved identity metadata rather than replacing its stops with the old plan.
+        for (int attempt = 0; !linked && attempt < 3; attempt++) {
+            StoredSession latest = findAuthorized(sessionId, accessToken);
+            if (latest == null) break;
+            Map<String, Object> latestPlan = mutableMap(latest.trip());
+            String existingId = safe(latestPlan.get("formalTripId"));
+            if (!existingId.isBlank() && !existingId.equals(saved.trip().id())) break;
+            // Do not move a concurrently saved baseline backwards.
+            int baseline = 0;
+            try { baseline = Integer.parseInt(safe(latestPlan.get("sourceTripVersion"))); }
+            catch (NumberFormatException ignored) { /* Legacy snapshots can omit the baseline. */ }
+            latestPlan.put("formalTripId", saved.trip().id());
+            latestPlan.put("sourceTripId", saved.trip().id());
+            latestPlan.put("sourceTripVersion", Math.max(baseline, saved.trip().currentVersion()));
+            linked = repository.linkFormalTrip(latest, latestPlan);
+        }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
         body.put("trip", saved.trip());
         body.put("tripId", saved.trip().id());
         body.put("currentVersion", saved.trip().currentVersion());
         body.put("appliedPreferences", session.appliedPreferences().asMap());
+        body.put("draftLinked", linked);
+        if (!linked) body.put("message", "正式行程已保存，草稿仍在更新；再次保存将继续更新同一正式行程。");
         return new ServiceResult(saved.status(), body);
     }
 
@@ -509,6 +553,7 @@ public class PlannerService {
 
         Map<String, Object> restoredPlan = copyTripSnapshot(formal.plan());
         if (restoredPlan.isEmpty()) return error(400, "正式行程缺少可恢复的规划快照。", null);
+        restoredPlan.put("title", formal.title());
         restoredPlan.put("formalTripId", formal.id());
         restoredPlan.put("sourceTripId", formal.id());
         restoredPlan.put("sourceTripVersion", formal.currentVersion());
@@ -558,7 +603,8 @@ public class PlannerService {
         return planAdjustmentService.apply(sessionId, request);
     }
 
-    private PlanningComputation compute(String prompt, Map<String, Object> overrides, boolean usePreferences) {
+    private record RequestPreparation(TravelConstraints constraints, AppliedPreferencesSnapshot snapshot) {}
+    private RequestPreparation prepare(String prompt, Map<String, Object> overrides, boolean usePreferences) {
         TravelConstraints parsed = constraintParser.parse(safe(prompt));
         TravelConstraints requested = constraintParser.applyOverrides(parsed,
                 overrides == null ? Map.of() : overrides);
@@ -567,6 +613,15 @@ public class PlannerService {
         if (parsed.originOf("durationDays") == com.ai.guide.domain.planner.model.ConstraintOrigin.PROMPT && parsed.getDurationDays() > 0) {
             constraints.setDurationDays(parsed.getDurationDays());
         }
+        return new RequestPreparation(constraints, resolved.snapshot());
+    }
+
+    private PlanningComputation compute(String prompt, Map<String, Object> overrides, boolean usePreferences) {
+        return compute(prepare(prompt, overrides, usePreferences));
+    }
+
+    private PlanningComputation compute(RequestPreparation prepared) {
+        TravelConstraints constraints = prepared.constraints();
         Map<String, Object> trip = null;
         if (plannerV1Enabled && constraints.hasExplicitSpatialRequest()) {
             trip = amapPlannerGateway.planFromLocation(constraints, 1);
@@ -587,10 +642,10 @@ public class PlannerService {
 
         if (plannerV1Enabled && groundedNarrativeService != null
                 && !constraints.hasExplicitSpatialRequest()) {
-            groundedNarrativeService.enhanceTrip(trip, constraints, resolved.snapshot());
+            groundedNarrativeService.enhanceTrip(trip, constraints, prepared.snapshot());
         }
 
-        return new PlanningComputation(constraints, resolved.snapshot(), trip);
+        return new PlanningComputation(constraints, prepared.snapshot(), trip);
     }
 
     private boolean isTripEmpty(Map<String, Object> trip) {
@@ -620,7 +675,7 @@ public class PlannerService {
 
         // V1 Metadata
         String routeStatus = String.valueOf(trip.getOrDefault("routeDataStatus", "ESTIMATED"));
-        boolean isDegraded = !plannerV1Enabled || !"高德实时接口".equals(trip.get("sourceMode"));
+        boolean isDegraded = !plannerV1Enabled || Boolean.TRUE.equals(trip.get("degraded")) || !"高德实时接口".equals(trip.get("sourceMode"));
         String plannerVer = !plannerV1Enabled ? "legacy-v0" : PlannerVersionMetadata.CURRENT_PLANNER_VERSION;
         String policyVer = !plannerV1Enabled ? "legacy-2026.07" : PlannerVersionMetadata.CURRENT_POLICY_VERSION;
         String expSource = !plannerV1Enabled ? "LEGACY_STATIC"
@@ -629,7 +684,7 @@ public class PlannerService {
                     : PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
         List<String> degradationReasons = !plannerV1Enabled
                 ? List.of("LEGACY_PLANNER_ACTIVE")
-                : (isDegraded ? List.of("DEMO_OR_ESTIMATED_ROUTE_FALLBACK") : List.of());
+                : degradationReasons(trip, isDegraded);
 
         body.put("plannerVersion", plannerVer);
         body.put("policyVersion", policyVer);
@@ -674,7 +729,8 @@ public class PlannerService {
             if (capabilitySession == null || !sessionId.equals(capabilitySession.sessionId())) return null;
             return repository.find(sessionId, "ANONYMOUS", capabilitySession.ownerId(), token);
         }
-        return repository.find(sessionId, "USER", UserContext.getUserId(), token);
+        StoredSession owned = repository.find(sessionId, "USER", UserContext.getUserId(), token);
+        return owned != null ? owned : repository.claimAnonymous(sessionId, token, UserContext.getUserId());
     }
 
     private Attraction rankReplacement(String reason, Attraction old, Set<String> used) {
@@ -716,7 +772,7 @@ public class PlannerService {
 
         // V1 Metadata
         String routeStatus = session.trip() == null ? "ESTIMATED" : String.valueOf(session.trip().getOrDefault("routeDataStatus", "ESTIMATED"));
-        boolean isDegraded = !plannerV1Enabled || session.trip() == null || !"高德实时接口".equals(session.trip().get("sourceMode"));
+        boolean isDegraded = !plannerV1Enabled || session.trip() == null || Boolean.TRUE.equals(session.trip().get("degraded")) || !"高德实时接口".equals(session.trip().get("sourceMode"));
         String plannerVer = !plannerV1Enabled ? "legacy-v0" : PlannerVersionMetadata.CURRENT_PLANNER_VERSION;
         String policyVer = !plannerV1Enabled ? "legacy-2026.07" : PlannerVersionMetadata.CURRENT_POLICY_VERSION;
         String expSource = !plannerV1Enabled ? "LEGACY_STATIC"
@@ -725,7 +781,7 @@ public class PlannerService {
                     : PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
         List<String> degradationReasons = !plannerV1Enabled
                 ? List.of("LEGACY_PLANNER_ACTIVE")
-                : (isDegraded ? List.of("DEMO_OR_ESTIMATED_ROUTE_FALLBACK") : List.of());
+                : degradationReasons(session.trip(), isDegraded);
 
         response.put("plannerVersion", plannerVer);
         response.put("policyVersion", policyVer);
@@ -734,6 +790,15 @@ public class PlannerService {
         response.put("degraded", isDegraded);
         response.put("degradationReasons", degradationReasons);
         return response;
+    }
+
+    private List<String> degradationReasons(Map<String, Object> trip, boolean degraded) {
+        List<String> reasons = new ArrayList<>();
+        if (trip != null && trip.get("degradationReasons") instanceof List<?> values) {
+            for (Object value : values) if (value != null && !String.valueOf(value).isBlank()) reasons.add(String.valueOf(value));
+        }
+        if (degraded && reasons.isEmpty()) reasons.add("DEMO_OR_ESTIMATED_ROUTE_FALLBACK");
+        return reasons;
     }
 
     private Map<String, Object> constraintDiagnostics(TravelConstraints constraints) {
@@ -839,7 +904,7 @@ public class PlannerService {
     private Set<String> usedVenues(Map<String, Object> trip) { Set<String> result = new HashSet<>(); for (Map<String, Object> day : days(trip)) for (Map<String, Object> stop : dayStops(day)) if (stop.get("venueId") != null) result.add(String.valueOf(stop.get("venueId"))); return result; }
     private List<String> unchangedStopIds(Map<String, Object> trip, String changed) { List<String> result = new ArrayList<>(); for (Map<String, Object> day : days(trip)) for (Map<String, Object> stop : dayStops(day)) { String id = safe(stop.get("id")); if (!id.equals(changed)) result.add(id); } return result; }
     private void copyConstraintAnnotations(Map<String, Object> old, Map<String, Object> next) { next.put("matchedConstraints", old.getOrDefault("matchedConstraints", List.of())); next.put("routePreference", old.getOrDefault("routePreference", "walking")); }
-    private void finalizeTrip(Map<String, Object> trip, int version, String label, String reason, List<String> changed) { trip.put("version", version); trip.put("id", "draft-cq-" + version); trip.put("subtitle", label + " · 路线已重新计算"); List<Map<String, Object>> history = new ArrayList<>(); Object old = trip.get("versionHistory"); if (old instanceof List<?> values) for (Object value : values) if (value instanceof Map<?, ?> map) { Map<String, Object> copy = new LinkedHashMap<>(); map.forEach((k, v) -> copy.put(String.valueOf(k), v)); history.add(copy); } history.add(Map.of("version", version, "label", label, "changedSegments", changed, "reason", safe(reason), "createdAt", Instant.now().toString())); trip.put("versionHistory", history); }
+    private void finalizeTrip(Map<String, Object> trip, int version, String label, String reason, List<String> changed) { trip.put("version", version); trip.put("id", "draft-plan-" + version); trip.put("subtitle", label + " · 路线已重新计算"); List<Map<String, Object>> history = new ArrayList<>(); Object old = trip.get("versionHistory"); if (old instanceof List<?> values) for (Object value : values) if (value instanceof Map<?, ?> map) { Map<String, Object> copy = new LinkedHashMap<>(); map.forEach((k, v) -> copy.put(String.valueOf(k), v)); history.add(copy); } history.add(Map.of("version", version, "label", label, "changedSegments", changed, "reason", safe(reason), "createdAt", Instant.now().toString())); trip.put("versionHistory", history); }
     private String safe(Object value) { return value == null ? "" : String.valueOf(value).trim(); }
     private String safeValue(Object value, String fallback) { String text = safe(value); return text.isBlank() ? fallback : text; }
     private String fingerprint(String prompt, Map<String, Object> constraints, boolean usePreferences,

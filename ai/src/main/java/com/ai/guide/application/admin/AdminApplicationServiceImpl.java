@@ -99,35 +99,12 @@ public class AdminApplicationServiceImpl implements AdminApplicationService {
 
     @Override
     public Map<String, Object> getSettings() {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("siteName", "渝游智策 · 重庆智慧文旅");
-        data.put("defaultLanguage", "zh");
-        data.put("ttsEnabled", true);
-        data.put("knowledgeSyncEnabled", true);
-        data.put("maxUploadSizeMb", 50);
-        data.putAll(appConfigRepository.readConfig("settings_"));
-        // ASR is no longer part of the product surface; hide any legacy row
-        // that may have been persisted by an earlier admin-console version.
-        data.remove("asrEnabled");
-        for (String boolKey : List.of("ttsEnabled", "knowledgeSyncEnabled")) {
-            if (data.get(boolKey) instanceof String s) {
-                data.put(boolKey, Boolean.parseBoolean(s));
-            }
-        }
-        if (data.get("maxUploadSizeMb") instanceof String s) {
-            try {
-                data.put("maxUploadSizeMb", Integer.parseInt(s));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return data;
+        return com.ai.guide.domain.admin.service.RuntimeSettingsPolicy.settingsSnapshot(
+                appConfigRepository.readConfig("settings_"));
     }
 
     @Override
     public void updateSettings(Map<String, Object> settings) {
-        if (settings != null) {
-            settings.remove("asrEnabled");
-            appConfigRepository.writeConfig("settings_", settings);
-        }
+        appConfigRepository.writeConfig("settings_", com.ai.guide.domain.admin.service.RuntimeSettingsPolicy.validatePatch(settings));
     }
 }

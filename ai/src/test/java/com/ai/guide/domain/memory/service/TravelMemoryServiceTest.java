@@ -56,7 +56,7 @@ class TravelMemoryServiceTest {
         TravelMemoryService.Candidate candidate = service.suggest("我不吃辣，我想去吃火锅");
         org.junit.jupiter.api.Assertions.assertNotNull(candidate);
         assertEquals("DIET", candidate.category());
-        assertTrue(candidate.content().contains("清淡少辣"));
+        assertEquals("我不吃辣,我想去吃火锅", candidate.content(), "保留具体限制与食物对象");
         org.junit.jupiter.api.Assertions.assertFalse(candidate.content().contains("麻辣"));
     }
 
@@ -101,19 +101,56 @@ class TravelMemoryServiceTest {
         Mockito.when(prefService.get("user-1")).thenReturn(UserPreferences.empty("user-1", 1L, System.currentTimeMillis()));
 
         String prompt = memService.synthesizePrependPrompt("user-1", false);
-        assertTrue(prompt.contains("饮食偏好麻辣火锅与地道巴渝风味"));
-        assertTrue(prompt.contains("喜好特色甜品糖水与点心"));
-        assertTrue(prompt.contains("地道特色小吃"));
+        assertTrue(prompt.contains("麻辣火锅"));
+        assertTrue(prompt.contains("特色甜品冰粉"));
+        assertTrue(prompt.contains("街头小吃小面"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.contains("巴渝"), "不能自行添加用户没有确认的地域风味");
     }
 
     @Test
-    void testConflictingMemoriesCancellationSpicyVsBland() {
+    void synthesisPreservesConfirmedContentAcrossCategoriesWithoutKeywordWhitelist() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        TravelMemoryService memService = new TravelMemoryService(jdbc);
+        List<TravelMemory> memories = List.of(
+                new TravelMemory("h", "INTEREST", "偏好人文历史", "CHAT_CONFIRMED", "", "CONFIRMED", 1, 1, 1),
+                new TravelMemory("c", "CUSTOM", "偏好古籍修复和地方口述史", "CHAT_CONFIRMED", "", "CONFIRMED", 1, 1, 2),
+                new TravelMemory("d", "DIET", "喜欢甜品，但对花生过敏", "CHAT_CONFIRMED", "", "CONFIRMED", 1, 1, 3),
+                new TravelMemory("t", "TRANSPORT", "优先轮渡", "CHAT_CONFIRMED", "", "CONFIRMED", 1, 1, 4));
+        Mockito.when(jdbc.query(Mockito.anyString(), Mockito.any(RowMapper.class), Mockito.eq("user-1"))).thenReturn(memories);
+        String prompt = memService.synthesizePrependPrompt("user-1", false);
+        memories.forEach(memory -> assertTrue(prompt.contains(memory.content()), memory.content()));
+    }
+
+    @Test
+    void confirmDoesNotReportSuccessWhenProfileSynthesisFails() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        PreferencesService preferences = Mockito.mock(PreferencesService.class);
+        Mockito.when(preferences.get("user-1")).thenThrow(new IllegalStateException("画像更新失败"));
+        TravelMemoryService memService = new TravelMemoryService(jdbc, preferences);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> memService.confirm("user-1", "偏好人文历史", "INTEREST", "CHAT_CONFIRMED"));
+    }
+
+    @Test
+    void conflictingSpiceCannotDeleteAnInseparableCuisinePreference() {
         JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
         TravelMemoryService memService = new TravelMemoryService(jdbc);
 
         Mockito.when(jdbc.queryForList(Mockito.anyString(), Mockito.eq("user-1")))
                 .thenReturn(List.of(Map.of("id", "m-spicy", "content", "麻辣火锅与吃辣")));
 
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> memService.confirm("user-1", "清淡少辣不吃辣", "DIET", "USER_EDIT"));
+
+        Mockito.verify(jdbc, Mockito.never()).update(Mockito.contains("status = 'DELETED'"), Mockito.anyLong(), Mockito.eq("m-spicy"), Mockito.eq("user-1"));
+    }
+
+    @Test
+    void pureSpicePreferenceCanBeSuperseded() {
+        JdbcTemplate jdbc = Mockito.mock(JdbcTemplate.class);
+        TravelMemoryService memService = new TravelMemoryService(jdbc);
+        Mockito.when(jdbc.queryForList(Mockito.anyString(), Mockito.eq("user-1")))
+                .thenReturn(List.of(Map.of("id", "m-spicy", "content", "吃辣")));
         memService.confirm("user-1", "清淡少辣不吃辣", "DIET", "USER_EDIT");
 
         Mockito.verify(jdbc).update(Mockito.contains("status = 'DELETED'"), Mockito.anyLong(), Mockito.eq("m-spicy"), Mockito.eq("user-1"));

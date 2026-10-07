@@ -46,7 +46,7 @@ public class RouteCostProvider {
             if (metricsLogger != null) metricsLogger.recordRouteCost(unavail.status());
             return unavail;
         }
-        if (origin.getId().equals(destination.getId())) {
+        if (origin.getId() != null && origin.getId().equals(destination.getId())) {
             RouteCost same = RouteCost.estimated(0, 0, 0, "WALKING", "同景点无需交通");
             if (metricsLogger != null) metricsLogger.recordRouteCost(same.status());
             return same;
@@ -65,7 +65,7 @@ public class RouteCostProvider {
             if (metricsLogger != null) metricsLogger.recordRouteCost(unavail.status());
             return unavail;
         }
-        if (origin.getId().equals(destination.getId())) {
+        if (origin.getId() != null && origin.getId().equals(destination.getId())) {
             RouteCost same = RouteCost.estimated(0, 0, 0, "WALKING", "同景点无需交通");
             if (metricsLogger != null) metricsLogger.recordRouteCost(same.status());
             return same;
@@ -97,7 +97,9 @@ public class RouteCostProvider {
         String originId = origin == null ? "" : safe(origin.getId());
         String destinationId = destination == null ? "" : safe(destination.getId());
         String normalizedPreference = preference == null || preference.isBlank() ? "walking" : preference.trim().toLowerCase();
-        return originId + "->" + destinationId + ":" + normalizedPreference;
+        return originId + "@" + (origin == null ? "" : safe(origin.getLocation()))
+                + "->" + destinationId + "@" + (destination == null ? "" : safe(destination.getLocation()))
+                + ":" + normalizedPreference;
     }
 
     public int finalEdgeProviderCallCount() {
@@ -135,68 +137,36 @@ public class RouteCostProvider {
     }
 
     private String resolveCity(Attraction origin, Attraction destination) {
-        String city = detectCityFromAttraction(origin);
-        if (city != null) return city;
-        city = detectCityFromAttraction(destination);
-        if (city != null) return city;
-        return "重庆市";
+        String city=detectCityFromAttraction(origin);
+        return city != null ? city : detectCityFromAttraction(destination);
     }
 
     private String detectCityFromAttraction(Attraction attraction) {
-        if (attraction == null) return null;
-        String id = safe(attraction.getId()).toLowerCase(java.util.Locale.ROOT);
-        String name = safe(attraction.getName());
-        String district = safe(attraction.getDistrict());
-        String location = safe(attraction.getLocation());
-
-        if (id.startsWith("cd-") || name.contains("成都") || district.contains("成都")
-                || district.matches(".*(锦江|青羊|金牛|武侯|成华|高新|天府新区|双流|郫都|温江|新都|龙泉驿|都江堰).*")) {
-            return "成都市";
-        }
-        if (id.startsWith("xa-") || name.contains("西安") || district.contains("西安")
-                || district.matches(".*(碑林|雁塔|新城|莲湖|未央|灞桥|长安|临潼).*")) {
-            return "西安市";
-        }
-        if (id.startsWith("cq-") || name.contains("重庆") || district.contains("重庆")
-                || district.matches(".*(渝中|江北|南岸|沙坪坝|九龙坡|大渡口|渝北|巴南|北碚).*")) {
-            return "重庆市";
-        }
-
-        if (location.contains(",")) {
-            try {
-                String[] parts = location.split(",");
-                double lng = Double.parseDouble(parts[0].trim());
-                double lat = Double.parseDouble(parts[1].trim());
-                if (lng >= 103.0 && lng <= 104.9 && lat >= 30.0 && lat <= 31.5) {
-                    return "成都市";
-                }
-                if (lng >= 108.0 && lng <= 109.8 && lat >= 33.8 && lat <= 34.9) {
-                    return "西安市";
-                }
-            } catch (Exception ignored) {
-            }
-        }
-        return null;
+        if (attraction == null || attraction.getAmapQuery() == null) return null;
+        String city=safe(String.valueOf(attraction.getAmapQuery().getOrDefault("city","")));
+        return city.isBlank() ? null : city;
     }
 
     public RouteCost estimateFromCoordinates(Attraction origin, Attraction destination, String preference) {
         if (origin == null || destination == null) return RouteCost.unavailable("起终点景点为空");
         double distKm = haversineDistanceKm(origin.getLocation(), destination.getLocation());
+        if (!Double.isFinite(distKm)) return RouteCost.unavailable("起终点坐标缺失或无效");
         int distanceMeters = (int) Math.round(distKm * 1000);
 
         String origDist = origin.getDistrict() == null ? "" : origin.getDistrict().trim();
         String destDist = destination.getDistrict() == null ? "" : destination.getDistrict().trim();
         boolean sameDistrict = !origDist.isBlank() && origDist.equals(destDist);
-        boolean isFarOuterDistrict = isFarSuburban(origDist) || isFarSuburban(destDist);
+        boolean isFarOuterDistrict = distKm > 30.0;
 
         int durationMinutes;
         int walkingMeters;
         String mode;
 
         if (distKm <= 1.2 && !"taxi".equalsIgnoreCase(preference)) {
-            mode = "WALKING";
-            walkingMeters = distanceMeters;
-            durationMinutes = Math.max(5, (int) Math.round(distKm / 4.5 * 60));
+            // Coordinates prove proximity, never pedestrian reachability across water,
+            // fences or inaccessible terrain. Only provider-backed paths may assert WALKING.
+            return RouteCost.estimated(distanceMeters, Math.max(15, (int) Math.ceil(distKm / 4.5 * 60 * 2)),
+                    distanceMeters, "TRANSIT", "交通估算，路线待核验：仅有直线距离，不能确认步行可达；已保守预留交通时间");
         } else if (sameDistrict) {
             mode = distKm <= 5.0 ? "TRANSIT" : "DRIVING";
             walkingMeters = Math.min(distanceMeters, 400);
@@ -226,12 +196,8 @@ public class RouteCostProvider {
         return keyword == null ? "" : String.valueOf(keyword);
     }
 
-    private boolean isFarSuburban(String district) {
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足") || district.contains("江津");
-    }
-
     public double haversineDistanceKm(String loc1, String loc2) {
-        if (loc1 == null || loc2 == null || !loc1.contains(",") || !loc2.contains(",")) return 5.0;
+        if (loc1 == null || loc2 == null || !loc1.contains(",") || !loc2.contains(",")) return Double.POSITIVE_INFINITY;
         try {
             String[] p1 = loc1.split(",");
             String[] p2 = loc2.split(",");
@@ -239,15 +205,19 @@ public class RouteCostProvider {
             double lat1 = Double.parseDouble(p1[1]);
             double lon2 = Double.parseDouble(p2[0]);
             double lat2 = Double.parseDouble(p2[1]);
+            if (!Double.isFinite(lon1) || !Double.isFinite(lon2) || !Double.isFinite(lat1) || !Double.isFinite(lat2)
+                    || Math.abs(lon1) > 180 || Math.abs(lon2) > 180 || Math.abs(lat1) > 90 || Math.abs(lat2) > 90)
+                return Double.POSITIVE_INFINITY;
             double latDistance = Math.toRadians(lat2 - lat1);
             double lonDistance = Math.toRadians(lon2 - lon1);
             double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
                     + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                     * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+            a = Math.max(0.0, Math.min(1.0, a));
             double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return 6371.0 * c * 1.35;
         } catch (Exception e) {
-            return 5.0;
+            return Double.POSITIVE_INFINITY;
         }
     }
 

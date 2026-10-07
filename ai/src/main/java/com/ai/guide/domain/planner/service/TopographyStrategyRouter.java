@@ -35,8 +35,8 @@ public class TopographyStrategyRouter {
                 }
             }
         }
-        this.defaultStrategy = cqFallback != null ? cqFallback : (strategyList.isEmpty() ? null : strategyList.get(0));
         this.genericPlainStrategy = plainFallback != null ? plainFallback : new GenericPlainTopographyStrategy();
+        this.defaultStrategy = this.genericPlainStrategy;
     }
 
     /**
@@ -47,7 +47,7 @@ public class TopographyStrategyRouter {
      */
     public TopographyStrategyPort route(String cityName) {
         if (cityName == null || cityName.isBlank()) {
-            return strategies.getOrDefault("CHONGQING", defaultStrategy);
+            return genericPlainStrategy;
         }
         String clean = cityName.trim();
         String upper = clean.toUpperCase(Locale.ROOT);

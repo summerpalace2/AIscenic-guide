@@ -231,6 +231,12 @@ public class GroundedNarrativeService {
                 if (constraints.getBudget() != null && !"未提供".equals(constraints.getBudget())) prefs.put("budget", constraints.getBudget());
                 if (constraints.getTransportPreference() != null && !"未提供".equals(constraints.getTransportPreference())) prefs.put("transportPreference", constraints.getTransportPreference());
                 if (constraints.getDietPreference() != null && !"未提供".equals(constraints.getDietPreference())) prefs.put("dietPreference", constraints.getDietPreference());
+                Object memoryContext = constraints.getShadowSemanticPreferences() == null ? null
+                        : constraints.getShadowSemanticPreferences().get("confirmedMemoryContext");
+                if (memoryContext instanceof String text && !text.isBlank()) {
+                    prefs.put("confirmedMemoryContext", text);
+                    prefs.put("memoryPriority", "历史记忆用于补充行程说明；若与当前明确输入或结构化偏好冲突，以当前输入及结构化字段为准。不得凭记忆类别推断清淡、预算、同行人等具体值。");
+                }
             }
             if (appliedPreferences != null) {
                 prefs.put("appliedPreferences", appliedPreferences.asMap());

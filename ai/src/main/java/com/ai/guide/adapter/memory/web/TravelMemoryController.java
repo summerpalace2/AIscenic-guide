@@ -3,6 +3,7 @@ package com.ai.guide.adapter.memory.web;
 import com.ai.guide.application.memory.TravelMemoryApplicationService;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
+import com.ai.guide.domain.preferences.service.PreferenceConflictException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +24,11 @@ import java.util.Map;
 @RequestMapping("/ai/memories")
 public class TravelMemoryController {
 
+    @ExceptionHandler(PreferenceConflictException.class)
+    public ResponseEntity<?> preferenceConflict(PreferenceConflictException exception) {
+        return error(409, "偏好已更新，请刷新后重试；本次记忆修改未提交");
+    }
+
     private final TravelMemoryApplicationService memoryApplicationService;
 
     public TravelMemoryController(TravelMemoryApplicationService memoryApplicationService) {
@@ -34,10 +40,17 @@ public class TravelMemoryController {
      *
      * @return 200 包含记忆列表；未登录返回 401 "请先登录后查看旅行记忆"
      */
-    @GetMapping
     public ResponseEntity<?> list() {
         String user = user();
         return user == null ? error(401, "请先登录后查看旅行记忆") : ResponseEntity.ok(Result.success(memoryApplicationService.list(user)));
+    }
+
+    @GetMapping
+    public ResponseEntity<?> listPage(@RequestParam(defaultValue = "100") int limit,
+                                      @RequestParam(defaultValue = "0") int offset) {
+        String user = user();
+        return user == null ? error(401, "请先登录后查看旅行记忆")
+                : ResponseEntity.ok(Result.success(memoryApplicationService.listPage(user, limit, offset)));
     }
 
     /**
@@ -179,7 +192,7 @@ public class TravelMemoryController {
     public ResponseEntity<?> getPrependPrompt() {
         String user = user();
         if (user == null) return error(401, "请先登录后查看旅行偏好提示词");
-        return ResponseEntity.ok(Result.success(Map.of("prependPrompt", memoryApplicationService.getPromptContext(user))));
+        return ResponseEntity.ok(Result.success(memoryApplicationService.promptDetails(user)));
     }
 
     /**
@@ -194,16 +207,20 @@ public class TravelMemoryController {
         if (user == null) return error(401, "请先登录后保存旅行偏好提示词");
         String action = String.valueOf(body == null ? "save" : body.getOrDefault("action", "save"));
         if ("resynthesize".equalsIgnoreCase(action)) {
-            String prompt = memoryApplicationService.resynthesizePrependPrompt(user);
-            return ResponseEntity.ok(Result.success("偏好提示词已重新生成", Map.of("prependPrompt", prompt)));
+            memoryApplicationService.resynthesizePrependPrompt(user);
+            return ResponseEntity.ok(Result.success("偏好提示词已重新生成", memoryApplicationService.promptDetails(user)));
         }
         String customPrompt = String.valueOf(body == null ? "" : body.getOrDefault("prependPrompt", ""));
-        String saved = memoryApplicationService.saveUserCustomizedPrompt(user, customPrompt);
-        return ResponseEntity.ok(Result.success("旅行偏好提示词已保存", Map.of("prependPrompt", saved)));
+        memoryApplicationService.saveUserCustomizedPrompt(user, customPrompt);
+        return ResponseEntity.ok(Result.success("旅行偏好提示词已保存", memoryApplicationService.promptDetails(user)));
     }
 
     private String user() {
         return UserContext.isAnonymous() ? null : UserContext.getUserId();
+    }
+    @org.springframework.web.bind.annotation.ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<?> invalidMemory(IllegalArgumentException exception) {
+        return error(400, exception.getMessage());
     }
 
     private ResponseEntity<?> error(int status, String message) {

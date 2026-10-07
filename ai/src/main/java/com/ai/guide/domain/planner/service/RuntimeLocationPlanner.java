@@ -1,7 +1,14 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.ChengduPlainTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.XiAnHeritageTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy;
 import com.ai.guide.domain.planner.model.OutcomeStatus;
 import com.ai.guide.domain.planner.model.PoiOutcome;
 import com.ai.guide.domain.planner.model.RoutePairOutcome;
@@ -47,17 +54,40 @@ public class RuntimeLocationPlanner {
     private final ObjectMapper objectMapper;
     private final int searchRadiusMeters;
     private final int maxCandidates;
+    private final DiningVenueService diningVenueService;
+    private final TaxonomyPort taxonomy;
+    private final TopographyStrategyRouter topographyStrategyRouter;
 
     @Autowired
     public RuntimeLocationPlanner(
             GeoRouteGatewayPort routeService,
             ObjectMapper objectMapper,
             @Value("${planner.runtime-location.search-radius-meters:6000}") int searchRadiusMeters,
-            @Value("${planner.runtime-location.max-candidates:40}") int maxCandidates) {
+            @Value("${planner.runtime-location.max-candidates:40}") int maxCandidates,
+            DiningVenueService diningVenueService,
+            TaxonomyPort taxonomy,
+            TopographyStrategyRouter topographyStrategyRouter) {
         this.routeService = routeService;
         this.objectMapper = objectMapper;
         this.searchRadiusMeters = Math.max(500, searchRadiusMeters);
         this.maxCandidates = Math.max(10, Math.min(60, maxCandidates));
+        this.diningVenueService = diningVenueService;
+        this.taxonomy = taxonomy;
+        this.topographyStrategyRouter = topographyStrategyRouter;
+    }
+
+    public RuntimeLocationPlanner(GeoRouteGatewayPort routeService, ObjectMapper objectMapper,
+                                  int searchRadiusMeters, int maxCandidates,
+                                  DiningVenueService diningVenueService, TaxonomyPort taxonomy) {
+        this(routeService, objectMapper, searchRadiusMeters, maxCandidates, diningVenueService, taxonomy,
+                new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy(), new ChengduPlainTopographyStrategy(),
+                        new XiAnHeritageTopographyStrategy(), new GenericPlainTopographyStrategy())));
+    }
+
+    public RuntimeLocationPlanner(GeoRouteGatewayPort routeService, ObjectMapper objectMapper,
+                                  int searchRadiusMeters, int maxCandidates) {
+        this(routeService, objectMapper, searchRadiusMeters, maxCandidates,
+                new DiningVenueService(null, routeService, objectMapper), new TaxonomyProvider());
     }
 
     /** Convenient constructor for focused unit tests. */
@@ -108,6 +138,7 @@ public class RuntimeLocationPlanner {
 
         List<AmapResponseNormalizer.PoiCandidate> rankedCandidates = rankCandidates(start, candidates, constraints);
         List<Map<String, Object>> stops = selectStops(start, rankedCandidates, constraints, budgetMinutes);
+        boolean routesVerified = allRoutesVerified(stops);
         Map<String, Object> spatial = mutableMap(trip.get("spatialPlan"));
         spatial.put("status", stops.isEmpty() ? "NO_FEASIBLE_CANDIDATE" : "COMPLETED");
         spatial.put("requestedStartPlace", requestedPlace);
@@ -131,19 +162,21 @@ public class RuntimeLocationPlanner {
         day.put("label", "起点附近动态规划");
         int initialStartMinute = resolveStartMinute(constraints);
         day.put("departureContext", "已确认起点“" + safeName(start) + "”，按出行时段（" + formatTime(initialStartMinute) + " 出发）与高德实时路网动态规划。");
-        day.put("mealGuidance", "已结合出行时段与偏好智能融入周边地道美食；可在右侧聊天中继续微调或更换餐厅。");
+        day.put("mealGuidance", stops.stream().anyMatch(stop -> "DINING".equals(stop.get("type")))
+                ? "已在用餐时段内安排周边餐饮，可继续微调或更换餐厅。" : "当前预算和用餐时段内未找到可安排的餐饮站点。");
         day.put("weather", Map.of("label", "天气", "value", "待确认", "status", "未知",
                 "note", "出发前需确认动态天气。"));
         day.put("stops", stops);
-        day.put("routeStatus", stops.isEmpty() ? "待确认" : "高德路线已核验");
+        day.put("routeStatus", routesVerified ? "高德路线已核验" : "路线待核验");
         trip.put("days", List.of(day));
         trip.put("summary", dynamicSummary(stops.isEmpty()));
-        trip.put("sourceStatus", Map.of("poi", "已查询", "route", stops.isEmpty() ? "待确认" : "已核验",
-                "weather", "待确认", "fallback", false));
+        trip.put("sourceStatus", Map.of("poi", "已查询", "route", routesVerified ? "已核验" : "待确认",
+                "weather", "待确认", "fallback", !stops.isEmpty() && !routesVerified));
         trip.put("sourceMode", "高德实时周边规划");
-        trip.put("routeDataStatus", stops.isEmpty() ? "UNAVAILABLE" : "VERIFIED_AMAP");
-        trip.put("degraded", stops.isEmpty());
-        trip.put("degradationReasons", stops.isEmpty() ? List.of("NO_FEASIBLE_NEARBY_CANDIDATE") : List.of());
+        trip.put("routeDataStatus", stops.isEmpty() ? "UNAVAILABLE" : routesVerified ? "VERIFIED_AMAP" : "PARTIAL");
+        trip.put("degraded", stops.isEmpty() || !routesVerified);
+        trip.put("degradationReasons", stops.isEmpty() ? List.of("NO_FEASIBLE_NEARBY_CANDIDATE")
+                : routesVerified ? List.of() : List.of("UNVERIFIED_ROUTE_SEGMENT"));
         return trip;
     }
 
@@ -350,6 +383,9 @@ public class RuntimeLocationPlanner {
         stop.put("entityId", "amap-" + text(candidate.poiId()));
         stop.put("venueId", "amap-" + text(candidate.poiId()));
         stop.put("amapPoiId", text(candidate.poiId()));
+        stop.put("typecode", text(candidate.typecode()));
+        stop.put("poiType", text(candidate.type()));
+        stop.put("businessArea", text(candidate.businessArea()));
         stop.put("name", safeName(candidate));
         stop.put("displayName", safeName(candidate));
         stop.put("district", district(candidate.address()));
@@ -391,12 +427,14 @@ public class RuntimeLocationPlanner {
         Object weatherStatus = currentStatus.getOrDefault("weather", "已查询");
         Map<String, Object> updatedStatus = new LinkedHashMap<>(currentStatus);
         updatedStatus.put("poi", "已查询");
-        updatedStatus.put("route", "已核验");
+        boolean verified = allRoutesVerified(mapList(trip.get("days")).stream()
+                .flatMap(day -> mapList(day.get("stops")).stream()).toList());
+        updatedStatus.put("route", verified ? "已核验" : "待确认");
         updatedStatus.put("weather", weatherStatus);
-        updatedStatus.put("fallback", false);
+        updatedStatus.put("fallback", !verified);
         trip.put("sourceStatus", updatedStatus);
-        trip.put("routeDataStatus", "VERIFIED_AMAP");
-        trip.put("degraded", false);
+        trip.put("routeDataStatus", verified ? "VERIFIED_AMAP" : "PARTIAL");
+        trip.put("degraded", !verified);
     }
 
     private Map<String, Object> copy(Map<String, Object> source) {
@@ -585,16 +623,30 @@ public class RuntimeLocationPlanner {
             String slotType,
             int arrivalMinute,
             TravelConstraints constraints,
-            int stopIndex) {
-        String district = anchorPoi != null ? district(anchorPoi.address()) : "渝中区";
+            int stopIndex, int remainingMinutes) {
+        if (anchorPoi == null || anchorPoi.coordinate() == null) return null;
+        String district = district(anchorPoi.address());
         Attraction anchor = new Attraction();
         anchor.setId(anchorPoi != null ? "amap-" + text(anchorPoi.poiId()) : "amap-anchor");
         anchor.setName(anchorPoi != null ? safeName(anchorPoi) : "当前游览地标");
         anchor.setDistrict(district);
-        anchor.setLocation(anchorPoi != null ? coordinate(anchorPoi.coordinate()) : "106.576869,29.56236");
+        anchor.setLocation(coordinate(anchorPoi.coordinate()));
 
-        AttractionDiningKnowledge.DiningOption option = AttractionDiningKnowledge.resolveNearbyDining(anchor, slotType, constraints);
-        if (option == null) return null;
+        AttractionDiningKnowledge.DiningOption option = diningVenueService.resolveNearbyDining(anchor, slotType, constraints);
+        if (option == null || text(option.id()).startsWith("dining-fallback")
+                || AmapResponseNormalizer.parseCoordinate(option.location()) == null) return null;
+        String diningPoiId = text(option.id()).startsWith("amap-dining-")
+                ? text(option.id()).substring("amap-dining-".length()) : "";
+        String preference = "transit".equalsIgnoreCase(constraints.getTransportPreference()) ? "transit" : "walking";
+        RoutePairOutcome route = routeService.routePair(anchor.getLocation(), option.location(), city(constraints),
+                text(anchorPoi.poiId()), diningPoiId, preference);
+        int travelMinutes = routeMinutes(route);
+        if (travelMinutes <= 0) travelMinutes = estimateTravelMinutes(anchor.getLocation(), option.location());
+        int mealMinutes = durationMinutes(option.duration());
+        if (travelMinutes + mealMinutes > remainingMinutes) return null;
+        int mealStart = arrivalMinute + travelMinutes;
+        TaxonomyPort.MealWindow window = taxonomy.getMealWindow(slotType);
+        if (mealStart < window.startMinute() || mealStart + mealMinutes > window.endMinute()) return null;
 
         Map<String, Object> stop = new LinkedHashMap<>();
         String stopId = "runtime-dining-" + slotType.toLowerCase();
@@ -605,8 +657,11 @@ public class RuntimeLocationPlanner {
         stop.put("name", option.name());
         stop.put("displayName", option.name());
         stop.put("district", district);
-        stop.put("time", formatTime(arrivalMinute));
-        stop.put("startTime", formatTime(arrivalMinute));
+        stop.put("time", formatTime(mealStart));
+        stop.put("startTime", formatTime(mealStart));
+        stop.put("mealSlotType", slotType);
+        stop.put("amapPoiId", diningPoiId);
+        stop.put("plannedTravelMinutes", travelMinutes);
         stop.put("duration", option.duration() != null ? option.duration() : "约 50 分钟");
         stop.put("type", "DINING");
         stop.put("category", "美食");
@@ -619,34 +674,25 @@ public class RuntimeLocationPlanner {
         stop.put("ticket", option.averageCost());
         stop.put("costSummary", option.averageCost());
         stop.put("estimatedCost", option.averageCost());
-        String distStr = option.distanceFromAttraction() != null && !option.distanceFromAttraction().isBlank()
-                ? option.distanceFromAttraction() : "步行约 200 米";
-        String walkText = distStr.endsWith("达") ? distStr : (distStr.contains("车程") ? distStr : distStr + "即达");
-        boolean isMotorized = distStr.contains("车程") || distStr.contains("公里");
+        String walkText = routeLabel(route, travelMinutes);
+        boolean isMotorized = route != null && route.selected() != null && route.selected().segment() != null
+                && !"WALKING".equalsIgnoreCase(route.selected().segment().mode());
 
         stop.put("walk", walkText);
         stop.put("walkDifficulty", isMotorized ? "顺路通达" : "低");
         stop.put("walkingDifficulty", isMotorized ? "顺路通达" : "低");
         stop.put("indoor", true);
-        stop.put("bestTime", "全天营业·地道尝味");
+        stop.put("bestTime", "营业时间待核验");
         stop.put("recommendationReason", option.recommendationReason());
         stop.put("tasteReason", option.recommendationReason());
         stop.put("explanationSource", "DINING_KNOWLEDGE");
         stop.put("location", option.location());
-        stop.put("address", (district != null && !district.isBlank() ? district + " · " : "") + walkText);
+        stop.put("address", district);
         stop.put("routePreference", isMotorized ? "transit" : "walking");
-        Map<String, Object> rfp = new LinkedHashMap<>();
-        rfp.put("selectedMode", isMotorized ? "顺路/公交" : "步行");
-        rfp.put("summary", walkText);
-        rfp.put("selected", Map.of(
-                "duration", "约 5 分钟",
-                "durationSeconds", 300,
-                "distance", option.distanceFromAttraction(),
-                "distanceMeters", 180,
-                "summary", "从上一站点步行" + option.distanceFromAttraction() + "即达"
-        ));
+        Map<String, Object> rfp = routeMap(route);
+        rfp.put("estimatedDurationMinutes", travelMinutes);
         stop.put("routeFromPrevious", rfp);
-        stop.put("source", "DINING_KNOWLEDGE");
+        stop.put("source", diningPoiId.isBlank() ? "DINING_CATALOG" : "AMAP_POI_AROUND");
         return stop;
     }
 
@@ -666,23 +712,24 @@ public class RuntimeLocationPlanner {
         int initialStartMinute = resolveStartMinute(constraints);
         int startMinute = initialStartMinute;
 
-        // Check whether a dining meal should be planned
-        String rawPrompt = constraints != null && constraints.getRawPrompt() != null ? constraints.getRawPrompt() : "";
-        boolean explicitFood = rawPrompt.matches(".*(吃|火锅|老火锅|美食|午饭|晚饭|用餐|小吃|餐厅|午餐|晚餐|饭店|尝尝|吃饭).*");
+        // Semantic parsing supplies the diet preference; this planner does not maintain a food dictionary.
         boolean hasDietPref = constraints != null && constraints.getDietPreference() != null && !"未提供".equals(constraints.getDietPreference()) && !"本地菜优先".equals(constraints.getDietPreference());
+        boolean explicitFood = hasDietPref;
         int planEndMinute = initialStartMinute + budgetMinutes;
-        boolean spansLunch = initialStartMinute <= 13 * 60 && planEndMinute >= 12 * 60;
-        boolean spansDinner = initialStartMinute <= 19 * 60 + 30 && planEndMinute >= 18 * 60;
-        boolean allowDining = (explicitFood || hasDietPref || spansLunch || spansDinner || (budgetMinutes >= 180 && planEndMinute <= 21 * 60)) && budgetMinutes >= 90;
+        TaxonomyPort.MealWindow lunch = taxonomy.getMealWindow("LUNCH");
+        TaxonomyPort.MealWindow dinner = taxonomy.getMealWindow("DINNER");
+        boolean spansLunch = initialStartMinute < lunch.endMinute() && planEndMinute > lunch.startMinute();
+        boolean spansDinner = initialStartMinute < dinner.endMinute() && planEndMinute > dinner.startMinute();
+        boolean allowDining = (explicitFood || spansLunch || spansDinner) && budgetMinutes >= 90;
         boolean diningInserted = false;
         String mealSlotType;
         if (spansLunch) {
             mealSlotType = "LUNCH";
         } else if (spansDinner) {
             mealSlotType = "DINNER";
-        } else if (initialStartMinute >= 20 * 60) {
+        } else if (initialStartMinute >= taxonomy.getMealWindow("NIGHT_SNACK").startMinute()) {
             mealSlotType = "NIGHT_SNACK";
-        } else if (initialStartMinute >= 15 * 60) {
+        } else if (initialStartMinute >= dinner.startMinute()) {
             mealSlotType = "DINNER";
         } else {
             mealSlotType = "LUNCH";
@@ -694,7 +741,7 @@ public class RuntimeLocationPlanner {
         for (AmapResponseNormalizer.PoiCandidate candidate : candidates) {
             if (stops.size() >= maxStops || remaining < 25) break;
 
-            PoiCategory category = detectCategory(safeName(candidate), text(candidate.type()));
+            PoiCategory category = detectCategory(safeName(candidate), text(candidate.type()), text(candidate.typecode()));
 
             // Category diversity quotas:
             // 1. NEVER recommend more than 1 plaza in a single itinerary!
@@ -715,25 +762,29 @@ public class RuntimeLocationPlanner {
                 continue;
             }
 
-            if (!diningInserted && allowDining && !stops.isEmpty()) {
-                String effectiveSlotType = (startMinute >= 21 * 60) ? "NIGHT_SNACK" : mealSlotType;
-                boolean timeTrigger = ("LUNCH".equals(effectiveSlotType) && startMinute >= 11 * 60 + 40 && startMinute <= 13 * 60 + 40)
-                        || ("DINNER".equals(effectiveSlotType) && startMinute >= 17 * 60 + 30 && startMinute <= 20 * 60 + 30)
-                        || ("NIGHT_SNACK".equals(effectiveSlotType) && startMinute >= 21 * 60);
+            if (!diningInserted && allowDining) {
+                String effectiveSlotType = mealSlotType;
+                TaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
+                boolean timeTrigger = startMinute >= mealWindow.startMinute() && startMinute < mealWindow.endMinute();
                 boolean budgetUrgent = remaining <= 95 && remaining >= 45 && (spansLunch || spansDinner || explicitFood);
                 if (timeTrigger || (explicitFood && remaining <= budgetMinutes - 45) || budgetUrgent) {
                     Map<String, Object> diningStop = buildRuntimeDiningStop(
-                            previousCandidate, effectiveSlotType, startMinute, constraints, stops.size() + 1);
+                            previousCandidate, effectiveSlotType, startMinute, constraints, stops.size() + 1, remaining);
                     if (diningStop != null) {
                         stops.add(diningStop);
-                        int diningDuration = 50;
-                        remaining -= diningDuration;
-                        startMinute += diningDuration;
+                        int diningDuration = durationMinutes(diningStop.get("duration"));
+                        int diningTravel = number(diningStop.get("plannedTravelMinutes"), 0);
+                        remaining -= diningDuration + diningTravel;
+                        startMinute += diningDuration + diningTravel;
                         diningInserted = true;
                         Object diningLoc = diningStop.get("location");
                         if (diningLoc != null && !text(diningLoc).isBlank()) {
                             previousCoordinate = text(diningLoc);
                         }
+                        previousPoiId = text(diningStop.get("amapPoiId"));
+                        previousCandidate = new AmapResponseNormalizer.PoiCandidate(previousPoiId,
+                                text(diningStop.get("name")), AmapResponseNormalizer.parseCoordinate(previousCoordinate),
+                                text(diningStop.get("address")), "餐饮服务", null, null, previousPoiId, null, null);
                         if (stops.size() >= maxStops || remaining < 25) break;
                     }
                 }
@@ -774,12 +825,16 @@ public class RuntimeLocationPlanner {
                 Attraction fromAttr = Attraction.builder()
                         .name(safeName(previousCandidate))
                         .district(district(previousCandidate.address()))
+                        .location(coordinate(previousCandidate.coordinate()))
+                        .amapQuery(Map.of("city", city(constraints)))
                         .build();
                 Attraction toAttr = Attraction.builder()
                         .name(safeName(candidate))
                         .district(district(candidate.address()))
+                        .location(coordinate(candidate.coordinate()))
+                        .amapQuery(Map.of("city", city(constraints)))
                         .build();
-                String topographyHint = ChongqingTopographyKnowledge.generateTransitCharacteristicHint(
+                String topographyHint = topographyStrategyRouter.route(constraints.getDestination()).generateTransitCharacteristicHint(
                         fromAttr, toAttr, segmentPreference);
                 if (topographyHint != null && !topographyHint.isBlank()) {
                     stop.put("topographyTransitHint", topographyHint);
@@ -797,13 +852,12 @@ public class RuntimeLocationPlanner {
         }
 
         if (!diningInserted && allowDining && remaining >= 40 && !stops.isEmpty()) {
-            String effectiveSlotType = (startMinute >= 21 * 60) ? "NIGHT_SNACK" : mealSlotType;
-            boolean eligiblePostMeal = ("LUNCH".equals(effectiveSlotType) && startMinute <= 14 * 60)
-                    || ("DINNER".equals(effectiveSlotType) && startMinute <= 20 * 60 + 30)
-                    || "NIGHT_SNACK".equals(effectiveSlotType) || explicitFood;
+            String effectiveSlotType = mealSlotType;
+            TaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
+            boolean eligiblePostMeal = startMinute >= mealWindow.startMinute() && startMinute < mealWindow.endMinute();
             if (eligiblePostMeal) {
                 Map<String, Object> diningStop = buildRuntimeDiningStop(
-                        previousCandidate, effectiveSlotType, startMinute, constraints, stops.size() + 1);
+                        previousCandidate, effectiveSlotType, startMinute, constraints, stops.size() + 1, remaining);
                 if (diningStop != null) {
                     stops.add(diningStop);
                 }
@@ -862,11 +916,8 @@ public class RuntimeLocationPlanner {
             }
         }
 
-        // Prominence & cultural scenic tier weighting: genuine scenic attractions outrank small street plazas
-        if (matchesKeywords(textToMatch, "磁器口", "洪崖洞", "解放碑", "朝天门", "李子坝", "渣滓洞", "白公馆",
-                "红岩", "沙坪公园", "平顶山", "歌乐山", "罗中立", "人民大礼堂", "三峡博物馆", "长江索道", "弹子石", "一棵树", "老君洞", "大金鹰", "南山植物园")) {
-            score += 55.0;
-        } else if (matchesKeywords(textToMatch, "古镇", "老街", "森林公园", "植物园", "湿地公园", "文化公园", "风景区", "国家级", "观景台", "步道", "俯瞰")) {
+        // Score provider prominence and generic venue characteristics uniformly across cities.
+        if (matchesKeywords(textToMatch, "古镇", "老街", "森林公园", "植物园", "湿地公园", "文化公园", "风景区", "国家级", "观景台", "步道", "俯瞰")) {
             score += 35.0;
         } else if (matchesKeywords(textToMatch, "博物馆", "纪念馆", "陈列馆", "美术馆", "寺", "庙", "观", "阁", "塔", "公园", "湖")) {
             score += 25.0;
@@ -890,7 +941,7 @@ public class RuntimeLocationPlanner {
         }
         if (c.heatTag() != null && !c.heatTag().isBlank()) {
             String tag = c.heatTag();
-            if (tag.contains("巴渝") || tag.contains("国家级") || tag.contains("著名") || tag.contains("世界遗产") || tag.contains("名胜") || tag.contains("古迹")) {
+            if (tag.contains("国家级") || tag.contains("著名") || tag.contains("世界遗产") || tag.contains("名胜") || tag.contains("古迹")) {
                 score += 20.0;
             }
         }
@@ -951,7 +1002,7 @@ public class RuntimeLocationPlanner {
                     }
                 } else if ("市井".equals(interest) || "市井烟火".equals(interest)) {
                     if (matchesKeywords(target, "老街", "市井", "巷", "码头", "坊", "里", "街区")) {
-                        reasons.add("展现巴渝市井烟火");
+                        reasons.add("展现当地市井生活");
                         break;
                     }
                 }
@@ -962,7 +1013,7 @@ public class RuntimeLocationPlanner {
         }
         if (candidate.heatTag() != null && !candidate.heatTag().isBlank()) {
             String tag = candidate.heatTag();
-            if (tag.contains("巴渝") || tag.contains("国家级") || tag.contains("名胜") || tag.contains("古迹")) {
+            if (tag.contains("国家级") || tag.contains("名胜") || tag.contains("古迹")) {
                 reasons.add("获评“" + tag.replace(";", "·") + "”文旅地标");
             }
         }
@@ -990,6 +1041,9 @@ public class RuntimeLocationPlanner {
         stop.put("entityId", poiId.isBlank() ? "amap-runtime-" + index : "amap-" + poiId);
         stop.put("venueId", poiId.isBlank() ? "amap-runtime-" + index : "amap-" + poiId);
         stop.put("amapPoiId", poiId);
+        stop.put("typecode", text(candidate.typecode()));
+        stop.put("poiType", text(candidate.type()));
+        stop.put("businessArea", text(candidate.businessArea()));
         stop.put("name", name);
         stop.put("displayName", name);
         stop.put("district", district(candidate.address()));
@@ -998,7 +1052,7 @@ public class RuntimeLocationPlanner {
         stop.put("duration", "约 " + visitMinutes + " 分钟");
         stop.put("icon", "景");
         stop.put("tone", "dynamic");
-        stop.put("category", categoryDisplayName(detectCategory(name, text(candidate.type()))));
+        stop.put("category", categoryDisplayName(detectCategory(name, text(candidate.type()), text(candidate.typecode()))));
         if (candidate.rating() != null && candidate.rating() > 0) {
             stop.put("rating", candidate.rating());
             stop.put("amapRating", candidate.rating());
@@ -1030,7 +1084,7 @@ public class RuntimeLocationPlanner {
 
     private Map<String, Object> baseTrip(TravelConstraints constraints, int version) {
         Map<String, Object> trip = new LinkedHashMap<>();
-        trip.put("id", "draft-runtime-cq-" + version);
+        trip.put("id", "draft-runtime-" + version);
         trip.put("version", version);
         trip.put("title", text(constraints.getStartPlace()) + "·" + constraints.getTimeBudgetMinutes() + "分钟附近规划");
         trip.put("subtitle", "明确起点动态规划 · 高德周边搜索");
@@ -1078,6 +1132,16 @@ public class RuntimeLocationPlanner {
     }
 
     public static PoiCategory detectCategory(String name, String type) {
+        return detectCategory(name, type, "");
+    }
+
+    public static PoiCategory detectCategory(String name, String type, String typecode) {
+        String code = typecode == null ? "" : typecode.trim();
+        if ("110105".equals(code)) return PoiCategory.SQUARE;
+        if (code.startsWith("11010")) return PoiCategory.PARK_NATURE;
+        if (AmapPoiTaxonomy.isCulturalVenue(code) || "110204".equals(code) || "110210".equals(code)) return PoiCategory.HISTORIC_CULTURE;
+        if ("110205".equals(code) || "110206".equals(code) || "110207".equals(code)) return PoiCategory.RELIGIOUS_TEMPLE;
+        if ("110209".equals(code)) return PoiCategory.LANDMARK_VIEW;
         String n = name == null ? "" : name.trim();
         String t = type == null ? "" : type.trim();
 
@@ -1086,8 +1150,8 @@ public class RuntimeLocationPlanner {
             return PoiCategory.SQUARE;
         }
 
-        // 2. Renowned 8D landmarks & riverside viewpoints
-        if (n.contains("洪崖洞") || n.contains("解放碑") || n.contains("李子坝") || n.contains("索道")
+        // 2. Riverside viewpoints and observation facilities
+        if (n.contains("索道")
                 || n.contains("观景") || n.contains("瞰江") || n.contains("步道") || n.contains("绿道")
                 || n.contains("大桥") || n.contains("滨江") || n.contains("江岸") || n.contains("两江")
                 || n.contains("单轨") || n.contains("轻轨") || n.contains("码头") || n.contains("渡口")
@@ -1097,7 +1161,7 @@ public class RuntimeLocationPlanner {
 
         // 3. Historic sites, ancient towns, museums, memorials
         if (n.contains("古镇") || n.contains("老街") || n.contains("民俗") || n.contains("古村")
-                || n.contains("渣滓洞") || n.contains("白公馆") || n.contains("红岩") || n.contains("旧址")
+                || n.contains("旧址")
                 || n.contains("遗址") || n.contains("故居") || n.contains("旧居") || n.contains("博物馆")
                 || n.contains("纪念馆") || n.contains("陈列馆") || n.contains("美术馆") || n.contains("艺术馆")
                 || n.contains("书院") || n.contains("文博") || n.contains("文物") || n.contains("历史")
@@ -1144,53 +1208,17 @@ public class RuntimeLocationPlanner {
         };
     }
 
-    private static final Pattern CAMPUS_PATTERN = Pattern.compile("(重庆大学|西南大学|重庆邮电大学|重庆交通大学|四川外国语大学|重庆师范大学|重庆医科大学|重庆理工大学|重庆工商大学|[\\u4e00-\\u9fa5]{2,6}(?:大学|学院))");
-
-    private static final Set<String> FAMOUS_PERSONS = Set.of(
-            "卢作孚", "李四光", "陈豹隐", "周恩来", "陈志潜", "郑思群", "艾芜", "吴宓",
-            "毛鹤年", "冯简", "马寅初", "吴芳吉", "吕子方", "沈懋德", "潘菽", "潘序伦",
-            "周志宏", "黄汲清", "傅鹰", "丁道衡", "何鲁", "郭沫若", "陶行知", "张伯苓",
-            "晏阳初", "梁漱溟", "黄炎培", "徐悲鸿"
-    );
-
-    private static final List<String> NOISE_NAME_KEYWORDS = List.of(
-            "雕像", "塑像", "半身像", "立像", "胸像", "纪念像", "石像", "铜像", "雕塑",
-            "石碑", "刻石", "碑刻", "纪念碑", "题字", "碑亭", "摩岩石刻", "石虎",
-            "打卡点", "装置", "机位", "拍摄", "转盘", "环岛",
-            "办公楼", "教学楼", "实验楼", "行政楼", "综合楼", "实训楼", "逸夫楼",
-            "四教", "一教", "二教", "三教", "五教", "六教", "七教", "八教",
-            "宿舍", "公寓", "家属区", "食堂", "快餐厅", "教工餐厅",
-            "传达室", "收发室", "值班室", "门卫", "保卫处", "车库", "停车场",
-            "变电站", "配电", "机房", "垃圾", "公厕", "厕所", "卫生间", "饲料房", "小卖部", "报刊亭",
-            "特产", "专卖", "便利店", "超市", "门市", "批发", "李抄手", "土特",
-            "玫琳凯", "奇峰广场", "泛洋广场", "华宇广场", "地下商场", "地下商业街",
-            "数码广场", "数码城", "商住楼", "写字楼", "商业城", "购物中心",
-            "火车站广场", "汽车站", "客运站", "加气站", "加油站", "驾校",
-            "民宿", "客栈", "旅馆", "酒店", "宾馆", "招待所",
-            "营业厅", "营业部", "服务中心", "售后", "专卖店", "体验店",
-            "中学", "小学", "幼儿园", "培训中心"
-    );
-
-    private static final List<String> GENUINE_SCENIC_SUFFIXES = List.of(
-            "公园", "森林", "湿地", "景区", "自然", "峡", "谷", "洞", "岛", "湖", "池", "泉", "山", "峰", "崖", "瀑布",
-            "步道", "绿道", "渡口", "码头", "水库", "馆", "院", "寺", "庙", "观", "堂", "阁", "楼", "塔", "堡", "城",
-            "殿", "祠", "宫", "陵", "旧址", "遗址", "故居", "旧居", "老街", "古镇", "古村", "步行街", "广场", "桥",
-            "索道", "天街", "古建筑", "早期建筑", "建筑群", "纪念亭", "亭", "钟塔", "门",
-            "路", "街", "道", "巷", "弄", "坪", "坝", "滩", "岩", "咀", "沟", "溪", "湾", "庄", "村", "寨", "口"
-    );
+    private static final Pattern CAMPUS_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,12}(?:大学|学院))");
 
     private static final Pattern NEIGHBORHOOD_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,6}(?:老街|古镇|古村|步行街|商圈|风景区|植物园|森林公园|文化公园))");
 
-    private String extractNeighborhood(String name, String address) {
+    private String extractNeighborhood(String name, String address, String businessArea) {
+        if (businessArea != null && !businessArea.isBlank()) {
+            return businessArea.trim();
+        }
         String combined = (name == null ? "" : name) + " " + (address == null ? "" : address);
         Matcher m = NEIGHBORHOOD_PATTERN.matcher(combined);
-        if (m.find()) {
-            return m.group(1).trim();
-        }
-        for (String key : List.of("黄桷垭", "磁器口", "弹子石", "中山四路", "洪崖洞", "解放碑", "朝天门", "南滨路", "北滨路", "白沙")) {
-            if (combined.contains(key)) return key;
-        }
-        return "";
+        return m.find() ? m.group(1).trim() : "";
     }
 
     private String extractCampus(String name, String address) {
@@ -1216,52 +1244,58 @@ public class RuntimeLocationPlanner {
         return clean;
     }
 
-    private boolean isNoisePoi(AmapResponseNormalizer.PoiCandidate poi) {
+    boolean isNoisePoi(AmapResponseNormalizer.PoiCandidate poi) {
+        if (poi == null) return true;
         String name = safeName(poi);
         String type = text(poi.type());
+        String typecode = poi.typecode() != null ? poi.typecode().trim() : "";
 
-        // Whitelist iconic landmarks
-        if (name.contains("解放碑") || name.contains("大足石刻") || name.contains("三峡广场")) return false;
-
-        // 0. Building numbers or apartment codes (e.g., 14栋, 1号楼, 2单元)
-        if (name.matches(".*\\d+[栋幢号单元楼].*")) return true;
-
-        // 1. Noise keywords in name
-        for (String noise : NOISE_NAME_KEYWORDS) {
-            if (name.contains(noise)) return true;
-        }
-
-        // 2. Pure famous person names or memorial bust without authentic museum/residence
-        for (String person : FAMOUS_PERSONS) {
-            if (name.equals(person)) return true;
-            if (name.contains(person) && !name.contains("纪念馆") && !name.contains("故居")
-                    && !name.contains("旧居") && !name.contains("陈列馆") && !name.contains("故里")
-                    && !name.contains("陵园") && !name.contains("艺术馆") && !name.contains("美术馆")) {
+        // Classify suitability for a scenic candidate pool, not a universal POI blacklist.
+        if (!typecode.isBlank()) {
+            if ("110106".equals(typecode) || "140201".equals(typecode)) return true;
+            if (AmapPoiTaxonomy.isScenicVenue(typecode)) {
+                return false;
+            }
+            if (AmapPoiTaxonomy.isCulturalVenue(typecode)) {
+                return false;
+            }
+            // These remaining categories belong to other planning flows; only
+            // the scenic search pool excludes them. Cultural venues were handled above.
+            if (typecode.startsWith("20") || typecode.startsWith("19") || typecode.startsWith("14")
+                    || typecode.startsWith("05") || typecode.startsWith("06") || typecode.startsWith("10")
+                    || typecode.startsWith("07") || typecode.startsWith("12") || typecode.startsWith("13")
+                    || typecode.startsWith("15") || typecode.startsWith("16") || typecode.startsWith("17") || typecode.startsWith("18")) {
                 return true;
             }
         }
 
-        // 3. Short 2-4 character Chinese names without genuine scenic suffixes (person name or bust POI)
-        if (name.length() >= 2 && name.length() <= 4 && name.matches("^[\\u4e00-\\u9fa5]+$")) {
-            boolean hasScenicSuffix = false;
-            for (String suffix : GENUINE_SCENIC_SUFFIXES) {
-                if (name.contains(suffix)) {
-                    hasScenicSuffix = true;
-                    break;
-                }
-            }
-            if (!hasScenicSuffix) return true;
+        // Older providers and catalog records may omit codes. Use their category
+        // text first, reserving generic name heuristics for truly unclassified records.
+        if (type.contains("博物馆") || type.contains("展览馆") || type.contains("美术馆")
+                || type.contains("图书馆") || type.contains("科技馆") || type.contains("天文馆")) return false;
+        if (type.contains("公共厕所") || type.contains("变电站") || type.contains("售票处")
+                || type.contains("洗手间") || type.contains("停车场") || type.contains("服务设施")
+                || type.contains("报刊亭") || type.contains("公用电话") || type.contains("公司企业")
+                || type.contains("商务住宅") || type.contains("生活服务") || type.contains("购物服务")
+                || type.contains("餐饮服务") || type.contains("住宿服务") || type.contains("学校")
+                || type.contains("科研机构") || type.contains("公园内部设施")) {
+            return true;
+        }
+        if (type.contains("风景名胜")) return false;
+
+        // 校园内部纯楼栋、单元或教学楼（如“14栋”, “2单元”, “第四教学楼”, “实验楼”）一票否决
+        if (name.matches(".*(?:[一二三四五六七八九十\\d]+[栋幢号单元楼教]|教学楼|实训楼|实验楼).*")
+                && !type.contains("餐饮") && !type.contains("咖啡") && !type.contains("茶艺")
+                && !name.matches(".*(?:餐厅|食堂|咖啡|茶馆|茶楼|茶室|面馆|饭庄|小吃).*")) {
+            return true;
         }
 
-        // 4. Station exit drop-off plazas
+        // 火车站/汽车站上下客进出站广场过滤
         if (name.endsWith("东广场") || name.endsWith("西广场") || name.endsWith("南广场") || name.endsWith("北广场")) {
             return true;
         }
 
-        // 5. Type blacklists
-        return type.contains("报刊亭") || type.contains("公用电话") || type.contains("公共厕所")
-                || type.contains("生活服务") || type.contains("公司企业") || type.contains("餐饮服务")
-                || type.contains("商务住宅") || type.contains("购物服务");
+        return false;
     }
 
     public static int inferVisitMinutes(String name, String type, int remainingBudget) {
@@ -1334,7 +1368,8 @@ public class RuntimeLocationPlanner {
             String itemCampus = extractCampus(itemName, itemAddr);
 
             // 1. 校区排除：出发地为大学校区时，排除校内日常运动场/教学楼/操场，防止出校后折返看操场
-            if (!startCampus.isBlank()) {
+            if (!startCampus.isBlank() && !AmapPoiTaxonomy.isScenicVenue(text(item.typecode()))
+                    && !AmapPoiTaxonomy.isCulturalVenue(text(item.typecode()))) {
                 if (itemCampus.equals(startCampus)) {
                     if (itemName.contains("广场") || itemName.contains("操场") || itemName.contains("体育")
                             || itemName.contains("教学") || itemName.contains("楼") || itemName.contains("公寓")
@@ -1350,7 +1385,7 @@ public class RuntimeLocationPlanner {
             }
 
             // 2. 广场候选上限：候选池至多 2 个广场，防止挤占其他核心文旅景点
-            PoiCategory cat = detectCategory(itemName, text(item.type()));
+            PoiCategory cat = detectCategory(itemName, text(item.type()), text(item.typecode()));
             if (cat == PoiCategory.SQUARE) {
                 if (squareCandidateCount >= 2) {
                     continue;
@@ -1359,7 +1394,7 @@ public class RuntimeLocationPlanner {
             }
 
             // 3. 街区聚集度控制：同一老街或街区（如黄桷垭老街、磁器口等）候选池至多保留 2 处，避免整街微小门牌占满候选池
-            String neighborhood = extractNeighborhood(itemName, itemAddr);
+            String neighborhood = extractNeighborhood(itemName, itemAddr, item.businessArea());
             if (!neighborhood.isBlank() && neighborhoodCounts.getOrDefault(neighborhood, 0) >= 2) {
                 continue;
             }
@@ -1434,7 +1469,9 @@ public class RuntimeLocationPlanner {
         AmapResponseNormalizer.Coordinate from = AmapResponseNormalizer.parseCoordinate(origin);
         AmapResponseNormalizer.Coordinate to = AmapResponseNormalizer.parseCoordinate(destination);
         if (from == null || to == null) return 30;
-        return Math.max(5, (int) Math.ceil(distanceKm(from, to) * 4.0));
+        double distance = distanceKm(from, to);
+        if (!Double.isFinite(distance)) throw new IllegalArgumentException("无法根据无效坐标估算交通时间");
+        return Math.max(5, (int) Math.ceil(distance * 4.0));
     }
 
     private String routeLabel(RoutePairOutcome route, int fallbackMinutes) {
@@ -1461,6 +1498,11 @@ public class RuntimeLocationPlanner {
         result.put("durationSeconds", segment.durationSeconds());
         result.put("polyline", segment.polyline());
         return result;
+    }
+
+    private boolean allRoutesVerified(List<Map<String, Object>> stops) {
+        return !stops.isEmpty() && stops.stream().allMatch(stop -> stop.get("routeFromPrevious") instanceof Map<?, ?> route
+                && "已核验".equals(route.get("status")));
     }
 
     private Map<String, Object> dynamicSummary(boolean empty) {
@@ -1496,6 +1538,7 @@ public class RuntimeLocationPlanner {
         double dLon = Math.toRadians(to.longitude() - from.longitude());
         double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
                 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        a = Math.max(0.0, Math.min(1.0, a));
         return 6371.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 

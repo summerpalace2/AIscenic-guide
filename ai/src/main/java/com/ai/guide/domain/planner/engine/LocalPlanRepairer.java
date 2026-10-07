@@ -83,7 +83,7 @@ public class LocalPlanRepairer {
                         && !isProtectedStop(s, constraints));
             }
             // Strategy 3: Closed on Monday or Slot time conflict -> swap with available attraction or remove
-            else if ("CLOSED_ON_MONDAY".equals(v.type()) || "CLOSED_AT_SLOT_TIME".equals(v.type())) {
+            else if ("CLOSED_ON_MONDAY".equals(v.type()) || "CLOSED_ON_DATE".equals(v.type()) || "CLOSED_AT_SLOT_TIME".equals(v.type())) {
                 stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
                         && !isProtectedStop(s, constraints));
             }
@@ -97,7 +97,7 @@ public class LocalPlanRepairer {
                 long scenicCount = stops.stream().filter(s -> !isDiningStop(s)).count();
                 if (scenicCount <= 2) {
                     // Do not prune when only 1-2 scenic spots exist! Compress duration to keep day schedule within budget
-                    compressStopDurations(stops);
+                    compressStopDurations(stops, constraints);
                 } else {
                     boolean removed = false;
                     if (v.stopId() != null && !v.stopId().isBlank()) {
@@ -115,7 +115,7 @@ public class LocalPlanRepairer {
                     }
                     if (!removed) {
                         // 全保护站点无法移除时压缩游玩时长（180->90->60->50）
-                        compressStopDurations(stops);
+                        compressStopDurations(stops, constraints);
                     }
                 }
             }
@@ -124,8 +124,9 @@ public class LocalPlanRepairer {
         return repairedDays;
     }
 
-    private void compressStopDurations(List<Map<String, Object>> stops) {
+    private void compressStopDurations(List<Map<String, Object>> stops, TravelConstraints constraints) {
         for (Map<String, Object> s : stops) {
+            if (isExplicitlyProtectedStop(s, constraints)) continue;
             PoiDomainType domainType = categoryPolicyRegistry.resolveCategory(s);
             if (domainType == PoiDomainType.THEATER || domainType == PoiDomainType.HOTEL) continue;
             if (domainType == PoiDomainType.DINING) {
@@ -185,6 +186,11 @@ public class LocalPlanRepairer {
         if (domainType == PoiDomainType.DINING || domainType == PoiDomainType.THEATER || domainType == PoiDomainType.HOTEL) {
             return true;
         }
+        return isExplicitlyProtectedStop(stop, constraints);
+    }
+
+    private boolean isExplicitlyProtectedStop(Map<String,Object> stop, TravelConstraints constraints) {
+        if (stop == null) return false;
         if (Boolean.TRUE.equals(stop.get("pinned")) || Boolean.TRUE.equals(stop.get("isPinned"))
                 || "true".equalsIgnoreCase(String.valueOf(stop.get("pinned")))) {
             return true;

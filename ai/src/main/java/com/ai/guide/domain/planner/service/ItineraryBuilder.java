@@ -3,6 +3,12 @@ package com.ai.guide.domain.planner.service;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.engine.LocalPlanRepairer;
+import com.ai.guide.domain.planner.engine.MealGapSolver;
+import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.dining.service.DiningVenueService;
+import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
+import com.ai.guide.domain.planner.service.util.ChineseDateTimeParser;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
 import com.ai.guide.domain.planner.engine.RouteCost;
@@ -65,6 +71,21 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService runtimeAttractionDetailService;
 
     @Autowired
+    private DiningVenueService diningVenueService;
+
+    @Autowired
+    private TaxonomyPort taxonomy;
+
+    @Autowired
+    private MealGapSolver mealGapSolver;
+
+    public void setDiningScheduling(DiningVenueService diningVenueService, TaxonomyPort taxonomy, MealGapSolver mealGapSolver) {
+        this.diningVenueService = diningVenueService;
+        this.taxonomy = taxonomy;
+        this.mealGapSolver = mealGapSolver;
+    }
+
+    @Autowired
     public ItineraryBuilder(AttractionService attractionService,
                             RouteAwarePlanner routeAwarePlanner,
                             PlanVerifier planVerifier,
@@ -92,7 +113,10 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     public Map<String, Object> build(int version, TravelConstraints constraints) {
-        List<Attraction> catalog = new ArrayList<>(attractionService.list(null, null));
+        String destination = normalizedCity(constraints.getDestination());
+        boolean chongqingCatalog = "重庆".equals(destination);
+        List<Attraction> catalog = new ArrayList<>(attractionService.list(null, null).stream()
+                .filter(attraction -> belongsToCity(attraction, destination)).toList());
         catalog.sort(Comparator.comparingInt(a -> catalogRank(a.getId())));
         Map<String, Attraction> byId = new LinkedHashMap<>();
         for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
@@ -102,7 +126,8 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         boolean hasStartPlace = constraints.getStartPlace() != null
                 && !constraints.getStartPlace().isBlank()
                 && !"未提供".equals(constraints.getStartPlace());
-        boolean isGoldenBaseline = explicitIds.isEmpty() && dayCount == 2 && !hasStartPlace;
+        boolean isGoldenBaseline = chongqingCatalog && explicitIds.isEmpty() && dayCount == 2 && !hasStartPlace
+                && byId.keySet().containsAll(List.of("cq-jiefangbei", "cq-hongyadong", "cq-museum", "cq-liziba", "cq-shibati"));
 
         List<Map<String, Object>> days = isGoldenBaseline
                 ? routeAwarePlanner.resolveAndVerifyDays(buildBaselineDays(dayCount, constraints, byId), byId, constraints)
@@ -111,16 +136,18 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         enrichDaysWithDining(days, constraints, byId);
         annotateStops(days, constraints);
 
+        String cityLabel = destination.isBlank() ? "目的地" : destination;
         String title = isGoldenBaseline
                 ? "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·山城漫游线"
                 : hasStartPlace
-                ? "从" + constraints.getStartPlace() + "出发·重庆" + dayCount + "天专属方案"
-                : "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·专属定制方案";
+                ? "从" + constraints.getStartPlace() + "出发·" + cityLabel + dayCount + "天专属方案"
+                : cityLabel + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·专属定制方案";
         String subtitle = ("低".equals(constraints.getWalkingTolerance()) ? "少走路优先" : "按约束排序")
                 + " · " + constraints.getCompanions() + " · " + String.join(" + ", constraints.getInterests().stream().limit(2).toList());
 
         Map<String, Object> trip = new LinkedHashMap<>();
-        trip.put("id", "draft-cq-" + version);
+        trip.put("id", "draft-plan-" + version);
+        trip.put("city", constraints.getDestination() == null ? "" : constraints.getDestination());
         trip.put("version", version);
         trip.put("title", title);
         trip.put("subtitle", subtitle);
@@ -144,11 +171,35 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         trip.put("degraded", versionMeta.isDegraded());
         trip.put("degradationReasons", versionMeta.getDegradationReasons());
 
+        if (catalog.isEmpty()) {
+            trip.put("sourceMode", "当地景点数据待检索");
+            trip.put("routeDataStatus", "UNAVAILABLE");
+            trip.put("degraded", true);
+            trip.put("degradationReasons", List.of("CITY_CATALOG_UNAVAILABLE"));
+            trip.put("summary", Map.of("confirmed", List.of(), "dynamic", List.of(),
+                    "unknown", List.of("当地景点与路线待检索"), "conflict", List.of()));
+            trip.put("sourceStatus", Map.of("poi", "当地景点数据缺失", "route", "未生成", "weather", "待查询", "fallback", true));
+            trip.put("retrieval", Map.of("mode", "java-planner-local", "status", "当地目录无匹配景点", "facts", List.of(), "citations", List.of()));
+            trip.put("citations", List.of());
+        }
+        if (!chongqingCatalog) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> context = (Map<String, Object>) trip.get("planContext");
+            context.put("foodGuidance", "饮食策略：依据用户风味偏好检索当地餐厅，营业状态与路线待核验。");
+        }
+
         return trip;
     }
 
     @Override
     public Map<String, Object> buildLegacy(int version, TravelConstraints constraints) {
+        if (!"重庆".equals(normalizedCity(constraints.getDestination()))) {
+            Map<String, Object> trip = build(version, constraints);
+            trip.put("plannerVersion", "legacy-v0");
+            trip.put("explanationSource", "LEGACY_STATIC");
+            trip.put("degraded", true);
+            return trip;
+        }
         List<Attraction> catalog = attractionService.list(null, null);
         Map<String, Attraction> byId = new LinkedHashMap<>();
         for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
@@ -162,7 +213,8 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         String subtitle = "传统规划引擎 · 演示基准";
 
         Map<String, Object> trip = new LinkedHashMap<>();
-        trip.put("id", "draft-cq-" + version);
+        trip.put("id", "draft-plan-" + version);
+        trip.put("city", constraints.getDestination());
         trip.put("version", version);
         trip.put("title", title);
         trip.put("subtitle", subtitle);
@@ -185,6 +237,23 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         trip.put("degradationReasons", List.of("LEGACY_PLANNER_ACTIVE"));
 
         return trip;
+    }
+
+    private static String normalizedCity(String city) {
+        if (city == null) return "";
+        String value = city.trim();
+        return value.endsWith("市") && value.length() > 2 ? value.substring(0, value.length() - 1) : value;
+    }
+
+    private static boolean belongsToCity(Attraction attraction, String city) {
+        if (attraction == null || city.isBlank()) return false;
+        Object configuredCity = attraction.getAmapQuery() == null ? null : attraction.getAmapQuery().get("city");
+        if (configuredCity != null && !String.valueOf(configuredCity).isBlank()) {
+            return city.equals(normalizedCity(String.valueOf(configuredCity)));
+        }
+        // The legacy catalog predates its city field. This compatibility applies
+        // only to its documented entries, never to arbitrary unclassified POIs.
+        return "重庆".equals(city) && CATALOG_ORDER.contains(attraction.getId());
     }
 
     public Map<String, Object> createStop(Attraction attraction, String stopId, String time,
@@ -217,6 +286,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("indoor", Boolean.TRUE.equals(attraction.getIndoor()));
         stop.put("ticket", attraction.getTicket());
         stop.put("bestTime", attraction.getBestTime());
+        stop.put("openingHours", attraction.getOpeningHours());
         stop.put("estimatedCost", "未知·需用户确认");
         stop.put("costSummary", "费用待确认");
         String reason = (detail != null && !detail.isBlank()) ? detail
@@ -248,7 +318,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("venueId", dining.id());
         stop.put("name", dining.name());
         stop.put("displayName", dining.name());
-        stop.put("district", district != null && !district.isBlank() ? district : "渝中区");
+        stop.put("district", district == null ? "" : district);
         stop.put("time", time);
         stop.put("startTime", time);
         stop.put("duration", dining.duration());
@@ -266,30 +336,20 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("ticket", dining.averageCost());
         stop.put("costSummary", dining.averageCost());
         stop.put("estimatedCost", dining.averageCost());
-        stop.put("walk", dining.distanceFromAttraction() + "即达");
+        stop.put("walk", "交通待核验");
         stop.put("walkDifficulty", "低");
         stop.put("walkingDifficulty", "低");
         stop.put("indoor", true);
-        stop.put("bestTime", "全天营业·用餐便利");
+        stop.put("bestTime", "营业时间待核验");
         stop.put("recommendationReason", dining.recommendationReason());
         stop.put("location", dining.location());
         stop.put("address", (district != null && !district.isBlank() ? district + " · " : "") + dining.distanceFromAttraction() + "即达");
         stop.put("routePreference", "walking");
         stop.put("walkingInfo", Map.of("summary", dining.distanceFromAttraction() + "即达", "status", "已知"));
-        Map<String, Object> rfp = new LinkedHashMap<>();
-        rfp.put("selectedMode", "步行");
-        rfp.put("summary", dining.distanceFromAttraction() + "即达");
-        rfp.put("selected", Map.of(
-                "duration", "约 5 分钟",
-                "durationSeconds", 300,
-                "distance", dining.distanceFromAttraction(),
-                "distanceMeters", 180,
-                "summary", "从上一游览点步行" + dining.distanceFromAttraction() + "即达"
-        ));
-        stop.put("routeFromPrevious", rfp);
-        stop.put("resolvedRouteCost", RouteCost.estimated(180, 5, 180, "WALKING", "步行即达").asMap());
-        stop.put("estimatedRouteCost", RouteCost.estimated(180, 5, 180, "WALKING", "步行即达").asMap());
-        stop.put("routeDataStatus", "ESTIMATED");
+        RouteCost unknownRoute = RouteCost.unavailable("餐饮站点尚未计算相邻路线");
+        stop.put("resolvedRouteCost", unknownRoute.asMap());
+        stop.put("estimatedRouteCost", unknownRoute.asMap());
+        stop.put("routeDataStatus", "UNAVAILABLE");
         return stop;
     }
 
@@ -593,124 +653,89 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     private void enrichDaysWithDining(List<Map<String, Object>> days, TravelConstraints constraints, Map<String, Attraction> byId) {
-        if (days == null || days.isEmpty()) return;
-        int dayCount = days.size();
-        String arrival = constraints == null ? "" : constraints.getArrivalAt();
-        String departure = constraints == null ? "" : constraints.getDepartureAt();
-
-        // 跨天全局记录已推荐餐厅，杜绝多日行程中重复推荐相同餐厅或顿顿小面
+        if (days == null || days.isEmpty() || diningVenueService == null || taxonomy == null || mealGapSolver == null) return;
         Set<String> usedDiningNames = new HashSet<>();
-
         for (Map<String, Object> day : days) {
-            Object stopsObj = day.get("stops");
-            if (!(stopsObj instanceof List<?> rawList)) continue;
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> currentStops = new ArrayList<>((List<Map<String, Object>>) rawList);
-            if (currentStops.isEmpty()) continue;
-
-            // Check if dining stops already exist
-            boolean hasLunch = currentStops.stream().anyMatch(s -> "12:00".equals(s.get("time")) || "餐".equals(s.get("icon")));
-            boolean hasDinner = currentStops.stream().anyMatch(s -> "18:00".equals(s.get("time")) || ("DINNER".equals(s.get("type")) && "餐".equals(s.get("icon"))));
-
-            int dayNum = day.get("day") instanceof Number n ? n.intValue() : 1;
-            boolean isFirstDay = (dayNum == 1);
-            boolean isLastDay = (dayNum == dayCount);
-
-            // Separate into morning, afternoon, evening attractions
-            Map<String, Object> morningStop = null;
-            Map<String, Object> afternoonStop = null;
-            Map<String, Object> eveningStop = null;
-
-            for (Map<String, Object> stop : currentStops) {
-                if ("餐".equals(stop.get("icon")) || "DINING".equals(stop.get("type"))) continue;
-                String time = String.valueOf(stop.get("time"));
-                if (time.contains("09:") || time.contains("10:") || time.contains("11:")) {
-                    if (morningStop == null) morningStop = stop;
-                } else if (time.contains("13:") || time.contains("14:") || time.contains("15:") || time.contains("16:") || time.contains("17:")) {
-                    if (afternoonStop == null) afternoonStop = stop;
-                } else if (time.contains("18:") || time.contains("19:") || time.contains("20:")) {
-                    if (eveningStop == null) eveningStop = stop;
-                }
+            for (Map<String, Object> stop : PlanAdjustmentHelper.dayStops(day)) {
+                if (PlanAdjustmentHelper.isDiningStop(stop)) usedDiningNames.add(PlanAdjustmentHelper.safe(stop.get("name")));
             }
-
-            // Fallback if slot times are slightly different (e.g. only 2 stops)
-            if (morningStop == null && afternoonStop == null && eveningStop == null) {
-                if (currentStops.size() == 1) {
-                    morningStop = currentStops.get(0);
-                } else if (currentStops.size() >= 2) {
-                    morningStop = currentStops.get(0);
-                    afternoonStop = currentStops.get(1);
-                }
-            }
-
-            List<Map<String, Object>> newStops = new ArrayList<>();
-
-            // Decide whether lunch is applicable
-            boolean allowLunch = !hasLunch;
-            if (isFirstDay && (arrival.contains("下午") || arrival.contains("晚上") || arrival.contains("夜间"))) {
-                allowLunch = false;
-            }
-            if (morningStop == null) {
-                allowLunch = false;
-            }
-
-            // Decide whether dinner is applicable
-            boolean allowDinner = !hasDinner;
-            if (isLastDay && (departure.contains("上午") || departure.contains("早晨") || departure.contains("中午"))) {
-                allowDinner = false;
-            }
-            if (afternoonStop == null && eveningStop == null && morningStop == null) {
-                allowDinner = false;
-            }
-
-            for (Map<String, Object> stop : currentStops) {
-                newStops.add(stop);
-
-                if (stop == morningStop && allowLunch) {
-                    Attraction anchor = byId.get(String.valueOf(morningStop.get("venueId")));
-                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(morningStop.get("district"));
-                    AttractionDiningKnowledge.DiningOption lunchOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "LUNCH", constraints, usedDiningNames);
-                    if (lunchOption != null && lunchOption.name() != null) {
-                        usedDiningNames.add(lunchOption.name());
-                    }
-                    Map<String, Object> lunchStop = createDiningStop(lunchOption, "day" + dayNum + "-lunch", "12:00", district);
-                    newStops.add(lunchStop);
-                    allowLunch = false;
-                }
-
-                if (stop == afternoonStop && allowDinner && eveningStop != null) {
-                    Attraction anchor = byId.get(String.valueOf(afternoonStop.get("venueId")));
-                    if (anchor == null && eveningStop != null) {
-                        anchor = byId.get(String.valueOf(eveningStop.get("venueId")));
-                    }
-                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(afternoonStop.get("district"));
-                    AttractionDiningKnowledge.DiningOption dinnerOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "DINNER", constraints, usedDiningNames);
-                    if (dinnerOption != null && dinnerOption.name() != null) {
-                        usedDiningNames.add(dinnerOption.name());
-                    }
-                    Map<String, Object> dinnerStop = createDiningStop(dinnerOption, "day" + dayNum + "-dinner", "18:00", district);
-                    newStops.add(dinnerStop);
-                    allowDinner = false;
-                }
-            }
-
-            // If dinner is still allowed and there was no evening stop after afternoon stop
-            if (allowDinner) {
-                Map<String, Object> anchorStop = afternoonStop != null ? afternoonStop : (morningStop != null ? morningStop : null);
-                if (anchorStop != null) {
-                    Attraction anchor = byId.get(String.valueOf(anchorStop.get("venueId")));
-                    String district = anchor != null ? anchor.getDistrict() : String.valueOf(anchorStop.get("district"));
-                    AttractionDiningKnowledge.DiningOption dinnerOption = AttractionDiningKnowledge.resolveNearbyDining(anchor, "DINNER", constraints, usedDiningNames);
-                    if (dinnerOption != null && dinnerOption.name() != null) {
-                        usedDiningNames.add(dinnerOption.name());
-                    }
-                    Map<String, Object> dinnerStop = createDiningStop(dinnerOption, "day" + dayNum + "-dinner", "18:00", district);
-                    newStops.add(dinnerStop);
-                }
-            }
-
-            day.put("stops", newStops);
         }
+        for (Map<String, Object> day : days) {
+            List<Map<String, Object>> stops = new ArrayList<>(PlanAdjustmentHelper.dayStops(day));
+            if (stops.isEmpty()) continue;
+            int dayNumber = day.get("day") instanceof Number number ? number.intValue() : 1;
+            List<String> diagnostics = new ArrayList<>();
+            for (String slotType : List.of("LUNCH", "DINNER")) {
+                var configured = taxonomy.getMealWindow(slotType);
+                if (configured == null || hasMeal(stops, slotType, configured)) continue;
+                int start = configured.startMinute();
+                int end = configured.endMinute();
+                // Initial enrichment covers the planned day, not an unrequested period before its first activity.
+                Integer dayStart = ChineseDateTimeParser.extractExplicitTimeMinutes(PlanAdjustmentHelper.safe(stops.get(0).get("time")));
+                if (dayStart != null) start = Math.max(start, dayStart);
+                String arrival = constraints == null ? "" : PlanAdjustmentHelper.safe(constraints.getArrivalAt());
+                String departure = constraints == null ? "" : PlanAdjustmentHelper.safe(constraints.getDepartureAt());
+                if (dayNumber == 1) {
+                    Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(arrival);
+                    if (time != null) start = Math.max(start, time);
+                    else if (("LUNCH".equals(slotType) && (arrival.contains("下午") || arrival.contains("晚上") || arrival.contains("夜间")))
+                            || ("DINNER".equals(slotType) && (arrival.contains("晚上") || arrival.contains("夜间")))) continue;
+                }
+                if (dayNumber == days.size()) {
+                    Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(departure);
+                    if (time != null) end = Math.min(end, time);
+                    else if (departure.contains("上午") || departure.contains("早晨")
+                            || ("DINNER".equals(slotType) && (departure.contains("中午") || departure.contains("下午")))) continue;
+                }
+                if (start >= end) continue;
+                var window = new TaxonomyPort.MealWindow(start, end, configured.idealMinute(), configured.defaultLabel());
+                Map<String, Object> anchorStop = null;
+                int closest = Integer.MAX_VALUE;
+                for (Map<String, Object> stop : stops) {
+                    if (PlanAdjustmentHelper.isDiningStop(stop)) continue;
+                    Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(PlanAdjustmentHelper.safe(stop.get("time")));
+                    if (time != null && Math.abs(time - window.idealMinute()) < closest) {
+                        anchorStop = stop;
+                        closest = Math.abs(time - window.idealMinute());
+                    }
+                }
+                if (anchorStop == null) continue;
+                Attraction anchor = byId.get(PlanAdjustmentHelper.safe(anchorStop.get("venueId")));
+                if (anchor == null) anchor = PlanAdjustmentHelper.resolveStopAnchor(anchorStop, this);
+                var dining = diningVenueService.resolveNearbyDining(anchor, slotType, constraints, usedDiningNames);
+                if (dining == null || dining.name() == null || usedDiningNames.contains(dining.name())
+                        || !PlanAdjustmentHelper.isValidCoordinate(dining.location())) {
+                    diagnostics.add(slotType + ":DINING_POI_UNRESOLVED");
+                    continue;
+                }
+                String district = anchor == null ? "" : PlanAdjustmentHelper.safe(anchor.getDistrict());
+                Attraction meal = Attraction.builder().id(dining.id()).name(dining.name()).district(district).location(dining.location()).build();
+                var placement = mealGapSolver.findGap(stops, meal, new ItineraryTimeEngine().parseDurationMinutes(dining.duration()),
+                        window, constraints == null ? null : constraints.getTransportPreference(), this);
+                if (placement.isEmpty()) {
+                    diagnostics.add(slotType + ":NO_FEASIBLE_MEAL_GAP");
+                    continue;
+                }
+                String time = new ItineraryTimeEngine().formatTime(placement.get().startMinute());
+                Map<String, Object> mealStop = createDiningStop(dining, "day" + dayNumber + "-" + slotType.toLowerCase(java.util.Locale.ROOT), time, district);
+                mealStop.put("mealSlot", slotType);
+                stops.add(placement.get().index(), mealStop);
+                mealGapSolver.applyRouteMetadata(stops, placement.get());
+                usedDiningNames.add(dining.name());
+            }
+            day.put("stops", stops);
+            if (!diagnostics.isEmpty()) day.put("diningDiagnostics", diagnostics);
+        }
+    }
+
+    private boolean hasMeal(List<Map<String, Object>> stops, String slotType, TaxonomyPort.MealWindow window) {
+        for (Map<String, Object> stop : stops) {
+            if (!PlanAdjustmentHelper.isDiningStop(stop)) continue;
+            if (slotType.equals(stop.get("mealSlot")) || slotType.equals(stop.get("diningType"))) return true;
+            Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(PlanAdjustmentHelper.safe(stop.get("time")));
+            if (time != null && time >= window.startMinute() && time < window.endMinute()) return true;
+        }
+        return false;
     }
 
     private void annotateStops(List<Map<String, Object>> days, TravelConstraints constraints) {
@@ -735,11 +760,11 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
             String departureContext;
             if (constraints.getStartPlace() != null && !constraints.getStartPlace().isBlank() && !"未提供".equals(constraints.getStartPlace())) {
                 String sp = constraints.getStartPlace();
-                if (sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) {
+                if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山"))) {
                     departureContext = "已确认行程起点【" + sp + "】。优先安排江津特色名胜（白沙古镇、四面山等），并规划沿线或经江跳线衔接主城的交通用时。";
-                } else if (sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山")) {
+                } else if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山"))) {
                     departureContext = "已确认行程起点【" + sp + "】。首日优先衔接南山风景带与南岸沿江地标，减少跨江折返。";
-                } else if (sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城")) {
+                } else if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城"))) {
                     departureContext = "已确认行程起点【" + sp + "】。首日优先安排沙坪坝文化科教与磁器口古镇片区。";
                 } else {
                     departureContext = "已确认行程起点【" + sp + "】。路线优先从出发地开始交通衔接与游览规划。";
@@ -766,18 +791,10 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
                     String sp = constraints.getStartPlace();
                     stop.put("departureLabel", "行程起点：" + sp);
                     stop.put("startPlace", sp);
-                    Map<String, Object> rfp = new LinkedHashMap<>();
-                    rfp.put("selectedMode", "接驳出发");
-                    rfp.put("summary", "从【" + sp + "】出发 · 车程/步行约 15-30 分钟");
-                    rfp.put("selected", Map.of(
-                            "mode", "TRANSIT",
-                            "duration", "约 20 分钟",
-                            "durationSeconds", 1200,
-                            "distance", "约 5-10 公里",
-                            "distanceMeters", 8000,
-                            "summary", "从【" + sp + "】出发 · 车程/步行约 15-30 分钟抵达首站"
-                    ));
-                    stop.put("routeFromPrevious", rfp);
+                    if (!stop.containsKey("routeFromPrevious")) {
+                        stop.put("routeFromPrevious", Map.of("selectedMode", "接驳待核验",
+                                "summary", "从【" + sp + "】出发，接驳路线与耗时待核验"));
+                    }
                 }
 
                 // If this is a dining stop, preserve its dining recommendation reason and attributes

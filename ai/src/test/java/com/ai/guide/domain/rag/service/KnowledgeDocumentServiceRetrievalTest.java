@@ -16,7 +16,7 @@ class KnowledgeDocumentServiceRetrievalTest {
     @Test
     void localFallbackPrioritizesKnownAliasAndSceneMatches() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        when(jdbcTemplate.queryForList(anyString())).thenReturn(List.of(
+        when(jdbcTemplate.queryForList(anyString(), org.mockito.ArgumentMatchers.any(Object[].class))).thenReturn(List.of(
                 Map.of("id", "science", "title", "重庆科技馆亲子指南", "content", "江北嘴互动科技展馆", "tags", "[\"亲子\",\"科普\"]", "source_name", "science"),
                 Map.of("id", "art", "title", "重庆美术馆无障碍参观", "content", "国泰艺术中心室内展厅有直梯与休息座椅", "tags", "[\"室内\",\"无障碍\",\"艺术\"]", "source_name", "art")
         ));

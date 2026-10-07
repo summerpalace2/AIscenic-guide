@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 public class PlanVerifier {
 
     private static final Pattern DURATION_PATTERN = Pattern.compile("(\\d+)\\s*分钟");
+    private final ItineraryTimeEngine timeEngine = new ItineraryTimeEngine();
 
     public record PlanViolation(
             String type,
@@ -68,7 +69,7 @@ public class PlanVerifier {
             Map<String, Object> day = days.get(i);
             int dayNumber = i + 1;
             String dayDate = safeText(day.get("date"));
-            boolean isMonday = dayDate.contains("一") || dayDate.contains("Monday") || isDateMonday(dayDate);
+            boolean isMonday = dayDate.contains("星期一") || dayDate.contains("周一") || dayDate.contains("Monday") || isDateMonday(dayDate);
 
             Object stopsObj = day.get("stops");
             if (!(stopsObj instanceof List<?> stopList)) continue;
@@ -83,100 +84,60 @@ public class PlanVerifier {
             }
             totalStops += stops.size();
 
-            // Check 1: Day 1 Arrival constraint (GS-04)
-            if (dayNumber == 1) {
-                String arrival = constraints == null ? "" : constraints.getArrivalAt();
-                if (arrival.contains("下午") || arrival.contains("晚上") || arrival.contains("夜间")) {
-                    for (Map<String, Object> stop : stops) {
-                        String time = safeText(stop.get("time"));
-                        if (isMorningSlot(time)) {
-                            violations.add(new PlanViolation(
-                                    "ARRIVAL_WINDOW_CONFLICT",
-                                    dayNumber,
-                                    safeText(stop.get("id")),
-                                    safeText(stop.get("venueId")),
-                                    "抵达时间为“" + arrival + "”，第一天不能生成上午时段行程（" + time + "）。",
-                                    true
-                            ));
-                        }
-                    }
+            // Compare actual clocks and occupied intervals, preserving (+Nd) and ISO dates.
+            Integer arrivalBoundary = dayNumber == 1 && constraints != null
+                    ? constraintMinute(constraints.getArrivalAt(), dayDate, true) : null;
+            Integer departureBoundary = dayNumber == totalDays && constraints != null
+                    ? constraintMinute(constraints.getDepartureAt(), dayDate, false) : null;
+            for (Map<String, Object> stop : stops) {
+                Integer start = timeEngine.parseExplicitTimeMinutes(stopTime(stop));
+                if (start == null) continue;
+                if (arrivalBoundary != null && start < arrivalBoundary) {
+                    violations.add(new PlanViolation("ARRIVAL_WINDOW_CONFLICT", dayNumber,
+                            safeText(stop.get("id")), safeText(stop.get("venueId")),
+                            "站点开始时间早于已提供的抵达时间，不可安排。", true));
                 }
-                if (arrival.contains("晚上") || arrival.contains("夜间")) {
-                    for (Map<String, Object> stop : stops) {
-                        String time = safeText(stop.get("time"));
-                        if (isAfternoonSlot(time)) {
-                            violations.add(new PlanViolation(
-                                    "ARRIVAL_WINDOW_CONFLICT",
-                                    dayNumber,
-                                    safeText(stop.get("id")),
-                                    safeText(stop.get("venueId")),
-                                    "抵达时间为“" + arrival + "”，第一天不能生成下午时段行程（" + time + "）。",
-                                    true
-                            ));
-                        }
-                    }
+                long end = (long) start + parseDurationMinutes(stop.get("duration"));
+                // (+Nd) preserves arithmetic, but each day's occupied blocks must stay
+                // within its date. Crossing the boundary requires a newly dated plan.
+                if (start >= 1440 || end > 1440) {
+                    violations.add(new PlanViolation("MIDNIGHT_OVERFLOW", dayNumber,
+                            safeText(stop.get("id")), safeText(stop.get("venueId")),
+                            "站点开始或完整停留时段跨越当前日期，请移至下一天或缩短当天安排。", true));
                 }
-            }
-
-            // Check 2: Final Day Departure deadline
-            if (dayNumber == totalDays) {
-                String departure = constraints == null ? "" : constraints.getDepartureAt();
-                if (departure.contains("上午") || departure.contains("早晨")) {
-                    for (Map<String, Object> stop : stops) {
-                        String time = safeText(stop.get("time"));
-                        if (isAfternoonSlot(time) || isEveningSlot(time)) {
-                            violations.add(new PlanViolation(
-                                    "DEPARTURE_DEADLINE_CONFLICT",
-                                    dayNumber,
-                                    safeText(stop.get("id")),
-                                    safeText(stop.get("venueId")),
-                                    "返程时间为“" + departure + "”，最后一天下午与夜间无法继续游览（" + time + "）。",
-                                    true
-                            ));
-                        }
-                    }
-                } else if (departure.contains("下午") || departure.contains("中午")) {
-                    for (Map<String, Object> stop : stops) {
-                        String time = safeText(stop.get("time"));
-                        if (isEveningSlot(time)) {
-                            violations.add(new PlanViolation(
-                                    "DEPARTURE_DEADLINE_CONFLICT",
-                                    dayNumber,
-                                    safeText(stop.get("id")),
-                                    safeText(stop.get("venueId")),
-                                    "返程时间为“" + departure + "”，最后一天晚间无法安排游览（" + time + "）。",
-                                    true
-                            ));
-                        }
-                    }
+                if (departureBoundary != null && end > departureBoundary) {
+                    violations.add(new PlanViolation("DEPARTURE_DEADLINE_CONFLICT", dayNumber,
+                            safeText(stop.get("id")), safeText(stop.get("venueId")),
+                            "站点游览结束时间晚于已提供的返程时限，不可安排。", true));
                 }
             }
 
             // Check 3: Opening Hours & Closed Days (GS-03)
             for (Map<String, Object> stop : stops) {
-                String bestTime = safeText(stop.get("bestTime"));
-                String time = safeText(stop.get("time"));
+                String bestTime = OpeningHoursPolicy.evidence(safeText(stop.get("openingHours")), safeText(stop.get("bestTime")));
+                String time = stopTime(stop);
                 String venueId = safeText(stop.get("venueId"));
                 String name = safeText(stop.get("name"));
 
-                if (isMonday && (bestTime.contains("周一闭馆") || bestTime.contains("周一休息"))) {
+                boolean closedOnArrival = OpeningHoursPolicy.isClosed(bestTime, dayDate, time);
+                if (closedOnArrival) {
                     violations.add(new PlanViolation(
-                            "CLOSED_ON_MONDAY",
+                            bestTime.contains("周一") ? "CLOSED_ON_MONDAY" : "CLOSED_ON_DATE",
                             dayNumber,
                             safeText(stop.get("id")),
                             venueId,
-                            "景点" + name + "已知周一闭馆，排入周一行程不可行。",
+                            "景点" + name + "在到达日期已知休息，不可安排。",
                             true
                     ));
                 }
 
-                if (bestTime.contains("17:00") && isEveningSlot(time)) {
+                if (!closedOnArrival && !OpeningHoursPolicy.isVisitOpen(bestTime, dayDate, time, parseDurationMinutes(stop.get("duration")))) {
                     violations.add(new PlanViolation(
                             "CLOSED_AT_SLOT_TIME",
                             dayNumber,
                             safeText(stop.get("id")),
                             venueId,
-                            "景点" + name + "已知开放时间为" + bestTime + "，排入夜间时段（" + time + "）不可行。",
+                            "景点" + name + "的完整游览时段超过已知营业区间、休息日或中途休息时段，不可行。",
                             true
                     ));
                 }
@@ -201,7 +162,7 @@ public class PlanVerifier {
             }
 
             // Check 5: Route timing & Day schedule budget check (Real/Estimated route feedback)
-            int totalDayMinutes = 0;
+            long totalDayMinutes = 0;
             for (int j = 0; j < stops.size(); j++) {
                 Map<String, Object> currStop = stops.get(j);
                 int visitMinutes = parseDurationMinutes(currStop.get("duration"));
@@ -210,8 +171,16 @@ public class PlanVerifier {
                 if (j > 0) {
                     Map<String, Object> prevStop = stops.get(j - 1);
                     RouteCost cost = extractRouteCost(currStop);
-                    int travelMinutes = cost != null ? (int) cost.duration().toMinutes() : 15;
+                    int travelMinutes = timeEngine.transferMinutes(prevStop, currStop);
                     totalDayMinutes += travelMinutes;
+                    Integer previousStart = timeEngine.parseExplicitTimeMinutes(stopTime(prevStop));
+                    Integer currentStart = timeEngine.parseExplicitTimeMinutes(stopTime(currStop));
+                    if (previousStart != null && currentStart != null
+                            && currentStart < (long) previousStart + parseDurationMinutes(prevStop.get("duration")) + travelMinutes) {
+                        violations.add(new PlanViolation("TIME_OVERLAP", dayNumber,
+                                safeText(currStop.get("id")), safeText(currStop.get("venueId")),
+                                "相邻站点未留足前站游览与接驳时间，时间安排存在重叠。", true));
+                    }
 
                     if (travelMinutes > 150) {
                         violations.add(new PlanViolation(
@@ -278,18 +247,35 @@ public class PlanVerifier {
     }
 
     private int parseDurationMinutes(Object durationObj) {
-        if (durationObj == null) return 90;
-        String text = String.valueOf(durationObj).trim();
-        Matcher matcher = DURATION_PATTERN.matcher(text);
-        if (matcher.find()) {
-            try {
-                return Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {}
+        return timeEngine.parseDurationMinutes(durationObj == null ? null : String.valueOf(durationObj));
+    }
+
+    private String stopTime(Map<String, Object> stop) {
+        String value = safeText(stop.get("time"));
+        return value.isBlank() ? safeText(stop.get("startTime")) : value;
+    }
+
+    private Integer constraintMinute(String value, String dayDate, boolean arrival) {
+        if (value == null || value.isBlank()) return null;
+        Integer clock = timeEngine.parseExplicitTimeMinutes(value);
+        if (clock != null) {
+            Matcher date = Pattern.compile("\\d{4}-\\d{2}-\\d{2}").matcher(value);
+            if (date.find()) {
+                try {
+                    long days = java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(dayDate), java.time.LocalDate.parse(date.group()));
+                    return Math.toIntExact(clock + days * 1440);
+                } catch (RuntimeException unknownDate) { /* retain the explicit clock */ }
+            }
+            return clock;
         }
-        try {
-            return Integer.parseInt(text);
-        } catch (NumberFormatException ignored) {}
-        return 90;
+        if (arrival) {
+            if (value.contains("晚上") || value.contains("夜间")) return 18 * 60;
+            if (value.contains("下午") || value.contains("中午")) return 12 * 60;
+        } else {
+            if (value.contains("上午") || value.contains("早晨")) return 12 * 60;
+            if (value.contains("下午") || value.contains("中午")) return 18 * 60;
+        }
+        return null;
     }
 
     private long number(Object value) {

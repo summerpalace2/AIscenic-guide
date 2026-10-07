@@ -44,6 +44,8 @@ public class AnalyticsController {
         try {
             Map<String, Object> data = analyticsApplicationService.getDashboard(period);
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] dashboard 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");
@@ -64,6 +66,8 @@ public class AnalyticsController {
         try {
             List<Map<String, Object>> data = analyticsApplicationService.getHotQuestions(period, topN);
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] hot-questions 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");
@@ -86,6 +90,8 @@ public class AnalyticsController {
         try {
             List<Map<String, Object>> data = analyticsApplicationService.getSentimentTrend(startDate, endDate, granularity);
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] sentiment-trend 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");
@@ -108,6 +114,8 @@ public class AnalyticsController {
         try {
             List<Map<String, Object>> data = analyticsApplicationService.getServiceCount(startDate, endDate, granularity);
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] service-count 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");
@@ -128,6 +136,8 @@ public class AnalyticsController {
         try {
             Map<String, Object> data = analyticsApplicationService.listReports(page, size);
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] reports 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");
@@ -146,6 +156,8 @@ public class AnalyticsController {
             Map<String, Object> data = analyticsApplicationService.getReport(reportId);
             if (data == null) return Result.error(404, "报告不存在");
             return Result.success("查询成功", data);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             log.error("[Analytics] report detail 失败: {}", e.getMessage());
             return Result.error(500, "查询失败，请稍后重试");

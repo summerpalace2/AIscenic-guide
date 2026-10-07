@@ -78,7 +78,7 @@ class BaiduVoiceClientTest {
         when(restTemplate.getForEntity(contains("oauth/2.0/token"), eq(Map.class)))
                 .thenReturn(ResponseEntity.ok(Map.of("access_token", "fake-token")));
 
-        byte[] fakeMp3 = new byte[]{1, 2, 3};
+        byte[] fakeMp3 = new byte[]{73, 68, 51, 1};
         when(restTemplate.exchange(contains("text2audio"), eq(HttpMethod.GET), isNull(), eq(byte[].class)))
                 .thenReturn(ResponseEntity.ok(fakeMp3));
 
@@ -86,5 +86,20 @@ class BaiduVoiceClientTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertArrayEquals(fakeMp3, response.getBody());
         assertEquals("attachment; filename=tts.mp3", response.getHeaders().getFirst("Content-Disposition"));
+    }
+    @Test
+    void jsonErrorAndEmptyBodyAreNeverReturnedAsMp3() {
+        when(restTemplate.getForEntity(contains("oauth/2.0/token"), eq(Map.class)))
+                .thenReturn(ResponseEntity.ok(Map.of("access_token", "fake-token")));
+        when(restTemplate.exchange(contains("text2audio"), eq(HttpMethod.GET), isNull(), eq(byte[].class)))
+                .thenReturn(ResponseEntity.ok("{\"err_no\":500,\"err_msg\":\"supplier_secret\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        var response=client.synthesize("hello","106","zh");
+        assertEquals(502,response.getStatusCode().value());
+        assertEquals("application/json",response.getHeaders().getContentType().toString());
+        assertNull(response.getHeaders().getFirst("Content-Disposition"));
+        assertFalse(new String(response.getBody(),java.nio.charset.StandardCharsets.UTF_8).contains("supplier_secret"));
+        when(restTemplate.exchange(contains("text2audio"), eq(HttpMethod.GET), isNull(), eq(byte[].class)))
+                .thenReturn(ResponseEntity.ok(new byte[0]));
+        assertEquals(502,client.synthesize("hello","106","zh").getStatusCode().value());
     }
 }

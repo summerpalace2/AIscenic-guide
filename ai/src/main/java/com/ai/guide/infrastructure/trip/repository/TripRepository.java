@@ -181,6 +181,15 @@ public class TripRepository implements TripRepositoryPort {
     }
 
     @Override
+    public void reservePlannerLink(String ownerId, String sessionId, long now) {
+        jdbcTemplate.update("INSERT INTO trip_idempotency (owner_id, operation, idempotency_key, " +
+                        "request_fingerprint, trip_id, version_number, response_json, created_at) " +
+                        "VALUES (?, 'PLANNER_LINK', ?, ?, '', 0, '{}', ?) " +
+                        "ON CONFLICT (owner_id, operation, idempotency_key) DO NOTHING",
+                ownerId, sessionId, sessionId, now);
+    }
+
+    @Override
     public void deleteIdempotency(String ownerId, String operation, String key) {
         jdbcTemplate.update(
                 "DELETE FROM trip_idempotency WHERE owner_id = ? AND operation = ? AND idempotency_key = ?",

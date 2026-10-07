@@ -7,11 +7,15 @@ import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
 import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.engine.CandidateRankingEngine;
 import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
+import com.ai.guide.domain.planner.engine.DynamicGeoCentroidResolver;
+import com.ai.guide.domain.planner.engine.MealGapSolver;
 import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
 import com.ai.guide.domain.planner.engine.RouteCostProvider;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.MutationResult;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
 import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
@@ -80,7 +84,8 @@ public class PlanAdjustmentService {
                     return size() > 256;
                 }
             });
-    private final ConcurrentHashMap<String, Object> sessionApplyLocks = new ConcurrentHashMap<>();
+    private final Object[] sessionApplyLocks = java.util.stream.IntStream.range(0, 128).mapToObj(i -> new Object()).toArray();
+    private final PendingIntentContinuations continuations = new PendingIntentContinuations();
 
     @Autowired(required = false)
     private RuntimeAttractionDetailService runtimeAttractionDetailService;
@@ -92,6 +97,9 @@ public class PlanAdjustmentService {
     private final CandidateRankingEngine candidateRankingEngine;
     private final DiningCategoryGrounder diningCategoryGrounder;
     private final List<AdjustmentStrategy> strategies;
+    private TaxonomyPort taxonomy;
+    private MealGapSolver mealGapSolver;
+    private DynamicGeoCentroidResolver geoCentroidResolver;
 
     @Autowired
     public PlanAdjustmentService(PlannerSessionRepositoryPort repository,
@@ -118,6 +126,9 @@ public class PlanAdjustmentService {
         this.itineraryTimeEngine = new ItineraryTimeEngine();
         this.candidateRankingEngine = new CandidateRankingEngine(routeCostProvider);
         this.diningCategoryGrounder = new DiningCategoryGrounder();
+        this.taxonomy = new TaxonomyProvider();
+        this.mealGapSolver = new MealGapSolver(routeCostProvider, itineraryTimeEngine);
+        this.geoCentroidResolver = new DynamicGeoCentroidResolver(null);
         this.strategies = initDefaultStrategies();
     }
 
@@ -165,12 +176,14 @@ public class PlanAdjustmentService {
                 attractionService, itineraryBuilder, routeAwarePlanner, planVerifier,
                 candidateRankingEngine, itineraryTimeEngine, diningCategoryGrounder);
         replace.setDiningVenueService(diningVenueService);
+        replace.setDiningScheduling(taxonomy, mealGapSolver, geoCentroidResolver);
 
         AddStopAdjustmentStrategy add = new AddStopAdjustmentStrategy(
                 attractionService, itineraryBuilder, routeAwarePlanner,
                 candidateRankingEngine, itineraryTimeEngine, diningCategoryGrounder);
         add.setRuntimeAttractionDetailService(runtimeAttractionDetailService);
         add.setDiningVenueService(diningVenueService);
+        add.setDiningScheduling(taxonomy, mealGapSolver, geoCentroidResolver);
 
         ReplanDayAdjustmentStrategy replan = new ReplanDayAdjustmentStrategy(
                 attractionService, itineraryBuilder, routeAwarePlanner,
@@ -181,6 +194,7 @@ public class PlanAdjustmentService {
         PlaceQuestionAdjustmentStrategy placeQ = new PlaceQuestionAdjustmentStrategy(attractionService);
         placeQ.setRuntimeAttractionDetailService(runtimeAttractionDetailService);
         placeQ.setDiningVenueService(diningVenueService);
+        placeQ.setTaxonomy(taxonomy);
 
         return List.of(replace, add, replan, remove, placeQ);
     }
@@ -202,16 +216,29 @@ public class PlanAdjustmentService {
         syncStrategyDependencies();
     }
 
+    @Autowired
+    public void setDiningScheduling(TaxonomyPort taxonomy, MealGapSolver mealGapSolver,
+                                    DynamicGeoCentroidResolver geoCentroidResolver) {
+        this.taxonomy = taxonomy;
+        this.mealGapSolver = mealGapSolver;
+        this.geoCentroidResolver = geoCentroidResolver;
+        this.diningCategoryGrounder.setTaxonomy(taxonomy);
+        syncStrategyDependencies();
+    }
+
     private void syncStrategyDependencies() {
         for (AdjustmentStrategy strategy : strategies) {
             if (strategy instanceof ReplaceStopAdjustmentStrategy rep) {
                 rep.setDiningVenueService(diningVenueService);
+                rep.setDiningScheduling(taxonomy, mealGapSolver, geoCentroidResolver);
             } else if (strategy instanceof AddStopAdjustmentStrategy add) {
                 add.setRuntimeAttractionDetailService(runtimeAttractionDetailService);
                 add.setDiningVenueService(diningVenueService);
+                add.setDiningScheduling(taxonomy, mealGapSolver, geoCentroidResolver);
             } else if (strategy instanceof PlaceQuestionAdjustmentStrategy pq) {
                 pq.setRuntimeAttractionDetailService(runtimeAttractionDetailService);
                 pq.setDiningVenueService(diningVenueService);
+                pq.setTaxonomy(taxonomy);
             }
         }
     }
@@ -222,21 +249,62 @@ public class PlanAdjustmentService {
         StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
         if (session == null) return error(404, "规划会话不存在或无权访问。", null);
 
+        if (request != null && request.getBaseRevision() != session.currentVersion()) return error(409, "行程版本已更新，请刷新后基于最新行程调整。", session);
         PlanPageContext context = request == null || request.getContext() == null ? new PlanPageContext() : request.getContext();
+        if (context.isResetConversation()) return resetAdjustmentRound(session, request, false);
         String messageText = request == null ? "" : request.getMessage();
+        if (IntentLanguagePolicy.positiveText(messageText == null ? "" : messageText).trim()
+                .matches("(?:请|帮我)?(?:取消|停止)(?:这次|本次|当前|这个|这轮|本轮)?(?:调整|修改|预览|方案|操作)(?:预览|方案)?[吧啊。！!\\s]*")) {
+            return resetAdjustmentRound(session, request, true);
+        }
+        String generation = continuations.begin(session.sessionId());
         if (isAlternativeCandidateRequest(messageText)
                 && context.getActiveProposalId() != null && !context.getActiveProposalId().isBlank()
                 && (context.getSelectedStopId() == null || context.getSelectedStopId().isBlank())) {
             PlanAdjustmentProposal previous = proposalStore.get(context.getActiveProposalId());
-            String previousTarget = previous == null || previous.getIntent() == null
+            String previousTarget = previous == null || previous.getIntent() == null || !"STOP".equals(previous.getIntent().getScope())
                     ? null : previous.getIntent().getTargetStopId();
             if (previousTarget != null && !previousTarget.isBlank()) context.setSelectedStopId(previousTarget);
         }
-        LlmIntentExtractor.LlmIntentExtractionResult extraction = llmIntentExtractor.extract(
-                messageText, context, session.trip());
+        PlanAdjustmentProposal pending = context.getActiveProposalId() == null ? null : proposalStore.get(context.getActiveProposalId());
+        if (pending != null && session.sessionId().equals(pending.getSessionId())
+                && pending.getBaseRevision() == session.currentVersion() && pending.getExpiresAt() > System.currentTimeMillis()
+                && continuations.validProposal(session.sessionId(),pending.getConversationEpoch(),pending.getCreatedAt())
+                && pending.getIntent() != null && !hasMissingAdjustmentTarget(pending.getReasonCodes())
+                && java.util.Objects.equals(pending.getIntent().getRawMessage(), messageText == null ? "" : messageText.trim())
+                && java.util.Objects.equals(pending.getIntent().getDayNumber(), context.getActiveDay())
+                && new HashSet<>(pending.getIntent().getPinnedStopIds()).equals(new HashSet<>(context.getPinnedStopIds() == null ? List.of() : context.getPinnedStopIds()))
+                && (context.getSelectedStopId() == null || java.util.Objects.equals(context.getSelectedStopId(), pending.getIntent().getTargetStopId()))) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("ok", true); body.put("proposalId", pending.getProposalId()); body.put("baseRevision", pending.getBaseRevision());
+            body.put("intent", pending.getIntent().asMap()); body.put("feasible", pending.isFeasible()); body.put("canApply", true);
+            body.put("proposedTrip", pending.getProposedTrip()); body.put("candidateReplacements", pending.getCandidateReplacements());
+            body.put("changedSegments", pending.getChangedSegments()); body.put("reasonCodes", pending.getReasonCodes());
+            body.put("stopChanges", describeActualChanges(session.trip(), pending.getProposedTrip()));
+            var optionChanges = new LinkedHashMap<String, Object>();
+            pending.getOptionPlans().forEach((id, plan) -> optionChanges.put(id, describeActualChanges(session.trip(), plan)));
+            body.put("optionStopChanges", optionChanges);
+            body.put("optionStatus", pending.getOptionStatus());
+            body.put("canApply", pending.getOptionStatus().isEmpty() ? !hasMissingAdjustmentTarget(pending.getReasonCodes()) : pending.getOptionStatus().values().stream().anyMatch(v -> Boolean.TRUE.equals(v.get("canApply"))));
+            body.put("expiresAt", pending.getExpiresAt()); body.put("reused", true); body.put("modified", false);
+            body.put("message", "这项调整已有待确认预览，请核对后点击确认应用；当前行程尚未修改。");
+            return new PlannerService.ServiceResult(200, body);
+        }
+        PlanAdjustmentIntent resumed = continuations.resume(session.sessionId(), session.currentVersion(), context.getPendingIntentId(), messageText, context, generation);
+        if (resumed == null) continuations.abandonCompoundQueue(session.sessionId());
+        LlmIntentExtractor.LlmIntentExtractionResult extraction = resumed == null ? llmIntentExtractor.extract(messageText, context, session.trip())
+                : new LlmIntentExtractor.LlmIntentExtractionResult(resumed, "PENDING_INTENT", null, 0, "HIGH");
         PlanAdjustmentIntent intent = extraction.intent();
+        if (resumed == null) intent.setRawMessage(messageText);
+        if (intent.getDayNumber() == null && !PendingIntentContinuations.requestsDay(intent) && (intent.isRequiresClarification() || intent.getType() != ConversationIntentType.ADD_STOP)) intent.setDayNumber(context.getActiveDay() == null ? 1 : context.getActiveDay());
 
+        if (!continuations.current(session.sessionId(), generation)) return error(409, "这轮请求已被新对话取代，请使用最新结果。", session);
+        AdjustmentTimeScopeResolver.resolve(intent, taxonomy);
         resolveAndValidate(intent, context, session.trip());
+        var protectedIds = new ArrayList<>(intent.getPinnedStopIds() == null ? List.<String>of() : intent.getPinnedStopIds());
+        for (var d : days(session.trip())) for (var stop : dayStops(d))
+            if ((AdjustmentTimeScopeResolver.preserves(stop, intent, taxonomy) || intent.getPreserveReferences().stream().anyMatch(ref -> java.util.Objects.equals(ConversationIntentClassifier.extractExplicitDayNumber(ref), number(d.get("day"))))) && !protectedIds.contains(safe(stop.get("id")))) protectedIds.add(safe(stop.get("id")));
+        intent.setPinnedStopIds(protectedIds);
 
         long latencyMs = (System.nanoTime() - startNanos) / 1_000_000L;
         String decision = (intent.isRequiresClarification() || intent.getType() == ConversationIntentType.CLARIFICATION || intent.getType() == ConversationIntentType.UNKNOWN)
@@ -270,9 +338,14 @@ public class PlanAdjustmentService {
             body.put("clarificationQuestion", intent.getClarificationQuestion());
             body.put("message", intent.getClarificationQuestion());
             body.put("modified", false);
+            final PendingIntentContinuations.Pending[] slot = new PendingIntentContinuations.Pending[1];
+            if (!continuations.commit(session.sessionId(), generation, () -> slot[0] = continuations.remember(session.sessionId(), session.currentVersion(), intent))) return error(409, "这轮请求已结束，请继续最新对话。", session);
+            var continuation = slot[0];
+            body.put("intent", intent.asMap()); body.put("pendingIntent", Map.of("intentId", continuation.intentId(), "baseRevision", continuation.baseRevision(), "expiresAt", continuation.expiresAt(), "intent", intent.asMap()));
             return withIntentMetadata(new PlannerService.ServiceResult(200, body), extraction);
         }
 
+        if (!continuations.commit(session.sessionId(), generation, () -> continuations.clear(session.sessionId()))) return error(409, "这轮请求已被新对话取代。", session);
         if (intent.getType() == ConversationIntentType.PLACE_QUESTION) {
             if (metricsLogger != null) {
                 metricsLogger.logProposalPreviewed(session.sessionId(), "place-question", "PLACE_QUESTION", true, latencyMs);
@@ -293,7 +366,7 @@ public class PlanAdjustmentService {
             int optIndex = intent.getCandidateIndex() != null ? intent.getCandidateIndex() : 1;
             String optId = intent.getOptionId() != null ? intent.getOptionId() : "option-" + optIndex;
             PlanAdjustmentProposal activeProposal = proposalStore.get(intent.getProposalId());
-            if (activeProposal == null || !session.sessionId().equals(activeProposal.getSessionId())
+            if (activeProposal == null || !continuations.validProposal(session.sessionId(), activeProposal.getConversationEpoch(),activeProposal.getCreatedAt()) || !session.sessionId().equals(activeProposal.getSessionId())
                     || activeProposal.getBaseRevision() != session.currentVersion()
                     || activeProposal.getOptionPlans() == null || !activeProposal.getOptionPlans().containsKey(optId)) {
                 return error(409, "调整提案已失效、无权访问或不属于当前版本，请重新生成预览。", session);
@@ -311,7 +384,7 @@ public class PlanAdjustmentService {
             return withIntentMetadata(new PlannerService.ServiceResult(200, body), extraction);
         }
 
-        return withIntentMetadata(generateProposalPreview(session, intent, context, startNanos), extraction);
+        return withIntentMetadata(generateProposalPreview(session, intent, context, startNanos, generation), extraction);
     }
 
     private AdjustmentStrategy findStrategy(ConversationIntentType intentType) {
@@ -326,7 +399,7 @@ public class PlanAdjustmentService {
     private PlannerService.ServiceResult generateProposalPreview(StoredSession session,
                                                                 PlanAdjustmentIntent intent,
                                                                 PlanPageContext context,
-                                                                long startNanos) {
+                                                                long startNanos, String generation) {
         Map<String, Object> sourceTrip = session.trip();
         Map<String, Object> draftTrip = deepCopy(sourceTrip, objectMapper);
         TravelConstraints constraints = extractConstraints(session);
@@ -348,6 +421,7 @@ public class PlanAdjustmentService {
         }
 
         draftTrip = adjContext.getDraftTrip();
+
         List<Map<String, Object>> candidateReplacements = adjContext.getCandidateReplacements();
         Map<String, Map<String, Object>> optionPlans = adjContext.getOptionPlans();
         List<String> changedSegments = adjContext.getChangedSegments();
@@ -356,6 +430,12 @@ public class PlanAdjustmentService {
         Map<String, Object> adjustmentDiagnostics = adjContext.getAdjustmentDiagnostics();
         List<Map<String, Object>> rejectedOptionDiagnostics = adjContext.getRejectedOptionDiagnostics();
         boolean feasible = adjContext.isFeasible();
+
+        List<Map<String, Object>> stopChanges = describeActualChanges(sourceTrip, draftTrip);
+        if (stopChanges.isEmpty()) {
+            feasible = false;
+            reasonCodes.add("NO_ACTUAL_CHANGE");
+        }
 
         // Final verification check
         PlanVerifier.VerificationResult verification = planVerifier.verify(days(draftTrip), constraints);
@@ -373,7 +453,10 @@ public class PlanAdjustmentService {
         if (optionPlans.isEmpty() && draftTrip != null) {
             optionPlans.put("option-1", draftTrip);
         }
-        boolean forceApplicable = !optionPlans.isEmpty() || draftTrip != null;
+        var optionStatus = new LinkedHashMap<String, Map<String,Object>>();
+        for (var entry : optionPlans.entrySet()) optionStatus.put(entry.getKey(), optionStatus(sourceTrip, entry.getValue(), intent, constraints, reasonCodes, entry.getKey(), adjContext.getRequiredStopIdsByOption().getOrDefault(entry.getKey(), List.of())));
+        boolean forceApplicable = optionStatus.values().stream().anyMatch(v -> Boolean.TRUE.equals(v.get("canApply")));
+        if (!forceApplicable) feasible = false;
         adjustmentDiagnostics.put("forceApplicable", forceApplicable);
         List<String> unchangedStops = collectUnchangedStops(sourceTrip, changedSegments);
 
@@ -384,10 +467,13 @@ public class PlanAdjustmentService {
         PlanAdjustmentProposal proposal = PlanAdjustmentProposal.builder()
                 .proposalId(proposalId)
                 .sessionId(session.sessionId())
+                .conversationEpoch(continuations.epoch(session.sessionId()))
                 .baseRevision(session.currentVersion())
                 .intent(intent)
                 .proposedTrip(draftTrip)
                 .optionPlans(optionPlans)
+                .optionStatus(optionStatus)
+                .requiredStopIdsByOption(adjContext.getRequiredStopIdsByOption())
                 .candidateReplacements(candidateReplacements)
                 .changedSegments(changedSegments)
                 .unchangedStops(unchangedStops)
@@ -399,7 +485,7 @@ public class PlanAdjustmentService {
                 .expiresAt(expiresAt)
                 .build();
 
-        proposalStore.put(proposal);
+        if (!continuations.commit(session.sessionId(), generation, () -> proposalStore.put(proposal))) return error(409, "旧请求的方案已作废，请查看最新对话。", session);
 
         long latencyMs = (System.nanoTime() - startNanos) / 1_000_000L;
         if (metricsLogger != null) {
@@ -419,9 +505,15 @@ public class PlanAdjustmentService {
         body.put("optionPlans", optionPlans.keySet().stream().toList());
         body.put("proposedTrip", draftTrip);
         body.put("changedSegments", changedSegments);
+        body.put("stopChanges", stopChanges);
+        var optionStopChanges = new LinkedHashMap<String, Object>();
+        optionPlans.forEach((id, plan) -> optionStopChanges.put(id, describeActualChanges(sourceTrip, plan)));
+        body.put("optionStopChanges", optionStopChanges);
         body.put("unchangedStops", unchangedStops);
         body.put("verification", verification.asMap());
         body.put("reasonCodes", reasonCodes);
+        body.put("canApply", forceApplicable);
+        body.put("optionStatus", optionStatus);
         body.put("alternatives", alternatives);
         body.put("replacementMode", adjustmentDiagnostics.getOrDefault("replacementMode", "CANDIDATE"));
         if (adjustmentDiagnostics.containsKey("sourceStopName")) {
@@ -445,9 +537,20 @@ public class PlanAdjustmentService {
         body.put("degradationReasons", meta.getDegradationReasons());
 
         if (!feasible) {
-            if (reasonCodes.contains("DUPLICATE_VENUE")) {
+            if (reasonCodes.contains("NO_ACTUAL_CHANGE") && !hasMissingDiningTarget(reasonCodes)) {
+                body.put("message", "本次没有产生实际改动：目标时段可能没有可调整站点，或没有符合条件的替代候选。请指定要替换的站点或另选时段。");
+            } else if (reasonCodes.contains("DUPLICATE_VENUE")) {
                 String stopName = adjustmentDiagnostics.get("addedStopName") != null ? String.valueOf(adjustmentDiagnostics.get("addedStopName")) : "该地点";
                 body.put("message", "【" + stopName + "】已经在当前行程中安排过了，无需重复添加。您可以选择其他想去的地标或保持原安排。");
+            } else if (reasonCodes.contains("DINING_CANDIDATES_UNAVAILABLE")) {
+                body.put("message", "已理解您想吃【" + adjustmentDiagnostics.getOrDefault("requestedFlavor", "餐饮")
+                        + "】，但当前搜索未找到可用候选。可以扩大搜索范围或指定一家餐厅。");
+            } else if (reasonCodes.contains("DINING_POI_UNRESOLVED")) {
+                body.put("message", "暂时未能核实您指定的餐厅，请补充完整店名或选择其他餐厅。");
+            } else if (reasonCodes.contains("NO_FEASIBLE_MEAL_GAP")) {
+                body.put("message", "已理解您的餐饮需求，但当天对应时段没有足够空闲时间安排用餐和往返路程。可以换一天，或替换已有的餐饮安排。");
+            } else if (reasonCodes.contains("MEAL_WINDOW_UNAVAILABLE")) {
+                body.put("message", "已理解您的餐饮需求，但当前尚未配置这个用餐时段，请选择其他时段。");
             } else {
                 body.put("message", "当前调整会让当天安排不太合理，已提供可行的替代处理建议。");
             }
@@ -461,11 +564,7 @@ public class PlanAdjustmentService {
             }
         } else if ("TEA_BREAK".equals(adjustmentDiagnostics.get("replacementMode"))) {
             String flavor = String.valueOf(adjustmentDiagnostics.getOrDefault("requestedFlavor", "特色老茶馆与盖碗茶歇"));
-            if (flavor.contains("甜") || flavor.contains("糖水") || flavor.contains("点心") || flavor.contains("冰粉")) {
-                body.put("message", "已为您在沿途精心挑选【" + flavor + "】方案，请选择心仪甜品铺后确认应用。");
-            } else {
-                body.put("message", "已为您在沿途精心挑选【" + flavor + "】品茗小憩方案，请选择心仪茶社后确认应用。");
-            }
+            body.put("message", "已为您推荐【" + flavor + "】沿途候选，请选择心仪方案后确认应用。");
         } else if ("DINING_ADD".equals(adjustmentDiagnostics.get("replacementMode"))) {
             String flavor = String.valueOf(adjustmentDiagnostics.getOrDefault("requestedFlavor", "特色美食"));
             body.put("message", "已为您推荐【" + flavor + "】沿途候选餐厅，请选择心仪方案后确认应用。");
@@ -494,15 +593,109 @@ public class PlanAdjustmentService {
         return new PlannerService.ServiceResult(200, body);
     }
 
+    private Map<String,Object> optionStatus(Map<String,Object> before, Map<String,Object> after, PlanAdjustmentIntent intent, TravelConstraints constraints, List<String> globalReasons, String optionId, List<String> requiredStopIds) {
+        var verification = planVerifier.verify(days(after), constraints);
+        var reasons = new ArrayList<String>();
+        boolean changed = !describeActualChanges(before, after).isEmpty();
+        if (!changed) reasons.add("NO_ACTUAL_CHANGE");
+        if (intent != null && violatesProtection(before, after, intent)) reasons.add("PRESERVED_SCOPE_VIOLATION");
+        var retainedIds = allStops(after).stream().map(stop -> safe(stop.get("id"))).collect(java.util.stream.Collectors.toSet());
+        if (requiredStopIds != null && !retainedIds.containsAll(requiredStopIds)) reasons.add("REQUESTED_STOP_NOT_RETAINED");
+        // Strategy-level unresolved targets are hard failures; default-option quality warnings are recalculated per option.
+        if (globalReasons != null) for (String reason : globalReasons) {
+            // Multi-stop addition emits this failure for its complete route (option-1).
+            // Its explicitly labelled single-stop alternatives have a different target set.
+            if ("REQUESTED_STOP_NOT_RETAINED".equals(reason)
+                    && (requiredStopIds != null && !requiredStopIds.isEmpty() || !"option-1".equals(optionId))) continue;
+            if (!"NO_ACTUAL_CHANGE".equals(reason) && hasMissingAdjustmentTarget(List.of(reason))) reasons.add(reason);
+        }
+        boolean canApply = reasons.isEmpty() && verification.violations().stream()
+                .noneMatch(v -> java.util.Set.of("CLOSED_ON_MONDAY", "CLOSED_ON_DATE", "CLOSED_AT_SLOT_TIME", "TIME_OVERLAP", "ARRIVAL_WINDOW_CONFLICT", "DEPARTURE_DEADLINE_CONFLICT", "MIDNIGHT_OVERFLOW").contains(v.type()));
+        verification.violations().stream().map(PlanVerifier.PlanViolation::type).distinct().forEach(reasons::add);
+        var result = new LinkedHashMap<String,Object>();
+        var venueCounts=new LinkedHashMap<String,Integer>();
+        for(var stop:allStops(after)) { String venue=safe(stop.get("venueId"));if(!venue.isBlank()) venueCounts.merge(venue,1,Integer::sum); }
+        boolean strategyCaution = globalReasons != null && globalReasons.contains("DUPLICATE_VENUE") && venueCounts.values().stream().anyMatch(n -> n > 1);
+        if (strategyCaution) reasons.add("DUPLICATE_VENUE");
+        result.put("canApply", canApply); result.put("feasible", canApply && verification.feasible() && !strategyCaution);
+        result.put("verification", verification.asMap()); result.put("reasonCodes", reasons); return result;
+    }
+
+    private boolean violatesProtection(Map<String,Object> before, Map<String,Object> after, PlanAdjustmentIntent intent) {
+        Map<String,Map<String,Object>> next = new LinkedHashMap<>();
+        for (var d : days(after)) for (var stop : dayStops(d)) next.put(safe(stop.get("id")), stop);
+        for (var d : days(before)) for (var stop : dayStops(d)) {
+            boolean pinned = intent.getPinnedStopIds() != null && (intent.getPinnedStopIds().contains(safe(stop.get("id"))) || intent.getPinnedStopIds().contains(safe(stop.get("venueId"))));
+            boolean scoped = intent.getTargetStartMinute() != null && intent.getTargetEndMinute() != null;
+            int minute = AdjustmentTimeScopeResolver.minute(stop);
+            boolean outside = scoped && (minute < intent.getTargetStartMinute() || minute >= intent.getTargetEndMinute());
+            boolean otherDay = intent.getDayNumber() != null && !"TRIP".equals(intent.getScope()) && !java.util.Objects.equals(number(d.get("day")), intent.getDayNumber());
+            if (!pinned && !outside && !otherDay) continue;
+            var revised = next.get(safe(stop.get("id")));
+            if (revised == null || days(after).stream().filter(nd -> dayStops(nd).stream().anyMatch(ns -> java.util.Objects.equals(ns.get("id"), stop.get("id")))).noneMatch(nd -> java.util.Objects.equals(number(nd.get("day")), number(d.get("day"))))) return true;
+            for (String field : List.of("venueId", "name", "time", "startTime", "duration"))
+                if (!java.util.Objects.equals(stop.get(field), revised.get(field))) return true;
+        }
+        if (intent.getTargetStartMinute() != null && intent.getTargetEndMinute() != null)
+            for (var d : days(after)) for (var stop : dayStops(d)) {
+                var original = allStops(before).stream().filter(s -> java.util.Objects.equals(s.get("id"), stop.get("id")))
+                        .findFirst().orElse(null);
+                boolean edited = original == null || List.of("venueId", "name", "time", "startTime", "duration").stream()
+                        .anyMatch(field -> !java.util.Objects.equals(original.get(field), stop.get(field)));
+                if (!edited) continue;
+                Integer minute = itineraryTimeEngine.parseExplicitTimeMinutes(firstNonBlank(safe(stop.get("time")), safe(stop.get("startTime"))));
+                long end = minute == null ? Long.MAX_VALUE : (long) minute + itineraryTimeEngine.parseDurationMinutes(safe(stop.get("duration")));
+                if (minute == null || minute < intent.getTargetStartMinute() || minute >= intent.getTargetEndMinute()
+                        || end > intent.getTargetEndMinute()) return true;
+            }
+        return false;
+    }
+
+    private boolean hasMissingDiningTarget(List<String> reasons) {
+        return reasons.stream().anyMatch(r -> r.startsWith("DINING_") || r.equals("MEAL_WINDOW_UNAVAILABLE") || r.equals("NO_FEASIBLE_MEAL_GAP"));
+    }
+
+    private List<Map<String, Object>> describeActualChanges(Map<String, Object> before, Map<String, Object> after) {
+        Map<String, Map<String, Object>> old = new LinkedHashMap<>(), current = new LinkedHashMap<>();
+        for (var day : days(before)) for (var stop : dayStops(day)) old.put(safe(stop.get("id")), stop);
+        for (var day : days(after)) for (var stop : dayStops(day)) current.put(safe(stop.get("id")), stop);
+        Set<String> ids = new java.util.LinkedHashSet<>(old.keySet()); ids.addAll(current.keySet());
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String id : ids) {
+            var a = old.get(id); var b = current.get(id);
+            if (a != null && b != null && java.util.Objects.equals(a.get("venueId"), b.get("venueId"))
+                    && java.util.Objects.equals(a.get("name"), b.get("name"))
+                    && java.util.Objects.equals(a.get("time"), b.get("time"))
+                    && java.util.Objects.equals(a.get("duration"), b.get("duration"))) continue;
+            var change = new LinkedHashMap<String, Object>();
+            change.put("stopId", id); change.put("before", a); change.put("after", b); result.add(change);
+        }
+        return result;
+    }
+
+    private boolean hasMissingAdjustmentTarget(List<String> reasons) {
+        return reasons != null && reasons.stream().anyMatch(reason -> Set.of(
+                "DINING_CANDIDATES_UNAVAILABLE", "DINING_POI_UNRESOLVED",
+                "MEAL_WINDOW_UNAVAILABLE", "NO_FEASIBLE_MEAL_GAP", "NO_ACTUAL_CHANGE", "REQUESTED_STOP_NOT_RETAINED").contains(reason));
+    }
+
+    private PlannerService.ServiceResult resetAdjustmentRound(StoredSession session, PlanConversationRequestDto request, boolean cancelled) {
+        Object lock = sessionApplyLocks[Math.floorMod(session.sessionId().hashCode(), sessionApplyLocks.length)];
+        synchronized (lock) {
+            StoredSession latest = findAuthorized(session.sessionId(), request == null ? "" : request.getSessionAccessToken());
+            if (latest == null) return error(404, "规划会话不存在或无权访问。", null);
+            if (request != null && request.getBaseRevision() != latest.currentVersion()) return conflict(latest);
+            continuations.reset(latest.sessionId());
+            return new PlannerService.ServiceResult(200, Map.of("ok", true, "reset", true, "cancelled", cancelled,
+                    "modified", false, "message", cancelled ? "已取消本轮调整，当前行程未改变。" : "已结束上一轮对话上下文。"));
+        }
+    }
+
     public PlannerService.ServiceResult apply(String sessionId, ApplyAdjustmentRequestDto request) {
         String lockKey = sessionId == null ? "" : sessionId;
-        Object sessionLock = sessionApplyLocks.computeIfAbsent(lockKey, k -> new Object());
+        Object sessionLock = sessionApplyLocks[Math.floorMod(lockKey.hashCode(), sessionApplyLocks.length)];
         synchronized (sessionLock) {
-            try {
-                return doApply(sessionId, request);
-            } finally {
-                sessionApplyLocks.remove(lockKey, sessionLock);
-            }
+            return doApply(sessionId, request);
         }
     }
 
@@ -529,6 +722,7 @@ public class PlanAdjustmentService {
             }
         }
 
+        if (requestedRevision != session.currentVersion()) { if (metricsLogger != null) metricsLogger.logRevisionConflict(sessionId, requestedRevision, session.currentVersion()); return conflict(session); }
         PlanAdjustmentProposal proposal = proposalStore.get(proposalId);
 
         if (proposal == null) {
@@ -541,10 +735,6 @@ public class PlanAdjustmentService {
             proposalStore.remove(proposalId);
             return error(400, "调整提案已过期，请重新发起预览。", session);
         }
-        if (!proposal.isFeasible() && !forceApply) {
-            return error(400, "这份调整当前不太建议直接采用（不可行约束冲突），请换一个方案或重新确认目标地点。", session);
-        }
-
         int expectedRevision = requestedRevision;
         if (proposal.getBaseRevision() != expectedRevision || proposal.getBaseRevision() != session.currentVersion()) {
             if (metricsLogger != null) {
@@ -553,6 +743,7 @@ public class PlanAdjustmentService {
             return conflict(session);
         }
 
+        if (!continuations.validProposal(session.sessionId(), proposal.getConversationEpoch(), proposal.getCreatedAt())) return error(409, "这份提案属于已结束的对话，请重新预览。", session);
         Map<String, Object> proposedTrip;
         if (proposal.getOptionPlans() != null && !proposal.getOptionPlans().isEmpty()) {
             if (!proposal.getOptionPlans().containsKey(optionId)) {
@@ -563,6 +754,15 @@ public class PlanAdjustmentService {
             proposedTrip = deepCopy(proposal.getProposedTrip(), objectMapper);
         }
 
+        if (proposal.getIntent() != null && proposal.getIntent().getType() == ConversationIntentType.ADD_STOP
+                && (proposal.getRequiredStopIdsByOption() == null
+                    || proposal.getRequiredStopIdsByOption().getOrDefault(optionId, List.of()).isEmpty())) {
+            return error(400, "这份加站预览缺少目标校验信息，请重新生成预览后应用。", session);
+        }
+        var selectedStatus = optionStatus(session.trip(), proposedTrip, proposal.getIntent(), extractConstraints(session), proposal.getReasonCodes(), optionId,
+                proposal.getRequiredStopIdsByOption() == null ? List.of() : proposal.getRequiredStopIdsByOption().getOrDefault(optionId, List.of()));
+        if (!Boolean.TRUE.equals(selectedStatus.get("canApply"))) return error(400, "这个候选没有有效改动，或违反必须保留的范围、开放条件，不能应用；请选择其他候选。", session);
+        if (!Boolean.TRUE.equals(selectedStatus.get("feasible")) && !forceApply) return error(400, "这个候选有不可行约束冲突提示，请查看后决定是否继续。", session);
         int nextVersion = session.currentVersion() + 1;
         finalizeTrip(proposedTrip, nextVersion, "AI 局部调整应用",
                 proposal.getIntent() == null ? "用户确认应用" : proposal.getIntent().getRawMessage(),
@@ -585,6 +785,7 @@ public class PlanAdjustmentService {
         }
 
         proposalStore.remove(proposalId);
+        continuations.afterApply(session.sessionId(), result.session().currentVersion());
 
         long latencyMs = (System.nanoTime() - startNanos) / 1_000_000L;
         if (metricsLogger != null) {
@@ -615,6 +816,11 @@ public class PlanAdjustmentService {
         body.put("degradationReasons", meta.getDegradationReasons());
 
         body.put("forced", forceApply && !proposal.isFeasible());
+        var continuation = continuations.pending(session.sessionId());
+        if (continuation != null) {
+            body.put("pendingIntent", Map.of("intentId", continuation.intentId(), "baseRevision", continuation.baseRevision(), "expiresAt", continuation.expiresAt(), "intent", continuation.intent().asMap()));
+            body.put("nextActionPrompt", continuation.intent().getClarificationQuestion());
+        }
         body.put("message", forceApply && !proposal.isFeasible()
                 ? "已按你的选择应用这份调整；它可能让当天安排不够顺路，请结合实际情况安排行程。"
                 : "行程调整已成功应用并持久化。");
@@ -661,13 +867,19 @@ public class PlanAdjustmentService {
         // 2. Stop resolution
         String rawText = intent.getRawMessage() != null ? intent.getRawMessage() : "";
         String selectedStop = safeText(context.getSelectedStopId());
+        if (Boolean.TRUE.equals(intent.getGenericDiningCraving()) && safeText(intent.getCuisineOrPlace()) != null) {
+            // A generic cuisine cannot inherit a catalog venue guessed from the raw sentence.
+            intent.setTargetAttractionId(null);
+            intent.setReplacementPlaceId(null);
+        }
 
         if (intent.getType() == ConversationIntentType.ADD_STOP
                 && safeText(intent.getTargetAttractionId()) != null) {
             String resolved = resolveAttractionId(intent.getTargetAttractionId());
             if (resolved != null) intent.setTargetAttractionId(resolved);
         }
-        if (intent.getType() == ConversationIntentType.SUGGEST_REPLACEMENTS) {
+        if (intent.getType() == ConversationIntentType.SUGGEST_REPLACEMENTS
+                && !Boolean.TRUE.equals(intent.getGenericDiningCraving())) {
             String replacementReference = firstNonBlank(
                     intent.getReplacementPlaceName(),
                     intent.getRequestedVenueName()
@@ -709,11 +921,12 @@ public class PlanAdjustmentService {
                 } else if (!selectedIsDining && isDiningIntent && !selectedName.isBlank() && !rawText.contains(selectedName)) {
                     targetStopMismatched = true;
                 } else if (selectedIsDining && isDiningIntent) {
-                    boolean wantsBreakfast = rawText.matches(".*(早|早点|早餐|早饭).*")
+                    String explicitSlot = safeText(intent.getTimeSlot());
+                    boolean wantsBreakfast = explicitSlot != null ? "BREAKFAST".equals(explicitSlot) : rawText.matches(".*(早|早点|早餐|早饭).*")
                             || (intent.getReplacementPlaceName() != null && intent.getReplacementPlaceName().matches(".*(早|早点|早餐).*"));
-                    boolean wantsDinner = rawText.matches(".*(晚|晚餐|晚上|夜间|夜景|收尾|夜宵).*")
+                    boolean wantsDinner = explicitSlot != null ? "DINNER".equals(explicitSlot) || "NIGHT_SNACK".equals(explicitSlot) : rawText.matches(".*(晚|晚餐|晚上|夜间|夜景|收尾|夜宵).*")
                             || (intent.getReplacementPlaceName() != null && intent.getReplacementPlaceName().matches(".*(晚|晚餐).*"));
-                    boolean wantsLunch = rawText.matches(".*(午|午餐|中午|午饭).*")
+                    boolean wantsLunch = explicitSlot != null ? "LUNCH".equals(explicitSlot) : rawText.matches(".*(午|午餐|中午|午饭).*")
                             || (intent.getReplacementPlaceName() != null && intent.getReplacementPlaceName().matches(".*(午|午餐).*"));
 
                     if (wantsLunch && (itineraryTimeEngine.isEveningSlot(selectedTime) || itineraryTimeEngine.isMorningSlot(selectedTime) || selectedName.contains("晚餐") || selectedName.contains("早餐"))) {
@@ -733,7 +946,7 @@ public class PlanAdjustmentService {
 
         if (isDiningIntent) {
             String refPlace = firstNonBlank(intent.getReplacementPlaceName(), intent.getRequestedVenueName());
-            boolean hasSpecificDiningName = !diningCategoryGrounder.isGenericDiningCraving(refPlace);
+            boolean hasSpecificDiningName = !diningCategoryGrounder.isGenericDiningCraving(intent, refPlace);
 
             if (selectedStop != null && !targetStopMismatched) {
                 StopLocation targetLoc = locateStop(trip, selectedStop);
@@ -747,7 +960,7 @@ public class PlanAdjustmentService {
                 Map<String, Object> dayMap = findDay(trip, dayNum);
                 if (dayMap != null) {
                     List<Map<String, Object>> stops = dayStops(dayMap);
-                    String slotType = diningCategoryGrounder.resolveSlotType(rawText);
+                    String slotType = diningCategoryGrounder.resolveSlotType(intent);
                     boolean isLunch = "LUNCH".equals(slotType);
                     boolean isDinner = "DINNER".equals(slotType);
                     boolean isBreakfast = "BREAKFAST".equals(slotType);
@@ -904,6 +1117,7 @@ public class PlanAdjustmentService {
 
     private boolean isDiningIntent(PlanAdjustmentIntent intent) {
         if (intent == null) return false;
+        if (safeText(intent.getCuisineOrPlace()) != null && intent.getGenericDiningCraving() != null) return true;
         if (intent.getPreferences() != null && intent.getPreferences().contains("FOOD")) {
             return true;
         }
@@ -994,7 +1208,8 @@ public class PlanAdjustmentService {
             if (capabilitySession == null || !sessionId.equals(capabilitySession.sessionId())) return null;
             return repository.find(sessionId, "ANONYMOUS", capabilitySession.ownerId(), token);
         }
-        return repository.find(sessionId, "USER", UserContext.getUserId(), token);
+        StoredSession owned = repository.find(sessionId, "USER", UserContext.getUserId(), token);
+        return owned != null ? owned : repository.claimAnonymous(sessionId, token, UserContext.getUserId());
     }
 
     private void finalizeTrip(Map<String, Object> trip, int version, String label, String reason, List<String> changed) {

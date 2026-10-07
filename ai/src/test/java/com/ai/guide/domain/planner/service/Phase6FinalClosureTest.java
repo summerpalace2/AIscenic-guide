@@ -204,7 +204,7 @@ class Phase6FinalClosureTest {
         List<Map<String, Object>> days = (List<Map<String, Object>>) trip.get("days");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> day1Stops = (List<Map<String, Object>>) days.get(0).get("stops");
-        String firstStopId = String.valueOf(day1Stops.get(0).get("id"));
+        String firstStopId = firstScenicStopId(day1Stops);
 
         PlanConversationRequestDto previewReq = PlanConversationRequestDto.builder()
                 .sessionId(sessionId)
@@ -218,7 +218,7 @@ class Phase6FinalClosureTest {
         assertEquals(PlannerVersionMetadata.CURRENT_PLANNER_VERSION, previewRes.body().get("plannerVersion"));
         assertEquals(PlannerVersionMetadata.CURRENT_POLICY_VERSION, previewRes.body().get("policyVersion"));
         assertEquals(PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE, previewRes.body().get("explanationSource"));
-        String proposalId = String.valueOf(previewRes.body().get("proposalId"));
+        String proposalId = requireApplicableProposal(previewRes);
 
         // 4. Apply adjustment
         ApplyAdjustmentRequestDto applyReq = ApplyAdjustmentRequestDto.builder()
@@ -283,7 +283,7 @@ class Phase6FinalClosureTest {
         List<Map<String, Object>> days = (List<Map<String, Object>>) trip.get("days");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> day1Stops = (List<Map<String, Object>>) days.get(0).get("stops");
-        String firstStopId = String.valueOf(day1Stops.get(0).get("id"));
+        String firstStopId = firstScenicStopId(day1Stops);
 
         PlanConversationRequestDto previewReq = PlanConversationRequestDto.builder()
                 .sessionId(sessionId)
@@ -297,7 +297,7 @@ class Phase6FinalClosureTest {
         assertEquals(initialPreview + 1, metricsLogger.getProposalPreviewCount());
         assertTrue(metricsLogger.getLastPreviewLatencyMs() >= 0, "Preview latency must be non-negative");
 
-        String proposalId = String.valueOf(previewRes.body().get("proposalId"));
+        String proposalId = requireApplicableProposal(previewRes);
         ApplyAdjustmentRequestDto applyReq = ApplyAdjustmentRequestDto.builder()
                 .proposalId(proposalId)
                 .optionId("option-1")
@@ -333,6 +333,22 @@ class Phase6FinalClosureTest {
             assertFalse(logMsg.contains(token), "Structured log must not contain sessionAccessToken");
             assertFalse(logMsg.contains("换掉这个地方"), "Structured log must not contain raw user message text");
         }
+    }
+
+    private String firstScenicStopId(List<Map<String, Object>> stops) {
+        PoiCategoryPolicyRegistry policies = new PoiCategoryPolicyRegistry();
+        return stops.stream().filter(stop -> !policies.isDiningStop(stop))
+                .map(stop -> String.valueOf(stop.get("id"))).findFirst().orElseThrow();
+    }
+
+    private String requireApplicableProposal(PlannerService.ServiceResult preview) {
+        assertNotNull(preview.body().get("proposalId"), () -> "需要真实可应用提案: " + preview.body());
+        assertEquals(true, preview.body().get("feasible"), () -> "提案不可行: " + preview.body());
+        String proposalId = String.valueOf(preview.body().get("proposalId"));
+        PlanAdjustmentProposal proposal = proposalStore.get(proposalId);
+        assertNotNull(proposal);
+        assertTrue(proposal.getOptionPlans().containsKey("option-1"));
+        return proposalId;
     }
 
     @Test

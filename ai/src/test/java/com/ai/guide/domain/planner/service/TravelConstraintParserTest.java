@@ -13,6 +13,17 @@ class TravelConstraintParserTest {
     private final TravelConstraintParser parser = new TravelConstraintParser();
 
     @Test
+    void separatesUnpunctuatedDepartureClockFromExplicitStartPlace() {
+        for (String clock : java.util.List.of("中午12点出发", "下午三点半动身", "19:15起步")) {
+            TravelConstraints constraints = parser.parse("我在市立博物馆 " + clock + " 给我3小时的旅游规划 想吃当地菜");
+            assertEquals("市立博物馆", constraints.getStartPlace(), clock);
+            assertEquals(180, constraints.getTimeBudgetMinutes());
+            assertTrue(constraints.hasExplicitSpatialRequest());
+        }
+        assertEquals("文化路12号", parser.parse("我在文化路12号 给我3小时的旅游规划").getStartPlace());
+    }
+
+    @Test
     void parsesGoldenPersonaConstraints() {
         TravelConstraints constraints = parser.parse("周六下午到重庆，周日晚上离开，带父母，希望少走路，预算有限，喜欢城市、人文和夜景。");
 
@@ -102,7 +113,7 @@ class TravelConstraintParserTest {
         assertEquals("解放碑", constraints.getStartPlace());
         assertEquals(180, constraints.getTimeBudgetMinutes());
         assertEquals(1, constraints.getDurationDays());
-        assertEquals("重庆火锅", constraints.getDietPreference());
+        assertEquals("火锅", constraints.getDietPreference());
         assertTrue(constraints.hasExplicitSpatialRequest());
     }
 
@@ -153,7 +164,7 @@ class TravelConstraintParserTest {
         assertEquals(1, constraints.getDurationDays());
         assertTrue(constraints.hasExplicitSpatialRequest());
         assertTrue(constraints.getInterests().contains("休闲"));
-        assertEquals("重庆火锅", constraints.getDietPreference());
+        assertEquals("火锅", constraints.getDietPreference());
     }
 
     @Test
@@ -177,5 +188,25 @@ class TravelConstraintParserTest {
         assertEquals("重庆邮电大学", c2.getStartPlace());
         assertEquals(360, c2.getTimeBudgetMinutes());
         assertTrue(c2.hasExplicitSpatialRequest());
+    }
+
+    @Test
+    void cityNamesComeFromExternalAssetInsteadOfThreeCityBranches() {
+        for (String city : java.util.List.of("北京", "杭州", "武汉", "西安", "嘉峪关", "五指山", "芒市")) {
+            TravelConstraints constraints = parser.parse(city + "两天旅游，想吃火锅");
+            assertEquals(city, constraints.getDestination());
+            assertEquals("火锅", constraints.getDietPreference());
+            assertEquals(com.ai.guide.domain.planner.model.ConstraintOrigin.PROMPT, constraints.originOf("destination"));
+        }
+    }
+
+    @Test
+    void ambiguousCitiesRequireClarificationAndStructuredDestinationResolvesIt() {
+        var ambiguous = parser.parse("北京和杭州两天游");
+        org.junit.jupiter.api.Assertions.assertNull(ambiguous.getDestination());
+        assertTrue(ambiguous.getCriticalMissingFields().contains("destination"));
+        var resolved = parser.applyOverrides(ambiguous, Map.of("destination", "杭州"));
+        assertEquals("杭州", resolved.getDestination());
+        assertFalse(resolved.getCriticalMissingFields().contains("destination"));
     }
 }

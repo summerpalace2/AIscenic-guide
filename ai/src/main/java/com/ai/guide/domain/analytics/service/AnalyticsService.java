@@ -89,8 +89,10 @@ public class AnalyticsService {
      * 对应 Python: GET /analytics/dashboard?period=today
      */
     public Map<String, Object> dashboard(String period) {
+        LocalDateTime selectedStart=periodStart(period);
         Map<String, Object> result = new LinkedHashMap<>();
-
+        String selectedSince=selectedStart.format(DT_FMT);
+        result.put("period",period);
         // 关键词规则升级后，重新计算历史中仍为 NEUTRAL 的问题，避免旧统计永久停留在 0%。
         refreshDerivedEmotions();
 
@@ -98,7 +100,7 @@ public class AnalyticsService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
         LocalDateTime yesterdayStart = todayStart.minusDays(1);
-        LocalDateTime weekAgo = todayStart.minusDays(7);
+        LocalDateTime weekAgo = todayStart.minusDays(6);
 
         // 服务次数
         int total = queryCount("SELECT COUNT(*) FROM service_log");
@@ -116,25 +118,26 @@ public class AnalyticsService {
 
         Map<String, Object> serviceCount = new LinkedHashMap<>();
         serviceCount.put("total", total);
+        serviceCount.put("selected",queryCount("SELECT COUNT(*) FROM service_log WHERE created_at >= ?",selectedSince));
         serviceCount.put("today", todayCount);
         serviceCount.put("week", weekCount);
         serviceCount.put("trend", trend);
         result.put("serviceCount", serviceCount);
 
         // 活跃用户（今日独立 session 数）
-        int activeUsers = queryCount("SELECT COUNT(DISTINCT session_id) FROM service_log WHERE created_at >= ?", todayStart.format(DT_FMT));
+        int activeUsers = queryCount("SELECT COUNT(DISTINCT session_id) FROM service_log WHERE created_at >= ?", selectedSince);
         Map<String, Object> activeUsersData = new LinkedHashMap<>();
         activeUsersData.put("current", activeUsers);
         activeUsersData.put("peakToday", activeUsers);
         result.put("activeUsers", activeUsersData);
 
         // 热门问题 TOP10
-        result.put("hotQuestionsTop10", queryHotQuestions(todayStart.format(DT_FMT), 10));
+        result.put("hotQuestionsTop10", queryHotQuestions(selectedSince, 10));
 
         // 情绪分布
-        int pos = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'POSITIVE' AND created_at >= ?", todayStart.format(DT_FMT));
-        int neu = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'NEUTRAL' AND created_at >= ?", todayStart.format(DT_FMT));
-        int neg = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'NEGATIVE' AND created_at >= ?", todayStart.format(DT_FMT));
+        int pos = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'POSITIVE' AND created_at >= ?", selectedSince);
+        int neu = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'NEUTRAL' AND created_at >= ?", selectedSince);
+        int neg = queryCount("SELECT COUNT(*) FROM service_log WHERE emotion = 'NEGATIVE' AND created_at >= ?", selectedSince);
         int totalEmo = pos + neu + neg;
         if (totalEmo == 0) totalEmo = 1;
 
@@ -145,7 +148,7 @@ public class AnalyticsService {
         result.put("emotionDistribution", emotionDist);
 
         // 满意度趋势（近7天积极率）
-        result.put("satisfactionTrend", querySatisfactionTrend(weekAgo.format(DT_FMT)));
+        result.put("satisfactionTrend", querySatisfactionTrend(selectedSince));
 
         return result;
     }
@@ -175,28 +178,20 @@ public class AnalyticsService {
     // ───────── 3. 热门问题排行 ─────────
 
     public List<Map<String, Object>> hotQuestions(String period, int topN) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime todayStart = now.toLocalDate().atStartOfDay();
-        return queryHotQuestions(todayStart.format(DT_FMT), topN);
+        if(topN<1||topN>100)throw new IllegalArgumentException("topN须为1至100");
+        return queryHotQuestions(periodStart(period).format(DT_FMT), topN);
     }
 
     // ───────── 4. 情绪趋势 ─────────
 
     public List<Map<String, Object>> sentimentTrend(String startDate, String endDate, String granularity) {
-        String groupBy = "date(created_at)";
+        String groupBy = bucketSql(granularity);
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ").append(groupBy).append(" as period, emotion, COUNT(*) as cnt ");
         sql.append("FROM service_log WHERE 1=1");
         List<Object> params = new ArrayList<>();
 
-        if (startDate != null && !startDate.isBlank()) {
-            sql.append(" AND created_at >= ?");
-            params.add(startDate);
-        }
-        if (endDate != null && !endDate.isBlank()) {
-            sql.append(" AND created_at <= ?");
-            params.add(endDate);
-        }
+        addDateRange(sql,params,startDate,endDate);
         sql.append(" GROUP BY ").append(groupBy).append(", emotion ORDER BY ").append(groupBy);
 
         List<Map<String, Object>> rows = jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
@@ -210,11 +205,11 @@ public class AnalyticsService {
         // 聚合为 {time, positive, neutral, negative}
         Map<String, Map<String, Integer>> aggregated = new LinkedHashMap<>();
         for (Map<String, Object> row : rows) {
-            String period = (String) row.get("period");
+            String period = bucketLabel((String) row.get("period"),granularity);
             String emotion = (String) row.get("emotion");
             int count = (Integer) row.get("count");
             aggregated.computeIfAbsent(period, k -> new HashMap<>());
-            aggregated.get(period).put(emotion, count);
+            aggregated.get(period).merge(emotion, count,Integer::sum);
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -235,25 +230,19 @@ public class AnalyticsService {
     // ───────── 5. 服务量时序 ─────────
 
     public List<Map<String, Object>> serviceCount(String startDate, String endDate, String granularity) {
-        StringBuilder sql = new StringBuilder();
-        sql.append("SELECT date(created_at) as period, COUNT(*) as cnt FROM service_log WHERE 1=1");
-        List<Object> params = new ArrayList<>();
-
-        if (startDate != null) { sql.append(" AND created_at >= ?"); params.add(startDate); }
-        if (endDate != null) { sql.append(" AND created_at <= ?"); params.add(endDate); }
-        sql.append(" GROUP BY date(created_at) ORDER BY date(created_at)");
-
-        return jdbcTemplate.query(sql.toString(), (rs, rowNum) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("period", rs.getString("period"));
-            m.put("count", rs.getInt("cnt"));
-            return m;
-        }, params.toArray());
+        String groupBy=bucketSql(granularity);
+        StringBuilder sql=new StringBuilder("SELECT "+groupBy+" as period,COUNT(*) as cnt FROM service_log WHERE 1=1");
+        List<Object> params=new ArrayList<>();addDateRange(sql,params,startDate,endDate);
+        sql.append(" GROUP BY ").append(groupBy).append(" ORDER BY ").append(groupBy);
+        var rows=jdbcTemplate.query(sql.toString(),(rs,n)->Map.<String,Object>of("period",bucketLabel(rs.getString("period"),granularity),"count",rs.getInt("cnt")),params.toArray());
+        var grouped=new LinkedHashMap<String,Integer>();for(var row:rows)grouped.merge((String)row.get("period"),((Number)row.get("count")).intValue(),Integer::sum);
+        return grouped.entrySet().stream().map(e->Map.<String,Object>of("period",e.getKey(),"count",e.getValue())).toList();
     }
 
     // ───────── 6. 报告管理 ─────────
 
     public Map<String, Object> listReports(int page, int size) {
+        if(page<1||size<1||size>100)throw new IllegalArgumentException("分页须为page>=1且size为1至100");
         int total = queryCount("SELECT COUNT(*) FROM analytics_report");
         List<Map<String, Object>> items = jdbcTemplate.query(
             "SELECT id, title, type, period_start, period_end, status, created_at FROM analytics_report ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -327,6 +316,34 @@ public class AnalyticsService {
 
     // ───────── 内部查询方法 ─────────
 
+    /** Dates are local calendar days in the server's configured time zone, matching logService timestamps. */
+    private static void addDateRange(StringBuilder sql,List<Object> params,String start,String end) {
+        LocalDate a=parseDate(start),b=parseDate(end);
+        if(a!=null&&b!=null&&a.isAfter(b))throw new IllegalArgumentException("起始日期不能晚于截止日期");
+        if(a!=null){sql.append(" AND created_at >= ?");params.add(a.atStartOfDay().format(DT_FMT));}
+        if(b!=null){sql.append(" AND created_at < ?");params.add(b.plusDays(1).atStartOfDay().format(DT_FMT));}
+    }
+    private static LocalDate parseDate(String raw) {
+        if(raw==null||raw.isBlank())return null;
+        try{return LocalDate.parse(raw);}catch(java.time.DateTimeException e){throw new IllegalArgumentException("日期须为yyyy-MM-dd",e);}
+    }
+    private static LocalDateTime periodStart(String period) {
+        LocalDate today=LocalDate.now();return switch(period==null?"today":period) {
+            case "today" -> today.atStartOfDay();case "week" -> today.minusDays(6).atStartOfDay();case "month" -> today.minusDays(29).atStartOfDay();case "all" -> LocalDate.of(1,1,1).atStartOfDay();
+            default -> throw new IllegalArgumentException("统计周期仅支持today/week/month/all");
+        };
+    }
+    private static String bucketSql(String granularity) {
+        return switch(granularity==null?"day":granularity) {
+            case "hour" -> "substr(created_at,1,13)";case "day","week" -> "substr(created_at,1,10)";case "month" -> "substr(created_at,1,7)";
+            default -> throw new IllegalArgumentException("时间粒度仅支持hour/day/week/month");
+        };
+    }
+    private static String bucketLabel(String value,String granularity) {
+        if("week".equals(granularity))return LocalDate.parse(value).with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)).toString();
+        return "hour".equals(granularity)?value+":00":value;
+    }
+
     private int queryCount(String sql, Object... args) {
         Integer count = jdbcTemplate.queryForObject(sql, Integer.class, args);
         return count != null ? count : 0;
@@ -347,10 +364,10 @@ public class AnalyticsService {
 
     private List<Map<String, Object>> querySatisfactionTrend(String since) {
         List<Map<String, Object>> rows = jdbcTemplate.query(
-            "SELECT date(created_at) as period, " +
+            "SELECT substr(created_at,1,10) as period, " +
             "SUM(CASE WHEN emotion = 'POSITIVE' THEN 1 ELSE 0 END) as pos, " +
             "COUNT(*) as total " +
-            "FROM service_log WHERE created_at >= ? GROUP BY date(created_at) ORDER BY date(created_at)",
+            "FROM service_log WHERE created_at >= ? GROUP BY substr(created_at,1,10) ORDER BY substr(created_at,1,10)",
             (rs, rowNum) -> {
                 Map<String, Object> m = new LinkedHashMap<>();
                 m.put("date", rs.getString("period"));

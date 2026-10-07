@@ -22,4 +22,5 @@ public class ShadowMutationRequest {
     private String attractionId = "";
     private Integer day;
     private String stopId = "";
+    private boolean allowRepeat;
 }

@@ -81,17 +81,17 @@ public class BoundaryStressChaosTest {
     // 维度二：拓扑死循环与图环注入 (DEF-R4-02 / 全保护站点超限与局部修复器防死循环)
     // =========================================================================
     @Test
-    @DisplayName("维度二：全保护站点超限防死循环与时长平滑压缩验证")
-    void testDimension2_AllPinnedStopsOverflowNoLoopAndDurationCompressed() {
+    @DisplayName("维度二：全保护站点超限保留时长并报告不可行")
+    void testDimension2_AllPinnedStopsOverflowPreservesDurationAndRemainsInfeasible() {
         LocalPlanRepairer repairer = new LocalPlanRepairer();
 
         List<Map<String, Object>> days = new ArrayList<>();
         Map<String, Object> day = new LinkedHashMap<>();
         day.put("day", 1);
         List<Map<String, Object>> stops = new ArrayList<>();
-        stops.add(new LinkedHashMap<>(Map.of("id", "s1", "name", "洪崖洞", "duration", "约 180 分钟", "pinned", true)));
-        stops.add(new LinkedHashMap<>(Map.of("id", "s2", "name", "解放碑", "duration", "约 120 分钟", "pinned", true)));
-        stops.add(new LinkedHashMap<>(Map.of("id", "s3", "name", "李子坝", "duration", "约 100 分钟", "pinned", true)));
+        stops.add(new LinkedHashMap<>(Map.of("id", "s1", "name", "洪崖洞", "duration", "约 300 分钟", "pinned", true)));
+        stops.add(new LinkedHashMap<>(Map.of("id", "s2", "name", "解放碑", "duration", "约 240 分钟", "pinned", true)));
+        stops.add(new LinkedHashMap<>(Map.of("id", "s3", "name", "李子坝", "duration", "约 180 分钟", "pinned", true)));
         day.put("stops", stops);
         days.add(day);
 
@@ -114,11 +114,10 @@ public class BoundaryStressChaosTest {
         // 断言 1：站点未被暴力删除，依然保持 3 处核心景点
         assertEquals(3, repairedStops.size());
 
-        // 断言 2：游玩时长被优雅降级压缩（从 180/120/100 降为 90/60/50 分钟），成功化解日程超限死循环
-        String dur1 = String.valueOf(repairedStops.get(0).get("duration"));
-        String dur2 = String.valueOf(repairedStops.get(1).get("duration"));
-        assertTrue(dur1.contains("90") || dur1.contains("60") || dur1.contains("50"), "时长应被压缩");
-        assertTrue(dur2.contains("90") || dur2.contains("60") || dur2.contains("50"), "时长应被压缩");
+        // Protected durations are immutable: an impossible schedule must remain explicit.
+        assertEquals(List.of("约 300 分钟", "约 240 分钟", "约 180 分钟"),
+                repairedStops.stream().map(stop -> stop.get("duration")).toList());
+        assertFalse(new PlanVerifier().verify(repaired, constraints).feasible());
     }
 
     // =========================================================================

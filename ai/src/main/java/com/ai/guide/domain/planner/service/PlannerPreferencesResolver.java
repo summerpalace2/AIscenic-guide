@@ -1,6 +1,5 @@
 package com.ai.guide.domain.planner.service;
 
-import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
 import com.ai.guide.domain.planner.model.TravelConstraints;
@@ -8,7 +7,6 @@ import com.ai.guide.domain.preferences.model.BudgetPreference;
 import com.ai.guide.domain.preferences.model.PreferencesSchema;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.preferences.model.UserPreferences;
-import com.ai.guide.domain.memory.model.TravelMemory;
 import com.ai.guide.domain.memory.service.TravelMemoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -195,36 +193,19 @@ public class PlannerPreferencesResolver {
         applied.put("stayArea", value);
     }
 
-    /** Confirmed memories are a light, editable extension of long-term preferences. */
+    /** Free-text categories do not imply canonical diet, budget, pace or companion values. */
     private void applyConfirmedMemories(TravelConstraints next, String userId) {
         if (memoryService == null) return;
         try {
-            for (TravelMemory memory : memoryService.list(userId)) {
-                String content = memory.content();
-                switch (memory.category()) {
-                    case "PACE" -> { if (next.canPreferenceOverride("walkingTolerance")) { next.setWalkingTolerance("低"); next.markOrigin("walkingTolerance", ConstraintOrigin.PREFERENCE); } }
-                    case "ACCESSIBILITY" -> { if (next.canPreferenceOverride("walkingTolerance")) { next.setWalkingTolerance("低"); next.markOrigin("walkingTolerance", ConstraintOrigin.PREFERENCE); } }
-                    case "TRANSPORT" -> { if (next.canPreferenceOverride("transportPreference")) { next.setTransportPreference(content.contains("公共交通") ? "公共交通优先" : "打车优先"); next.markOrigin("transportPreference", ConstraintOrigin.PREFERENCE); } }
-                    case "DIET" -> { if (next.canPreferenceOverride("dietPreference")) { next.setDietPreference(content.contains("明确限制") ? "饮食限制需确认" : "清淡少辣"); next.markOrigin("dietPreference", ConstraintOrigin.PREFERENCE); } }
-                    case "COMPANION" -> { if (next.canPreferenceOverride("companions")) { next.setCompanions(content.contains("亲子") ? "带孩子" : content.contains("长辈") ? "带父母" : "情侣出游"); next.markOrigin("companions", ConstraintOrigin.PREFERENCE); } }
-                    case "INTEREST" -> applyMemoryInterest(next, content);
-                    case "BUDGET" -> { if (next.canPreferenceOverride("budget")) { next.setBudget("有限"); next.markOrigin("budget", ConstraintOrigin.PREFERENCE); } }
-                    default -> { }
-                }
-            }
+            String context = memoryService.promptContext(userId);
+            if (context == null || context.isBlank()) return;
+            Map<String, Object> semantic = next.getShadowSemanticPreferences() == null ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(next.getShadowSemanticPreferences());
+            semantic.put("confirmedMemoryContext", context);
+            next.setShadowSemanticPreferences(semantic);
         } catch (RuntimeException ignored) {
-            // Memory recall is helpful but must never make an itinerary unavailable.
+            // Recall can fail without changing the canonical request constraints.
         }
-    }
-
-    private void applyMemoryInterest(TravelConstraints next, String content) {
-        if (!next.canPreferenceOverride("interests")) return;
-        String interest = content.contains("自然") ? "自然" : content.contains("夜景") || content.contains("江景") ? "夜景" : "人文";
-        if (next.getInterests().contains(interest)) return;
-        List<String> interests = new ArrayList<>(next.getInterests());
-        interests.add(interest);
-        next.setInterests(interests);
-        next.markOrigin("interests", ConstraintOrigin.PREFERENCE);
     }
 
     private String budgetDisplay(BudgetPreference value) {

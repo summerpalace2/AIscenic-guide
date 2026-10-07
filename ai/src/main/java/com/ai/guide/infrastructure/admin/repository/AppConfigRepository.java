@@ -48,6 +48,7 @@ public class AppConfigRepository implements AppConfigRepositoryPort {
                     }, prefix + "%");
         } catch (Exception e) {
             log.error("[Admin] 读取配置失败: {}", e.getMessage());
+            throw new IllegalStateException("无法读取运营配置", e);
         }
         return result;
     }
@@ -63,7 +64,10 @@ public class AppConfigRepository implements AppConfigRepositoryPort {
         if (values == null || values.isEmpty()) {
             return;
         }
-        values.forEach((k, v) -> {
+        new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                        java.util.Objects.requireNonNull(jdbcTemplate.getDataSource())))
+                .executeWithoutResult(status -> values.forEach((k, v) -> {
             String key = k.startsWith(prefix) ? k : prefix + k;
             String now = LocalDateTime.now().format(DATE_TIME_FORMATTER);
             String value = v == null ? "" : String.valueOf(v);
@@ -74,6 +78,6 @@ public class AppConfigRepository implements AppConfigRepositoryPort {
                         "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?)",
                         key, value, now);
             }
-        });
+        }));
     }
 }

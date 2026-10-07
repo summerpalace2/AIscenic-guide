@@ -76,7 +76,7 @@ public record RouteCost(
 
     public Map<String, Object> asMap() {
         Map<String, Object> map = new LinkedHashMap<>();
-        map.put("durationMinutes", duration == null ? 0L : duration.toMinutes());
+        map.put("durationMinutes", duration == null ? 0L : (long) Math.ceil(duration.toSeconds() / 60.0));
         map.put("durationSeconds", duration == null ? 0L : duration.toSeconds());
         map.put("distanceMeters", distanceMeters);
         map.put("walkingMeters", walkingMeters);

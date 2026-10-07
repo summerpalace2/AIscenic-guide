@@ -93,6 +93,8 @@ public class TripApplicationService {
             return null;
         }
         Map<String, Object> exportPlan = new LinkedHashMap<>(trip.plan());
+        // Historical snapshots may predate title synchronization.
+        exportPlan.put("title", trip.title());
         exportPlan.put("tripId", trip.id());
         exportPlan.put("currentVersion", trip.currentVersion());
         exportPlan.put("tripCreatedAt", trip.createdAt());

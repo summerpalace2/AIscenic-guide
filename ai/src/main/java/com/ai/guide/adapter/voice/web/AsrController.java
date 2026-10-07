@@ -26,7 +26,8 @@ public class AsrController {
     }
 
     @PostMapping(value = "/asr", consumes = "application/json")
-    public Result<String> transcribe(@RequestBody Map<String, String> body) {
-        return voiceApplicationService.transcribe(body);
+    public org.springframework.http.ResponseEntity<Result<String>> transcribe(@RequestBody Map<String, String> body) {
+        Result<String> result = voiceApplicationService.transcribe(body);
+        return org.springframework.http.ResponseEntity.status(result.getCode()).body(result);
     }
 }

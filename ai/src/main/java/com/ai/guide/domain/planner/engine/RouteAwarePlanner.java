@@ -10,6 +10,9 @@ import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
 import com.ai.guide.domain.planner.model.topography.ElevationFlow;
 import com.ai.guide.domain.planner.service.TopographyStrategyRouter;
 import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.ChengduPlainTopographyStrategy;
+import com.ai.guide.domain.planner.service.strategy.XiAnHeritageTopographyStrategy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
@@ -58,7 +61,9 @@ public class RouteAwarePlanner {
         this.planVerifier = planVerifier;
         this.localPlanRepairer = localPlanRepairer;
         this.metricsLogger = metricsLogger != null ? metricsLogger : new PlannerMetricsLogger();
-        this.topographyStrategyRouter = topographyStrategyRouter;
+        this.topographyStrategyRouter = topographyStrategyRouter != null ? topographyStrategyRouter
+                : new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy(),new ChengduPlainTopographyStrategy(),
+                        new XiAnHeritageTopographyStrategy(),new GenericPlainTopographyStrategy()));
     }
 
     public RouteAwarePlanner(RouteCostProvider routeCostProvider,
@@ -68,12 +73,11 @@ public class RouteAwarePlanner {
     }
 
     private TopographyStrategyPort resolveTopographyStrategy(TravelConstraints constraints) {
-        String city = (constraints != null && constraints.getDestination() != null)
-                ? constraints.getDestination() : "重庆";
-        if (topographyStrategyRouter != null) {
-            return topographyStrategyRouter.route(city);
-        }
-        return new ChongqingTopographyStrategy();
+        return topographyStrategyRouter.route(constraints == null ? null : constraints.getDestination());
+    }
+
+    private boolean usesChongqingCatalogPolicy(TravelConstraints constraints) {
+        return "CHONGQING".equalsIgnoreCase(resolveTopographyStrategy(constraints).supportedCity());
     }
 
     public record CandidateEvaluation(
@@ -90,7 +94,9 @@ public class RouteAwarePlanner {
                                               ItineraryBuilderPort builder) {
         List<Map<String, Object>> days = new ArrayList<>();
         Set<String> usedAttractionIds = new HashSet<>();
-        String[] themes = {"母城地标与两江夜景", "文博探索与山城魔幻", "江岸开阔视野与工业文创", "千年古镇与巴渝风情"};
+        String[] themes = usesChongqingCatalogPolicy(constraints)
+                ? new String[]{"母城地标与两江夜景", "文博探索与山城魔幻", "江岸开阔视野与工业文创", "千年古镇与巴渝风情"}
+                : new String[]{"城市地标与夜景", "文博探索", "自然与文创", "历史与当地风情"};
 
         for (int day = 1; day <= dayCount; day++) {
             String dayDate = calculateDayDate(constraints, day);
@@ -107,7 +113,7 @@ public class RouteAwarePlanner {
                         currentDayAttractions,
                         previousAttraction,
                         slot,
-                        isMonday,
+                        dayDate,
                         constraints,
                         explicitIds,
                         day
@@ -194,6 +200,15 @@ public class RouteAwarePlanner {
                 }
             }
             List<Map<String, Object>> nextDays = localPlanRepairer.repair(currentDays, verification, constraints, catalogList);
+            for (int d = 0; d < Math.min(currentDays.size(), nextDays.size()); d++) {
+                if (currentDays.get(d).get("stops") instanceof List<?> before
+                        && nextDays.get(d).get("stops") instanceof List<?> after && !before.isEmpty() && !after.isEmpty()
+                        && before.get(0) instanceof Map<?,?> oldFirst && after.get(0) instanceof Map<?,?> newFirst
+                        && !Objects.equals(oldFirst.get("id"), newFirst.get("id"))) {
+                    @SuppressWarnings("unchecked") Map<String,Object> first = (Map<String,Object>) newFirst;
+                    invalidateIncomingRoute(first);
+                }
+            }
             if (Objects.equals(currentDays, nextDays)) {
                 break;
             }
@@ -206,6 +221,19 @@ public class RouteAwarePlanner {
     public void backfillAdjacentEdgeCosts(List<Map<String, Object>> days,
                                          Map<String, Attraction> byId,
                                          String preference) {
+        backfillAdjacentEdgeCosts(days, byId, preference, null);
+    }
+
+    /** A local edit only invalidates edges whose endpoints actually changed. */
+    public void backfillAdjacentEdgeCosts(List<Map<String, Object>> days, Map<String, Attraction> byId,
+                                         String preference, List<Map<String, Object>> originalDays) {
+        Map<Object, List<Map<String, Object>>> originals = new LinkedHashMap<>();
+        if (originalDays != null) for (var originalDay : originalDays) {
+            if (originalDay.get("stops") instanceof List<?> originalStops) {
+                @SuppressWarnings("unchecked") List<Map<String,Object>> typed = (List<Map<String,Object>>) originalStops;
+                originals.put(originalDay.get("day"), typed);
+            }
+        }
         if (days == null) return;
         for (Map<String, Object> day : days) {
             Object stopsObj = day.get("stops");
@@ -215,19 +243,72 @@ public class RouteAwarePlanner {
             for (int i = 1; i < stops.size(); i++) {
                 Map<String, Object> prevStop = stops.get(i - 1);
                 Map<String, Object> currStop = stops.get(i);
-                String prevVenueId = String.valueOf(prevStop.get("venueId"));
-                String currVenueId = String.valueOf(currStop.get("venueId"));
-                Attraction prevAttraction = byId.get(prevVenueId);
-                Attraction currAttraction = byId.get(currVenueId);
-
-                if (prevAttraction != null && currAttraction != null) {
-                    RouteCost resolved = routeCostProvider.resolveFinalEdge(prevAttraction, currAttraction, preference);
-                    currStop.put("resolvedRouteCost", resolved.asMap());
-                    currStop.put("estimatedRouteCost", resolved.asMap());
-                    currStop.put("routeDataStatus", resolved.status().name());
+                List<Map<String,Object>> originalStops = originals.get(day.get("day"));
+                if (originalStops != null) {
+                    boolean unchanged = false;
+                    for (int j = 1; j < originalStops.size(); j++) {
+                        if (sameRouteEndpoint(prevStop, originalStops.get(j - 1))
+                                && sameRouteEndpoint(currStop, originalStops.get(j))) { unchanged = true; break; }
+                    }
+                    if (unchanged) continue;
+                }
+                Attraction prevAttraction = routeEndpoint(prevStop, byId);
+                Attraction currAttraction = routeEndpoint(currStop, byId);
+                // Incoming metadata belongs to the old adjacency until this edge is resolved.
+                invalidateIncomingRoute(currStop);
+                RouteCost resolved = prevAttraction == null || currAttraction == null
+                        ? RouteCost.unavailable("当前相邻站点坐标缺失，接驳待核验")
+                        : routeCostProvider.resolveFinalEdge(prevAttraction, currAttraction, preference);
+                if (resolved == null) resolved = RouteCost.unavailable("当前相邻接驳待核验");
+                currStop.put("resolvedRouteCost", resolved.asMap());
+                currStop.put("estimatedRouteCost", resolved.asMap());
+                currStop.put("routeDataStatus", resolved.status().name());
+                String routeSummary = resolved.status() == RouteCost.RouteDataStatus.UNAVAILABLE
+                        ? "接驳待核验" : "交通约 " + resolved.asMap().get("durationMinutes") + " 分钟";
+                currStop.put("walk", routeSummary);
+                if (resolved.status() != RouteCost.RouteDataStatus.UNAVAILABLE) {
+                    Map<String, Object> selected = new LinkedHashMap<>(resolved.asMap());
+                    selected.put("mode", resolved.transportMode());
+                    currStop.put("routeFromPrevious", Map.of("selectedMode", resolved.transportMode(),
+                            "routeDataStatus", resolved.status().name(), "summary", routeSummary, "selected", selected));
                 }
             }
         }
+    }
+
+    /** Remove only incoming-route assets; retain venue coordinates and accessibility facts. */
+    public static void invalidateIncomingRoute(Map<String,Object> stop) {
+        for (String key : List.of("routeFromPrevious", "resolvedRouteCost", "estimatedRouteCost", "routeDataStatus", "walk"))
+            stop.remove(key);
+        for (String key : List.of("walkingInfo", "mapContext")) {
+            if (stop.get(key) instanceof Map<?,?> original) {
+                Map<String,Object> retained = new LinkedHashMap<>();
+                original.forEach((k,v) -> retained.put(String.valueOf(k),v));
+                for (String field : List.of("polyline", "summary", "duration", "durationSeconds", "durationMinutes",
+                        "distance", "distanceMeters", "walkingDistanceMeters", "walkingMeters", "selected", "selectedMode",
+                        "routeDataStatus", "status", "reason", "mode", "transportMode")) retained.remove(field);
+                if (retained.isEmpty()) stop.remove(key); else stop.put(key, retained);
+            }
+        }
+    }
+
+    private boolean sameRouteEndpoint(Map<String,Object> left, Map<String,Object> right) {
+        return Objects.equals(left.get("id"), right.get("id"))
+                && Objects.equals(left.get("venueId"), right.get("venueId"))
+                && Objects.equals(left.get("location"), right.get("location"));
+    }
+
+    private Attraction routeEndpoint(Map<String, Object> stop, Map<String, Attraction> byId) {
+        String venueId = stop.get("venueId") == null ? "" : String.valueOf(stop.get("venueId"));
+        Attraction catalog = byId == null ? null : byId.get(venueId);
+        String coordinate = stop.get("location") == null ? "" : String.valueOf(stop.get("location"));
+        if (!com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper.isValidCoordinate(coordinate))
+            coordinate = catalog == null ? "" : catalog.getLocation();
+        if (!com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper.isValidCoordinate(coordinate)) return null;
+        return Attraction.builder().id(venueId.isBlank() ? "route-stop-" + stop.get("id") : venueId)
+                .name(String.valueOf(stop.getOrDefault("name", "")))
+                .district(String.valueOf(stop.getOrDefault("district", catalog == null ? "" : catalog.getDistrict())))
+                .location(coordinate).amapQuery(catalog == null ? Map.of() : catalog.getAmapQuery()).build();
     }
 
     private CandidateEvaluation selectBestCandidate(Collection<Attraction> catalog,
@@ -235,7 +316,7 @@ public class RouteAwarePlanner {
                                                     List<Attraction> currentDayAttractions,
                                                     Attraction previous,
                                                     SlotSpecification slot,
-                                                    boolean isMonday,
+                                                    String dayDate,
                                                     TravelConstraints constraints,
                                                     List<String> explicitIds,
                                                     int day) {
@@ -246,7 +327,7 @@ public class RouteAwarePlanner {
             if (used.contains(candidate.getId())) continue;
 
             // Hard constraint 0: Distant district requires explicit mention or matching start place
-            boolean isCandidateDistant = isDistantDistrict(candidate.getDistrict());
+            boolean isCandidateDistant = usesChongqingCatalogPolicy(constraints) && isDistantDistrict(candidate.getDistrict());
             if (isCandidateDistant) {
                 boolean explicitlyRequested = (explicitIds != null && explicitIds.contains(candidate.getId()))
                         || (constraints.getMustVisit() != null && constraints.getMustVisit().stream().anyMatch(m -> candidate.getName().contains(m) || candidate.getId().contains(m)));
@@ -263,22 +344,14 @@ public class RouteAwarePlanner {
                 continue;
             }
 
-            // Hard constraint 2: Opening Hours - Monday closure (GS-03)
-            String bestTime = candidate.getBestTime() == null ? "" : candidate.getBestTime();
-            if (isMonday && (bestTime.contains("周一闭馆") || bestTime.contains("周一休息"))) {
-                continue;
-            }
-
-            // Hard constraint 3: Slot time feasibility (GS-03)
-            if (bestTime.contains("17:00") && isEveningSlot(slot.time())) {
-                continue; // Cannot schedule 17:00 closing venue at 18:30/19:30 evening
-            }
+            String opening = OpeningHoursPolicy.evidence(candidate.getOpeningHours(), candidate.getBestTime());
+            if (OpeningHoursPolicy.isClosed(opening, dayDate, slot.time()) || !OpeningHoursPolicy.isTimeOpen(opening, slot.time())) continue;
             if (isNightAttraction(candidate) && !isEveningSlot(slot.time())) {
                 continue; // Cannot schedule night attraction at morning/afternoon slot
             }
 
             // Hard constraint 4: Cross-district half-day collision (GS-01)
-            if (previous != null) {
+            if (previous != null && usesChongqingCatalogPolicy(constraints)) {
                 boolean prevDistant = isDistantDistrict(previous.getDistrict());
                 boolean currDistant = isDistantDistrict(candidate.getDistrict());
                 if (prevDistant != currDistant) {
@@ -292,6 +365,7 @@ public class RouteAwarePlanner {
                     ? RouteCost.estimated(0, 0, 0, "WALKING", "首站")
                     : routeCostProvider.calculate(previous, candidate, constraints.getTransportPreference());
 
+            if (routeCost == null || routeCost.duration() == null || routeCost.status() == RouteCost.RouteDataStatus.UNAVAILABLE) continue;
             double travelPenalty = routeCost.duration().toMinutes() * 0.4;
             double walkingPenalty = "低".equals(constraints.getWalkingTolerance()) ? (routeCost.walkingMeters() * 0.03) : 0;
             double timePreferenceBonus = slot.preferredPredicate().test(candidate) ? 25.0 : 0.0;
@@ -420,7 +494,7 @@ public class RouteAwarePlanner {
         TopographyStrategyPort topoStrategy = resolveTopographyStrategy(c);
         boolean allowStartPlaceProximity = (day == 1)
                 && topoStrategy.allowStartPlaceProximity(previous, a);
-        if (allowStartPlaceProximity && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
+        if (allowStartPlaceProximity && usesChongqingCatalogPolicy(c) && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
             String sp = c.getStartPlace();
             if ((sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) && "江津区".equals(a.getDistrict())) {
                 districtScore += 120;

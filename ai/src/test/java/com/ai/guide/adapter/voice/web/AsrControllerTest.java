@@ -47,7 +47,7 @@ class AsrControllerTest {
         mockMvc.perform(post("/ai/asr")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"audio\":\"\"}"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400))
                 .andExpect(jsonPath("$.message").value("音频数据为空"));
     }

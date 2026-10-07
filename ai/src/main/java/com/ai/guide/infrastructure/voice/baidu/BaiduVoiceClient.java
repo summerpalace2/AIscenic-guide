@@ -32,7 +32,7 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
 
     private static final Logger log = LoggerFactory.getLogger(BaiduVoiceClient.class);
 
-    private static final String ASR_URL = "http://vop.baidu.com/server_api";
+    private static final String ASR_URL = "https://vop.baidu.com/server_api";
     private static final String TTS_URL = "https://tsn.baidu.com/text2audio";
     private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
 
@@ -46,7 +46,8 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
     private final ObjectMapper objectMapper;
 
     public BaiduVoiceClient() {
-        this.restTemplate = new RestTemplate();
+        var factory=new org.springframework.http.client.SimpleClientHttpRequestFactory();factory.setConnectTimeout(5000);factory.setReadTimeout(15000);
+        this.restTemplate = new RestTemplate(factory);
         this.objectMapper = new ObjectMapper();
     }
 
@@ -125,13 +126,20 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
 
             log.info("[TTS] lang=" + lang + ", voice=" + per + ", text_len=" + text.length());
             ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            byte[] audio=response.getBody();MediaType contentType=response.getHeaders().getContentType();
+            boolean jsonType=contentType!=null&&(MediaType.APPLICATION_JSON.isCompatibleWith(contentType)||contentType.getSubtype().endsWith("+json"));
+            String prefix=audio==null?"":new String(audio,0,Math.min(audio.length,64),StandardCharsets.UTF_8).stripLeading();
+            boolean mp3=audio!=null&&audio.length>=3&&((audio[0]=='I'&&audio[1]=='D'&&audio[2]=='3')||((audio[0]&0xff)==0xff&&(audio[1]&0xe0)==0xe0));
+            if(!response.getStatusCode().is2xxSuccessful()||jsonType||prefix.startsWith("{")||!mp3) {
+                log.warn("[TTS] provider returned a non-audio or unsuccessful response");
+                return ResponseEntity.status(502).contentType(MediaType.APPLICATION_JSON).body("{\"code\":502,\"message\":\"语音供应商未返回有效音频\"}".getBytes(StandardCharsets.UTF_8));
+            }
+            HttpHeaders headers = new HttpHeaders();headers.setContentType(MediaType.parseMediaType("audio/mpeg"));
             headers.set("Content-Disposition", "attachment; filename=tts.mp3");
-            return new ResponseEntity<>(response.getBody(), headers, response.getStatusCode());
+            return new ResponseEntity<>(audio,headers,response.getStatusCode());
         } catch (Exception e) {
             log.error("[TTS] Error: " + e.getMessage());
-            return ResponseEntity.internalServerError().build();
+            return ResponseEntity.status(502).build();
         }
     }
 

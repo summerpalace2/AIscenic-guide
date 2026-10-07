@@ -40,6 +40,10 @@ final class AmapResponseNormalizer {
             if (tag != null && !tag.isBlank() && !tags.contains(tag)) tags.add(tag);
             String heatTag = String.join(";", tags);
 
+            String typecode = text(poi, "typecode");
+            String businessArea = text(business, "business_area");
+            if (businessArea == null || businessArea.isBlank()) businessArea = text(poi, "business_area");
+
             result.add(new PoiCandidate(
                     text(poi, "id"),
                     text(poi, "name"),
@@ -54,7 +58,9 @@ final class AmapResponseNormalizer {
                     photo.url(),
                     photo.title(),
                     rating,
-                    heatTag
+                    heatTag,
+                    typecode,
+                    businessArea
             ));
         }
         return List.copyOf(result);
@@ -266,7 +272,9 @@ final class AmapResponseNormalizer {
             String photoUrl,
             String photoTitle,
             Double rating,
-            String heatTag
+            String heatTag,
+            String typecode,
+            String businessArea
     ) {
         public PoiCandidate(
                 String poiId,
@@ -280,7 +288,24 @@ final class AmapResponseNormalizer {
                 String photoUrl,
                 String photoTitle
         ) {
-            this(poiId, name, coordinate, address, type, navigationEntrance, navigationExit, navigationPoiId, photoUrl, photoTitle, null, null);
+            this(poiId, name, coordinate, address, type, navigationEntrance, navigationExit, navigationPoiId, photoUrl, photoTitle, null, null, null, null);
+        }
+
+        public PoiCandidate(
+                String poiId,
+                String name,
+                Coordinate coordinate,
+                String address,
+                String type,
+                Coordinate navigationEntrance,
+                Coordinate navigationExit,
+                String navigationPoiId,
+                String photoUrl,
+                String photoTitle,
+                Double rating,
+                String heatTag
+        ) {
+            this(poiId, name, coordinate, address, type, navigationEntrance, navigationExit, navigationPoiId, photoUrl, photoTitle, rating, heatTag, null, null);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.PlanPageContext;
@@ -26,6 +27,24 @@ public class ConversationIntentClassifier {
 
     private final AttractionService attractionService;
     private final AttractionAliasMatcher aliasMatcher;
+    private DiningCategoryGrounder diningCategoryGrounder = new DiningCategoryGrounder();
+
+    @Autowired
+    public void setDiningCategoryGrounder(DiningCategoryGrounder grounder) {
+        this.diningCategoryGrounder = grounder;
+    }
+
+    boolean isGenericDiningCategory(String text) {
+        return diningCategoryGrounder.isGenericCategoryName(text);
+    }
+
+    String resolveDiningTimeSlot(String text) {
+        return diningCategoryGrounder.resolveSlotType(text);
+    }
+
+    String normalizeGenericCuisine(String text) {
+        return diningCategoryGrounder.normalizeGenericCuisine(text);
+    }
 
     public ConversationIntentClassifier() {
         this(null, null);
@@ -48,7 +67,25 @@ public class ConversationIntentClassifier {
 
 
     public PlanAdjustmentIntent classify(String message, PlanPageContext context) {
-        String text = message == null ? "" : message.replaceAll("[\\u200B-\\u200D\\uFEFF]", "").trim();
+        var compound = IntentLanguagePolicy.distinctActionClauses(message);
+        if (!compound.isEmpty()) {
+            PlanPageContext page = context == null ? new PlanPageContext() : context;
+            String shared = String.join("，", IntentLanguagePolicy.clauses(message).stream()
+                    .filter(clause -> !compound.contains(clause)).toList());
+            Integer day = extractExplicitDayNumber(message);
+            return PlanAdjustmentIntent.builder().type(ConversationIntentType.CLARIFICATION)
+                    .operation("CLARIFICATION").scope("TRIP").rawMessage(message)
+                    .dayNumber(day == null ? (page.getActiveDay() == null ? 1 : page.getActiveDay()) : day)
+                    .preferences(extractPreferences(shared)).conditions(extractConditions(shared))
+                    .preserveReferences(IntentLanguagePolicy.preservedReferences(message))
+                    .pinnedStopIds(new ArrayList<>(page.getPinnedStopIds() == null ? List.of() : page.getPinnedStopIds()))
+                    .compoundActions(compound)
+                    .missingFields(List.of("COMPOUND_ACTION_ORDER")).requiresClarification(true)
+                    .clarificationQuestion("你提出了多项调整：\n" + String.join("\n", compound)
+                            + "\n当前每次预览执行一项操作。回复“执行第一个”等选择顺序，或单独发送完整要求；其余要求尚未执行。")
+                    .build();
+        }
+        String text = message == null ? "" : IntentLanguagePolicy.positiveText(message.replaceAll("[\\u200B-\\u200D\\uFEFF]", "").replaceAll("(?:不想去|不要去|不去)", "替换").trim());
         PlanPageContext effectiveContext = context == null ? new PlanPageContext() : context;
         Integer activeDay = effectiveContext.getActiveDay() == null ? 1 : effectiveContext.getActiveDay();
         String selectedStop = effectiveContext.getSelectedStopId();
@@ -175,7 +212,12 @@ public class ConversationIntentClassifier {
             addIfMissing(narrativePreferences, text.matches(".*(?:美食|小吃|午餐|晚餐|面馆|抄手).*"), "FOOD");
             addIfMissing(narrativePreferences, text.matches(".*(?:同片区|同区|顺路).*"), "SAME_DISTRICT");
             if (narrativePreferences.isEmpty()) {
-                narrativePreferences.add("HISTORY");
+                if (matchedVenueId == null) {
+                    return PlanAdjustmentIntent.builder().type(ConversationIntentType.CLARIFICATION)
+                            .operation("CLARIFICATION").requiresClarification(true)
+                            .clarificationQuestion("请补充所选方案的具体地点或内容；仅凭方案编号无法确定要修改哪一段。")
+                            .rawMessage(text).confidence(0.4).build();
+                }
             }
             boolean isLocalAdjustment = text.matches(".*(局部|这天|今天|当天|第[一二三四1-9]天).*")
                     || (explicitDay != null && explicitDay > 0)
@@ -245,9 +287,9 @@ public class ConversationIntentClassifier {
         // 若没有活跃方案，则“2”、“选2”、“第二个”属于对上一轮意图澄清问题的选择，不能误判为方案应用。
         boolean hasActiveProposal = activeProposal != null && !activeProposal.isBlank();
         Matcher candidateMatcher = CANDIDATE_INDEX_PATTERN.matcher(text);
-        if (hasActiveProposal && (candidateMatcher.find() || text.matches(".*(换成第[12345一二两三四五]个|选第[12345一二两三四五]个|方案[12345一二两三四五]|确认替换|应用方案).*"))) {
-            int index = extractCandidateIndex(text);
-            if (index > 3) {
+        if (hasActiveProposal && (candidateMatcher.find() || text.matches(".*(换成第[12345一二两三四五]个|选第[12345一二两三四五]个|方案[12345一二两三四五]|确认替换|应用方案).* ".trim()) || text.matches("^(?:第)?[123一二两三](?:个|项)?$"))) {
+            int index = candidateMatcher.find(0) ? parseChineseNumber(candidateMatcher.group(1)) : text.matches("^(?:第)?[123一二两三](?:个|项)?$") ? parseChineseNumber(text.replaceAll("第|个|项", "")) : extractCandidateIndex(text);
+            if (index < 1 || index > 3) {
                 return PlanAdjustmentIntent.builder()
                         .type(ConversationIntentType.CLARIFICATION)
                         .operation("CLARIFICATION")
@@ -365,7 +407,9 @@ public class ConversationIntentClassifier {
         }
 
         // 2. 局部重排与优化意图 (REPLAN_DAY)
-        boolean hasReplanOrOptimize = text.matches(".*(优化.*(行程|段落|路线)|避免爬台阶|电梯下行).*");
+        boolean hasReplanOrOptimize = (text.matches("(?s).*(优化|重排|重新规划).*")
+                && text.matches("(?s).*(行程|段落|路线|安排|观景点).*"))
+                || text.matches(".*(避免爬台阶|电梯下行).*");
         if (hasReplanOrOptimize) {
             int effectiveTargetDay = targetDay != null ? targetDay : (activeDay > 0 ? activeDay : 1);
             List<String> replanPrefs = new ArrayList<>(preferences);
@@ -445,7 +489,8 @@ public class ConversationIntentClassifier {
         // 3. 添加景点或餐饮 (ADD_STOP)
         if ((text.matches(".*(加上|添加|新增|加入|放进|排入|安排上|想去|想吃|想喝|想看|想逛|看演出|观演|看剧|去看|逛街|逛商圈|逛逛|购物|去吃|去喝|来点|来个|安排个|加个|多安排|多去|把.*加到|增加|补充|补上|纳入|接着去|接上|接入|衔接|串联|游览|之后接|后面接|先去|先到|先逛|顺路去|顺道去|之前去|前去|入住|想住|→|->).*")
                 || text.matches(".*(?:在|去).*(?:逛街|购物|看演出|看剧|看电影|玩).*")
-                || text.matches(".*(?:接入动线|接入行程|确认接入|接入这一段|按此接入|去.*之前.*去|在.*前.*去|在.*之前.*).*"))
+                || text.matches(".*(?:接入动线|接入行程|确认接入|接入这一段|按此接入|去.*之前.*去|在.*前.*去|在.*之前.*).*" )
+                || (IntentLanguagePolicy.explicitRepeat(text) && !text.matches(".*(?:怎么走|如何|为什么|吗|？|\\?).*")))
                 && !text.contains("不想去") && !text.contains("删除") && !text.contains("去掉") && !text.contains("删掉")) {
             if (targetStop != null && mentionsSelectedStop) {
                 return PlanAdjustmentIntent.builder()
@@ -512,11 +557,14 @@ public class ConversationIntentClassifier {
                                 .confidence(0.92)
                                 .build();
                     }
-                    boolean isGenericCraving = PlanAdjustmentService.isGenericDiningCraving(potentialPoi);
-                    if (isGenericCraving || potentialPoi.matches(".*(甜点|甜食|糖水|小吃|美食|茶馆|茶室|茶楼|盖碗茶|品茗|喝茶|老茶馆|咖啡|下午茶|小憩|火锅|老火锅|早点|餐饮|歇脚).*")) {
+                    boolean isGenericCraving = diningCategoryGrounder.isGenericDiningCraving(potentialPoi);
+                    if (isGenericCraving || diningCategoryGrounder.hasDiningKeywords(potentialPoi)) {
+                        String slot = diningCategoryGrounder.resolveSlotType(text);
+                        String cuisine = isGenericCraving
+                                ? diningCategoryGrounder.resolveRequestedFlavor(text, normalizeGenericCuisine(potentialPoi))
+                                : finalPoiName;
                         if (!enrichedPrefs.contains("FOOD")) enrichedPrefs.add("FOOD");
-                        if (potentialPoi.matches(".*(茶|茶馆|茶室|茶楼|盖碗茶|品茗|喝茶|老茶馆|咖啡|下午茶|小憩|歇脚|甜|糖水|冰粉|凉糕|点心).*")
-                                && !enrichedPrefs.contains("TEA_BREAK")) {
+                        if ("TEA_BREAK".equals(slot) && !enrichedPrefs.contains("TEA_BREAK")) {
                             enrichedPrefs.add("TEA_BREAK");
                         }
                         return PlanAdjustmentIntent.builder()
@@ -525,6 +573,9 @@ public class ConversationIntentClassifier {
                                 .scope("DAY")
                                 .dayNumber(explicitDay)
                                 .requestedVenueName(isGenericCraving ? null : finalPoiName)
+                                .cuisineOrPlace(cuisine)
+                                .genericDiningCraving(isGenericCraving)
+                                .timeSlot(slot)
                                 .preferences(enrichedPrefs)
                                 .conditions(conditions)
                                 .pinnedStopIds(new ArrayList<>(pinned))
@@ -586,6 +637,7 @@ public class ConversationIntentClassifier {
         boolean isRemoveIntent = text.matches(".*(删除|删掉|去掉|不要|取消|移除|拿掉|去除).*(景点|站点|卡片|这个).*")
                 || text.matches(".*(?:把|将).*(景点|站点|卡片|地标|那个).*(删除|删掉|去掉|不要|取消|移除|拿掉|去除).*")
                 || text.matches(".*(?:把|将)(.+?)(?:删除|删掉|去掉|拿掉|去除).*")
+                || text.matches("^(?:第\\s*[一二两三四五六七八九十\\d]+\\s*天\\s*)?\\d{1,2}[:：]\\d{2}(?:以后|之后|后|起|以前|之前|前)\\s*(?:删除|删掉|去掉|移除).+")
                 || text.startsWith("删除") || text.startsWith("删掉") || text.startsWith("去掉") || text.startsWith("移除");
         if (isRemoveIntent) {
             String targetStopRef = null;
@@ -902,7 +954,7 @@ public class ConversationIntentClassifier {
         if (text.contains("第三") || text.contains("第3") || text.contains("方案三") || text.contains("方案3")) return 3;
         if (text.contains("第四") || text.contains("第4") || text.contains("方案四") || text.contains("方案4")) return 4;
         if (text.contains("第五") || text.contains("第5") || text.contains("方案五") || text.contains("方案5")) return 5;
-        return 1;
+        return -1;
     }
 
     public static Integer extractExplicitDayNumber(String text) {

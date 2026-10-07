@@ -36,20 +36,22 @@ class AppConfigRepositoryTest {
     @Test
     void testReadConfig_ExceptionGracefulFallback() {
         doThrow(new RuntimeException("DB error")).when(jdbcTemplate).query(anyString(), any(RowCallbackHandler.class), anyString());
-        Map<String, String> res = repository.readConfig("settings_");
-        assertNotNull(res);
-        assertTrue(res.isEmpty());
+        assertThrows(IllegalStateException.class, () -> repository.readConfig("settings_"));
     }
 
     @Test
     void testWriteConfig_UpdateThenInsert() {
-        // Mock update returning 0 -> triggers insert
-        when(jdbcTemplate.update(startsWith("UPDATE"), any(), any(), any())).thenReturn(0);
-
-        repository.writeConfig("settings_", Map.of("key1", "val1"));
-
-        verify(jdbcTemplate).update(startsWith("UPDATE"), eq("val1"), anyString(), eq("settings_key1"));
-        verify(jdbcTemplate).update(startsWith("INSERT"), eq("settings_key1"), eq("val1"), anyString());
+        var source = new org.springframework.jdbc.datasource.SingleConnectionDataSource("jdbc:sqlite::memory:", true);
+        try {
+            var jdbc = new JdbcTemplate(source);
+            jdbc.execute("CREATE TABLE app_config(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT)");
+            var real = new AppConfigRepository(jdbc);
+            real.writeConfig("settings_", Map.of("key1", "val1"));
+            assertEquals("val1", real.readConfig("settings_").get("key1"));
+            real.writeConfig("settings_", Map.of("key1", "val2"));
+            assertEquals("val2", real.readConfig("settings_").get("key1"));
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_config", Integer.class));
+        } finally { source.destroy(); }
     }
 
     @Test

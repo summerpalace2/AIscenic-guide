@@ -176,4 +176,13 @@ class JwtAuthFilterTest {
         assertEquals(200, response.getStatus());
         assertTrue(chain.getRequest() != null);
     }
+    @Test
+    void analyticsReadsRequireAdminButAuthenticatedHeartbeatIsAllowed() throws Exception {
+        Claims claims=mock(Claims.class);when(jwtUtil.parse("user-token")).thenReturn(claims);when(claims.getSubject()).thenReturn("user-1");
+        when(userService.findActivePrincipal("user-1")).thenReturn(new UserService.AuthenticatedPrincipal("user-1","traveler","USER","active"));
+        for(String path:java.util.List.of("/ai/analytics/dashboard","/ai/analytics/reports/r1/export","/ai/analytics/online-users")) {
+            var request=new MockHttpServletRequest("GET",path);request.addHeader("Authorization","Bearer user-token");var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilterInternal(request,response,chain);assertEquals(403,response.getStatus());assertTrue(chain.getRequest()==null);
+        }
+        var request=new MockHttpServletRequest("POST","/ai/online/heartbeat");request.addHeader("Authorization","Bearer user-token");var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilterInternal(request,response,chain);assertEquals(200,response.getStatus());assertTrue(chain.getRequest()!=null);
+    }
 }

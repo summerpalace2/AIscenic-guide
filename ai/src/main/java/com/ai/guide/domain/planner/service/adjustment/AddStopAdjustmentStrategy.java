@@ -8,13 +8,18 @@ import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.engine.CandidateRankingEngine;
 import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
 import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
+import com.ai.guide.domain.planner.engine.DynamicGeoCentroidResolver;
+import com.ai.guide.domain.planner.engine.MealGapSolver;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
+import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.AttractionDiningKnowledge;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.PlannerService;
+import com.ai.guide.domain.planner.service.IntentLanguagePolicy;
 import com.ai.guide.domain.planner.service.util.ChineseDateTimeParser;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -57,6 +62,15 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
     private DiningVenueService diningVenueService;
 
     @Autowired
+    private DynamicGeoCentroidResolver geoCentroidResolver;
+
+    @Autowired
+    private MealGapSolver mealGapSolver;
+
+    @Autowired
+    private TaxonomyPort taxonomy;
+
+    @Autowired
     public AddStopAdjustmentStrategy(AttractionService attractionService,
                                      ItineraryBuilderPort itineraryBuilder,
                                      RouteAwarePlanner routeAwarePlanner,
@@ -80,6 +94,12 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         this.diningVenueService = diningVenueService;
     }
 
+    public void setDiningScheduling(TaxonomyPort taxonomy, MealGapSolver mealGapSolver, DynamicGeoCentroidResolver geoCentroidResolver) {
+        this.taxonomy = taxonomy;
+        this.mealGapSolver = mealGapSolver;
+        this.geoCentroidResolver = geoCentroidResolver;
+    }
+
     @Override
     public boolean supports(ConversationIntentType intentType) {
         return intentType == ConversationIntentType.ADD_STOP;
@@ -92,6 +112,12 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         Map<String, Object> draftTrip = ctx.getDraftTrip();
         TravelConstraints constraints = ctx.getConstraints();
         Map<String, Attraction> byId = ctx.getAttractionsById();
+
+        // Structured dining semantics are authoritative even when a long sentence mentions route landmarks.
+        if (intent.getGenericDiningCraving() != null || !safe(intent.getCuisineOrPlace()).isBlank()) {
+            handleDiningAddition(ctx);
+            return;
+        }
 
         String rawMsg = intent.getRawMessage() != null ? intent.getRawMessage().replaceAll("[\\u200B-\\u200D\\uFEFF]", "") : "";
         List<String> explicitInOrder = aliasMatcher.findExplicitAttractionIdsInOrder(rawMsg, null);
@@ -216,9 +242,6 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                     int prevStart = itineraryTimeEngine.parseTimeMinutes(String.valueOf(prevStop.getOrDefault("time", "")));
                     int prevDur = itineraryTimeEngine.parseDurationMinutes(String.valueOf(prevStop.getOrDefault("duration", "")));
                     if (prevStart > 0) {
-                        if (prevDur > 60 && newVenuesToAdd.size() > 1 && prevStart >= 18 * 60) {
-                            prevDur = 60;
-                        }
                         baseTimeMinute = prevStart + (prevDur > 0 ? prevDur : 60) + 15;
                     }
                 }
@@ -242,12 +265,6 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                 String stopId = "day" + targetDayNumber + "-added-" + (cleanId.startsWith("cq-") ? cleanId.substring(3) : cleanId);
                 String slotTime = itineraryTimeEngine.formatTime(curMinute);
 
-                if (curMinute >= 24 * 60 || !candidateRankingEngine.isOpeningCompatible(attr, slotTime, itineraryTimeEngine)) {
-                    option1Feasible = false;
-                    ctx.getReasonCodes().add(curMinute >= 24 * 60 ? "MIDNIGHT_OVERFLOW" : "CLOSED_AT_SLOT_TIME");
-                    ctx.getAlternatives().add("当前排程时间较晚（" + attr.getName() + "在" + slotTime + "可能已闭园/停运或跨夜），建议提早出发或精简站点");
-                }
-
                 Map<String, Object> addedStop = itineraryBuilder.createStop(
                         attr, stopId, slotTime, attr.getDuration(),
                         "串联游览：" + attr.getName() + "（" + PlannerService.stripTrailingPunctuation(attr.getSummary()) + "）。",
@@ -258,17 +275,14 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                 stopsOpt1.add(Math.min(curInsert, stopsOpt1.size()), addedStop);
                 curInsert++;
                 int dur = itineraryTimeEngine.parseDurationMinutes(attr.getDuration());
-                if (dur > 50 && newVenuesToAdd.size() > 1 && baseTimeMinute >= 18 * 60) {
-                    dur = 45;
-                }
                 curMinute += (dur > 0 ? dur : 45) + 15;
                 opt1AddedStopIds.add(stopId);
                 addedNames.add(attr.getName());
             }
 
-            itineraryTimeEngine.rippleRecalculateStopTimes(stopsOpt1, curInsert);
+            ctx.getRequiredStopIdsByOption().put("option-1", List.copyOf(opt1AddedStopIds));
 
-            for (int i = curInsert; i < stopsOpt1.size(); i++) {
+            for (int i = insertIndex; i < stopsOpt1.size(); i++) {
                 Map<String, Object> s = stopsOpt1.get(i);
                 int sMin = itineraryTimeEngine.parseTimeMinutes(String.valueOf(s.getOrDefault("time", "")));
                 if (sMin >= 24 * 60) {
@@ -279,7 +293,31 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                 }
             }
 
-            resolveAffectedDay(draftOpt1, targetDayNumber, byId, constraints);
+            resolveTimingAndAffectedDay(draftOpt1, targetDayNumber, byId, constraints, insertIndex);
+            stopsOpt1 = dayStops(findDay(draftOpt1, targetDayNumber));
+
+            for (int i = insertIndex; i < stopsOpt1.size(); i++) {
+                Map<String, Object> s = stopsOpt1.get(i);
+                int sMin = itineraryTimeEngine.parseTimeMinutes(String.valueOf(s.getOrDefault("time", "")));
+                if (sMin >= 24 * 60) {
+                    option1Feasible = false;
+                    if (!ctx.getReasonCodes().contains("MIDNIGHT_OVERFLOW")) {
+                        ctx.getReasonCodes().add("MIDNIGHT_OVERFLOW");
+                        ctx.getAlternatives().add("插入新站点后导致后续行程（" + s.get("name") + "）推迟至深夜/次日凌晨，建议调整至其他日期");
+                    }
+                    break;
+                }
+            }
+
+            PlanVerifier.VerificationResult verification = new PlanVerifier().verify(days(draftOpt1), constraints);
+            option1Feasible &= verification.feasible();
+            verification.violations().forEach(v -> ctx.getReasonCodes().add(v.type()));
+            Set<String> retained = stopsOpt1.stream().map(s -> safe(s.get("id"))).collect(java.util.stream.Collectors.toSet());
+            if (!retained.containsAll(opt1AddedStopIds)) {
+                option1Feasible = false;
+                ctx.getReasonCodes().add("REQUESTED_STOP_NOT_RETAINED");
+                ctx.getAlternatives().add("当前时间无法完整容纳所有指定站点，请选择单站方案或调整日期");
+            }
             ctx.getOptionPlans().put("option-1", draftOpt1);
 
             Map<String, Object> cand1 = new LinkedHashMap<>();
@@ -288,7 +326,11 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
             cand1.put("name", String.join(" + ", addedNames) + "（完整动线）");
             cand1.put("requestedName", String.join(" + ", addedNames));
             cand1.put("summary", "依序串联" + String.join("、", addedNames) + "，顺路衔接且游玩动线连贯，适合完整打卡该片区核心地标。");
-            cand1.put("duration", "约 " + (addedNames.size() * 50) + " 分钟");
+            long addedVisitMinutes = stopsOpt1.stream()
+                    .filter(s -> opt1AddedStopIds.contains(safe(s.get("id"))))
+                    .mapToLong(s -> itineraryTimeEngine.parseDurationMinutes(safe(s.get("duration"))))
+                    .sum();
+            cand1.put("duration", "约 " + addedVisitMinutes + " 分钟");
             cand1.put("district", byId.get(newVenuesToAdd.get(0)) != null ? byId.get(newVenuesToAdd.get(0)).getDistrict() : "主城区");
             cand1.put("walkDifficulty", "低");
             cand1.put("fit", "适合少走路、行程充实、一次性体验连贯风貌路线的旅行者。");
@@ -313,8 +355,8 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                     addedStop.put("time", slotTime);
                     addedStop.put("startTime", slotTime);
                     stopsOpt2.add(Math.min(insertIndex, stopsOpt2.size()), addedStop);
-                    itineraryTimeEngine.rippleRecalculateStopTimes(stopsOpt2, insertIndex + 1);
-                    resolveAffectedDay(draftOpt2, targetDayNumber, byId, constraints);
+                    ctx.getRequiredStopIdsByOption().put("option-2", List.of(stopId));
+                    resolveTimingAndAffectedDay(draftOpt2, targetDayNumber, byId, constraints, insertIndex);
                     ctx.getOptionPlans().put("option-2", draftOpt2);
 
                     Map<String, Object> cand2 = new LinkedHashMap<>();
@@ -351,8 +393,8 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
                     addedStop.put("time", slotTime);
                     addedStop.put("startTime", slotTime);
                     stopsOpt3.add(Math.min(insertIndex, stopsOpt3.size()), addedStop);
-                    itineraryTimeEngine.rippleRecalculateStopTimes(stopsOpt3, insertIndex + 1);
-                    resolveAffectedDay(draftOpt3, targetDayNumber, byId, constraints);
+                    ctx.getRequiredStopIdsByOption().put("option-3", List.of(stopId));
+                    resolveTimingAndAffectedDay(draftOpt3, targetDayNumber, byId, constraints, insertIndex);
                     ctx.getOptionPlans().put("option-3", draftOpt3);
 
                     Map<String, Object> cand3 = new LinkedHashMap<>();
@@ -384,6 +426,11 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         Map<String, Object> sourceTrip = ctx.getSourceTrip();
         TravelConstraints constraints = ctx.getConstraints();
         Map<String, Attraction> byId = ctx.getAttractionsById();
+
+        if (isDiningIntent(intent)) {
+            handleDiningAddition(ctx);
+            return;
+        }
 
         String targetVenueId = intent.getTargetAttractionId();
         if (targetVenueId == null && intent.getTargetStopId() != null) {
@@ -437,7 +484,8 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         }
 
         // Check duplicate
-        if (usedVenues(draftTrip).contains(targetVenueId)) {
+        if (usedVenues(draftTrip).contains(targetVenueId)
+                && !IntentLanguagePolicy.explicitRepeat(intent.getRawMessage())) {
             ctx.setFeasible(false);
             ctx.getReasonCodes().add("DUPLICATE_VENUE");
             ctx.getAlternatives().addAll(List.of("该景点已在行程中，无需重复添加", "选择其他未去过的景点", "取消添加"));
@@ -449,6 +497,16 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
             Map<String, Object> newDay = new LinkedHashMap<>();
             newDay.put("day", totalTripDays + 1);
             newDay.put("title", "第" + (totalTripDays + 1) + "天");
+            // The displayed trip dates are authoritative; do not invent an opening weekday.
+            List<Map<String,Object>> existingDays = days(draftTrip);
+            if (!existingDays.isEmpty()) {
+                try {
+                    String nextDate = java.time.LocalDate.parse(safe(existingDays.get(existingDays.size() - 1).get("date")))
+                            .plusDays(1).toString();
+                    newDay.put("date", nextDate);
+                    newDay.put("dateLabel", nextDate + " · 第" + (totalTripDays + 1) + "天");
+                } catch (java.time.DateTimeException unknownDate) { /* retain an explicitly unknown date */ }
+            }
             newDay.put("stops", new ArrayList<>());
             days(draftTrip).add(newDay);
             dayNumber = totalTripDays + 1;
@@ -484,13 +542,18 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
 
         String cleanId = attraction.getId().replaceAll("[^a-zA-Z0-9_-]", "");
         String stopId = "day" + dayNumber + "-added-" + (cleanId.startsWith("cq-") ? cleanId.substring(3) : cleanId);
+        if (IntentLanguagePolicy.explicitRepeat(intent.getRawMessage())) stopId += "-" + java.util.UUID.randomUUID();
+        Integer requestedMinute = ChineseDateTimeParser.extractExplicitTimeMinutes(rawMsg);
+        String requestedClock = requestedMinute == null ? "待安排" : itineraryTimeEngine.formatTime(requestedMinute);
         Map<String, Object> addedStop = itineraryBuilder.createStop(
-                attraction, stopId, "待安排", attraction.getDuration(),
+                attraction, stopId, requestedClock, attraction.getDuration(),
                 "将" + attraction.getName() + "加入当前行程。", attraction.getIntro()
         );
+        int addedIndex = stops.size();
         stops.add(addedStop);
         ctx.getChangedSegments().add(stopId);
-        resolveAffectedDay(draftTrip, dayNumber, byId, constraints);
+        ctx.getRequiredStopIdsByOption().put("option-1", List.of(stopId));
+        resolveTimingAndAffectedDay(draftTrip, dayNumber, byId, constraints, addedIndex);
         ctx.getOptionPlans().put("option-1", draftTrip);
 
         Map<String, Object> cand = new LinkedHashMap<>();
@@ -525,31 +588,19 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
             return;
         }
         List<Map<String, Object>> stops = dayStops(day);
-        if (stops.isEmpty()) {
-            ctx.setFatalError(error(400, "当前日期没有任何景点，无法添加餐饮站点。", ctx));
+
+        String slotType = diningCategoryGrounder.resolveSlotType(intent);
+        String requestedFlavor = diningCategoryGrounder.resolveRequestedFlavor(intent, "特色风味小吃");
+        var mealWindow = taxonomy == null ? null : taxonomy.getMealWindow(slotType);
+        if (mealWindow == null || mealGapSolver == null) {
+            ctx.setFeasible(false);
+            ctx.getReasonCodes().add("MEAL_WINDOW_UNAVAILABLE");
             return;
         }
-
-        String rawCombined = ((intent.getRequestedVenueName() != null ? intent.getRequestedVenueName() : "") + " "
-                + (intent.getReplacementPlaceName() != null ? intent.getReplacementPlaceName() : "") + " "
-                + (intent.getRawMessage() != null ? intent.getRawMessage() : "")).trim();
-
-        String slotType = diningCategoryGrounder.resolveSlotType(rawCombined);
-        String defaultSlotTime = switch (slotType) {
-            case "BREAKFAST" -> "08:00";
-            case "NIGHT_SNACK" -> "21:00";
-            case "DINNER" -> "18:00";
-            case "TEA_BREAK" -> "15:30";
-            default -> "12:00";
-        };
-        String requestedFlavor = diningCategoryGrounder.resolveRequestedFlavor(rawCombined, "特色风味小吃");
-
-        int targetMinutes = itineraryTimeEngine.parseTimeMinutes(defaultSlotTime);
         int plannedInsertIdx = stops.size();
         for (int si = 0; si < stops.size(); si++) {
-            String stTime = String.valueOf(stops.get(si).getOrDefault("time", ""));
-            int stMinutes = itineraryTimeEngine.parseTimeMinutes(stTime);
-            if (stMinutes > targetMinutes) {
+            int minutes = itineraryTimeEngine.parseTimeMinutes(safe(stops.get(si).get("time")));
+            if (minutes > mealWindow.idealMinute()) {
                 plannedInsertIdx = si;
                 break;
             }
@@ -558,7 +609,7 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         Map<String, Object> anchorStop = null;
         if (ctx.getPageContext() != null && ctx.getPageContext().getSelectedStopId() != null && !ctx.getPageContext().getSelectedStopId().isBlank()) {
             StopLocation selectedLoc = locateStop(draftTrip, ctx.getPageContext().getSelectedStopId());
-            if (selectedLoc != null) {
+            if (selectedLoc != null && selectedLoc.day() == day) {
                 anchorStop = selectedLoc.stop();
             }
         }
@@ -575,9 +626,9 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
         Attraction anchor = anchorStop != null ? resolveStopAnchor(anchorStop, itineraryBuilder) : null;
         String district = (anchor != null && anchor.getDistrict() != null && !anchor.getDistrict().isBlank() && !"待确认".equals(anchor.getDistrict()))
                 ? anchor.getDistrict()
-                : (anchorStop != null ? extractDistrictFromStop(anchorStop) : "沙坪坝区");
+                : (anchorStop != null ? extractDistrictFromStop(anchorStop) : "");
 
-        String directDiningName = firstNonBlank(intent.getReplacementPlaceName(), intent.getRequestedVenueName());
+        String directDiningName = firstNonBlank(intent.getCuisineOrPlace(), intent.getReplacementPlaceName(), intent.getRequestedVenueName());
         if ((directDiningName == null || directDiningName.isBlank()) && intent.getRawMessage() != null) {
             Matcher bm = Pattern.compile("[【\\[](.+?)[】\\]]").matcher(intent.getRawMessage());
             if (bm.find()) {
@@ -596,69 +647,60 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
             }
         }
 
-        boolean isGenericDining = diningCategoryGrounder.isGenericDiningCraving(directDiningName);
+        boolean isGenericDining = diningCategoryGrounder.isGenericDiningCraving(intent, directDiningName);
         boolean isDirectDining = !isGenericDining;
 
         List<AttractionDiningKnowledge.DiningOption> diningCandidates = new ArrayList<>();
         if (isDirectDining) {
-            String slotPrefix = "BREAKFAST".equalsIgnoreCase(slotType) ? "【早餐推荐】"
-                    : ("NIGHT_SNACK".equalsIgnoreCase(slotType) ? "【宵夜推荐】"
-                    : ("TEA_BREAK".equalsIgnoreCase(slotType) ? "【特色茶歇】"
-                    : ("DINNER".equalsIgnoreCase(slotType) ? "【晚餐推荐】" : "【午餐推荐】")));
-            String directFullName = directDiningName.startsWith("【") ? directDiningName : slotPrefix + directDiningName;
-            String directCoord = (anchor != null && anchor.getLocation() != null && !anchor.getLocation().isBlank())
-                    ? anchor.getLocation() : "106.577000,29.556000";
-            String directVenueId = "direct-dining-" + Math.abs(directDiningName.hashCode());
-            if (diningVenueService != null) {
+            String city = resolveTripCity(draftTrip, constraints);
+            String searchArea = firstNonBlank(district, city);
+            String coordinate = anchor != null && isValidCoordinate(anchor.getLocation()) ? anchor.getLocation()
+                    : (geoCentroidResolver == null ? resolveDefaultCoordinate(draftTrip, constraints, dayStops(day))
+                    : geoCentroidResolver.resolve(draftTrip, constraints, dayStops(day)));
+            if (diningVenueService != null && searchArea != null && coordinate != null) {
                 try {
-                    var foundList = diningVenueService.searchLiveDiningOrTea(district != null ? district : "重庆市", directCoord, directDiningName, slotType, 1);
-                    if (foundList != null && !foundList.isEmpty()) {
-                        var v0 = foundList.get(0);
-                        directVenueId = v0.getId();
-                        if (v0.getLocation() != null && !v0.getLocation().isBlank()) {
-                            directCoord = v0.getLocation();
-                        }
+                    var found = diningVenueService.searchLiveDiningOrTea(searchArea, coordinate, directDiningName, slotType, 1, city);
+                    if (found != null && !found.isEmpty() && matchesRequestedDiningVenue(directDiningName, found.get(0).getName())) {
+                        var option = verifiedDiningOption(found.get(0), slotType);
+                        if (option != null) diningCandidates.add(option);
                     }
-                } catch (Exception ignored) {}
-            }
-            diningCandidates.add(new AttractionDiningKnowledge.DiningOption(
-                    directVenueId,
-                    directFullName,
-                    "招牌特色风味菜品",
-                    requestedFlavor,
-                    "人均约 58-88 元",
-                    "约 60 分钟",
-                    "步行直达",
-                    "根据您的调整要求，直接安排指定餐厅：" + directDiningName,
-                    "用户指定餐厅，为您精准规划动线",
-                    "gold",
-                    directCoord
-            ));
-            var alts = AttractionDiningKnowledge.resolveDiningReplacementCandidates(
-                    district, directFullName, requestedFlavor, slotType, anchor, constraints);
-            if (alts != null) {
-                for (var alt : alts) {
-                    if (!alt.name().contains(directDiningName)) {
-                        diningCandidates.add(alt);
-                        if (diningCandidates.size() >= 3) break;
-                    }
+                } catch (RuntimeException ignored) {
+                    ctx.getAdjustmentDiagnostics().put("diningSearchStatus", "UNAVAILABLE");
                 }
+            }
+            if (diningCandidates.isEmpty()) {
+                ctx.setFeasible(false);
+                ctx.getReasonCodes().add("DINING_POI_UNRESOLVED");
+                ctx.getAlternatives().add("核实餐厅名称或选择其他餐厅");
+                return;
             }
             ctx.getAdjustmentDiagnostics().put("replacementMode", "DIRECT");
             ctx.getAdjustmentDiagnostics().put("directReplacement", true);
             ctx.getAdjustmentDiagnostics().put("requestedReplacementName", directDiningName);
         } else {
-            diningCandidates.addAll(AttractionDiningKnowledge.resolveDiningReplacementCandidates(
+            diningCandidates.addAll(diningVenueService == null ? List.of() : diningVenueService.resolveDiningReplacementCandidates(
                     district, "", requestedFlavor, slotType, anchor, constraints));
             boolean isTea = "TEA_BREAK".equals(slotType);
             ctx.getAdjustmentDiagnostics().put("replacementMode", isTea ? "TEA_BREAK" : "DINING_ADD");
-            ctx.getAdjustmentDiagnostics().put("requestedFlavor", isTea ? "特色老茶馆与盖碗茶歇" : requestedFlavor);
+            ctx.getAdjustmentDiagnostics().put("requestedFlavor", requestedFlavor);
+            if (diningCandidates.isEmpty()) {
+                ctx.setFeasible(false);
+                ctx.getReasonCodes().add("DINING_CANDIDATES_UNAVAILABLE");
+                ctx.getAlternatives().add("扩大搜索范围或选择其他餐饮地点");
+                return;
+            }
         }
 
         ctx.getAdjustmentDiagnostics().put("sourceStopName", anchorStop != null ? String.valueOf(anchorStop.getOrDefault("name", "沿途加站")) : "沿途加站");
         ctx.getAdjustmentDiagnostics().put("forceApplicable", true);
 
-        String effectiveStopId = "day" + dayNumber + "-added-dining";
+        String baseStopId = "day" + dayNumber + "-added-dining";
+        Set<String> existingStopIds = dayStops(findDay(sourceTrip, dayNumber)).stream()
+                .map(stop -> String.valueOf(stop.get("id"))).collect(java.util.stream.Collectors.toSet());
+        String effectiveStopId = baseStopId;
+        for (int suffix = 2; existingStopIds.contains(effectiveStopId); suffix++) {
+            effectiveStopId = baseStopId + "-" + suffix;
+        }
 
         for (int i = 0; i < diningCandidates.size(); i++) {
             AttractionDiningKnowledge.DiningOption dining = diningCandidates.get(i);
@@ -668,59 +710,22 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
             if (optDay == null) continue;
             List<Map<String, Object>> optStops = dayStops(optDay);
 
-            int insertIdx = optStops.size();
-            for (int si = 0; si < optStops.size(); si++) {
-                String stTime = String.valueOf(optStops.get(si).getOrDefault("time", ""));
-                int stMinutes = itineraryTimeEngine.parseTimeMinutes(stTime);
-                if (stMinutes > targetMinutes) {
-                    insertIdx = si;
-                    break;
-                }
-            }
-
-            int actualStartMinute = targetMinutes;
-            if (insertIdx > 0 && insertIdx - 1 < optStops.size()) {
-                Map<String, Object> prev = optStops.get(insertIdx - 1);
-                int prevStart = itineraryTimeEngine.parseTimeMinutes(String.valueOf(prev.getOrDefault("time", "")));
-                int prevDuration = itineraryTimeEngine.parseDurationMinutes(String.valueOf(prev.getOrDefault("duration", "")));
-                int prevEnd = prevStart + prevDuration;
-                if (actualStartMinute < prevEnd) {
-                    actualStartMinute = prevEnd;
-                }
-            }
-            String effectiveSlotTime = itineraryTimeEngine.formatTime(actualStartMinute);
-
-            Map<String, Object> newDiningStop = itineraryBuilder.createDiningStop(
-                    dining, effectiveStopId, effectiveSlotTime, district);
+            Attraction meal = Attraction.builder().id(dining.id()).name(dining.name()).location(dining.location()).district(district).build();
+            var placement = mealGapSolver.findGap(optStops, meal,
+                    itineraryTimeEngine.parseDurationMinutes(dining.duration()), mealWindow,
+                    constraints == null ? null : constraints.getTransportPreference(), itineraryBuilder);
+            if (placement.isEmpty()) continue;
+            String effectiveSlotTime = itineraryTimeEngine.formatTime(placement.get().startMinute());
+            Map<String, Object> newDiningStop = itineraryBuilder.createDiningStop(dining, effectiveStopId, effectiveSlotTime, district);
             newDiningStop.put("time", effectiveSlotTime);
             newDiningStop.put("startTime", effectiveSlotTime);
+            newDiningStop.put("district", district);
+            optStops.add(placement.get().index(), newDiningStop);
+            mealGapSolver.applyRouteMetadata(optStops, placement.get());
+            ctx.getAdjustmentDiagnostics().put("diningRouteDataStatus", "ESTIMATED");
+            optId = "option-" + (ctx.getOptionPlans().size() + 1);
 
-            insertIdx = Math.max(0, Math.min(insertIdx, optStops.size()));
-            optStops.add(insertIdx, newDiningStop);
-
-            int transitBuffer = 15;
-            int diningDur = itineraryTimeEngine.parseDurationMinutes(dining.duration());
-            int currentEndMinute = actualStartMinute + (diningDur > 0 ? diningDur : 50) + transitBuffer;
-            for (int si = insertIdx + 1; si < optStops.size(); si++) {
-                Map<String, Object> nextStop = optStops.get(si);
-                int nextStart = itineraryTimeEngine.parseTimeMinutes(String.valueOf(nextStop.getOrDefault("time", "")));
-                int nextDuration = itineraryTimeEngine.parseDurationMinutes(String.valueOf(nextStop.getOrDefault("duration", "")));
-                if (nextStart < currentEndMinute) {
-                    nextStart = currentEndMinute;
-                    String updatedTime = itineraryTimeEngine.formatTime(nextStart);
-                    nextStop.put("time", updatedTime);
-                    nextStop.put("startTime", updatedTime);
-                    String curName = String.valueOf(nextStop.getOrDefault("name", ""));
-                    if (nextStart >= 17 * 60 && curName.startsWith("【午餐推荐】")) {
-                        nextStop.put("name", curName.replace("【午餐推荐】", "【晚餐推荐】"));
-                        if (nextStop.get("displayName") != null) {
-                            nextStop.put("displayName", String.valueOf(nextStop.get("displayName")).replace("【午餐推荐】", "【晚餐推荐】"));
-                        }
-                    }
-                }
-                currentEndMinute = nextStart + (nextDuration > 0 ? nextDuration : 40) + transitBuffer;
-            }
-
+            ctx.getRequiredStopIdsByOption().put(optId, List.of(effectiveStopId));
             ctx.getOptionPlans().put(optId, optionDraft);
 
             Map<String, Object> cand = new LinkedHashMap<>();
@@ -744,8 +749,8 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
 
         if (ctx.getOptionPlans().isEmpty()) {
             ctx.setFeasible(false);
-            ctx.getReasonCodes().add("NO_FEASIBLE_REPLACEMENT");
-            ctx.getAlternatives().addAll(List.of("换周边其他风味美食", "保持原行程安排"));
+            ctx.getReasonCodes().add("NO_FEASIBLE_MEAL_GAP");
+            ctx.getAlternatives().addAll(List.of("调整用餐时段或缩短景点停留", "保持原行程安排"));
         } else {
             ctx.setDraftTrip(ctx.getOptionPlans().get("option-1"));
             ctx.getChangedSegments().add(effectiveStopId);
@@ -800,15 +805,56 @@ public class AddStopAdjustmentStrategy implements AdjustmentStrategy {
 
     private boolean isDiningIntent(PlanAdjustmentIntent intent) {
         if (intent == null) return false;
+        if (intent.getGenericDiningCraving() != null || !safe(intent.getCuisineOrPlace()).isBlank()) return true;
         String raw = firstNonBlank(intent.getRawMessage(), intent.getReplacementPlaceName(), intent.getRequestedVenueName(), "");
-        return raw.matches(".*(餐|饭|馆|烧烤|火锅|小吃|面馆|串串|抄手|烤肉|大排档|吃|喝|甜品|糖水|茶馆|下午茶|咖啡).*");
+        return diningCategoryGrounder.hasDiningKeywords(raw);
+    }
+
+    private void resolveTimingAndAffectedDay(Map<String, Object> trip, int dayNumber,
+                                            Map<String, Attraction> byId, TravelConstraints constraints,
+                                            int firstInsertedIndex) {
+        Map<String, Object> affected = findDay(trip, dayNumber);
+        if (affected == null) return;
+        routeAwarePlanner.backfillAdjacentEdgeCosts(List.of(affected), byId,
+                constraints == null ? null : constraints.getTransportPreference());
+        List<Map<String, Object>> stops = dayStops(affected);
+        if (firstInsertedIndex > 0 && firstInsertedIndex < stops.size()) {
+            Map<String, Object> previous = stops.get(firstInsertedIndex - 1);
+            Map<String, Object> first = stops.get(firstInsertedIndex);
+            Integer previousStart = itineraryTimeEngine.parseExplicitTimeMinutes(stopClock(previous));
+            if (previousStart != null) {
+                int earliest = previousStart + itineraryTimeEngine.parseDurationMinutes(safe(previous.get("duration")))
+                        + itineraryTimeEngine.transferMinutes(previous, first);
+                Integer requestedStart = itineraryTimeEngine.parseExplicitTimeMinutes(stopClock(first));
+                String clock = itineraryTimeEngine.formatTime(requestedStart == null ? earliest : Math.max(earliest, requestedStart));
+                first.put("time", clock);
+                first.put("startTime", clock);
+            }
+        }
+        itineraryTimeEngine.rippleRecalculateStopTimes(stops, firstInsertedIndex + 1);
+        resolveAffectedDay(trip, dayNumber, byId, constraints);
+    }
+
+    private String stopClock(Map<String, Object> stop) {
+        return firstNonBlank(safe(stop.get("time")), safe(stop.get("startTime")), "");
     }
 
     private List<Map<String, Object>> resolveAffectedDay(Map<String, Object> trip, Integer dayNumber,
                                                          Map<String, Attraction> byId, TravelConstraints constraints) {
         Map<String, Object> affected = dayNumber == null ? null : findDay(trip, dayNumber);
         if (affected == null) return List.of();
-        return routeAwarePlanner.resolveAndVerifyDays(new ArrayList<>(List.of(affected)), byId, constraints);
+        List<Map<String, Object>> tripDays = new ArrayList<>(days(trip));
+        int affectedIndex = tripDays.indexOf(affected);
+        TravelConstraints local = constraints == null ? new TravelConstraints() : constraints.copy();
+        // A one-day repair must not mistake an interior day for the trip's arrival/departure day.
+        if (affectedIndex != 0) local.setArrivalAt("未提供");
+        if (affectedIndex != tripDays.size() - 1) local.setDepartureAt("未提供");
+        List<Map<String, Object>> resolved = routeAwarePlanner.resolveAndVerifyDays(new ArrayList<>(List.of(affected)), byId, local);
+        if (resolved != null && !resolved.isEmpty() && affectedIndex >= 0) {
+            tripDays.set(affectedIndex, resolved.get(0));
+            trip.put("days", tripDays);
+        }
+        return resolved == null ? List.of() : resolved;
     }
 
     private PlannerService.ServiceResult error(int status, String message, AdjustmentContext ctx) {

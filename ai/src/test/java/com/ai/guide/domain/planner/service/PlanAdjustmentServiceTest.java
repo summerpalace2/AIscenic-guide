@@ -14,6 +14,12 @@ import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.PlanAdjustmentProposal;
 import com.ai.guide.domain.planner.model.PlanPageContext;
 import org.junit.jupiter.api.AfterEach;
+import com.ai.guide.domain.dining.service.DiningVenueService;
+import com.ai.guide.domain.dining.model.DiningVenue;
+import com.ai.guide.domain.attraction.service.AttractionService;
+import com.ai.guide.domain.planner.model.TravelConstraints;
+import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -51,8 +57,18 @@ class PlanAdjustmentServiceTest {
     @Autowired(required = false)
     private com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService runtimeAttractionDetailService;
 
+    @Autowired
+    private DiningVenueService actualDiningVenueService;
+
+    @Autowired
+    private AttractionService attractionService;
+
+    @Autowired
+    private ItineraryBuilder itineraryBuilder;
+
     @AfterEach
     void tearDown() {
+        planAdjustmentService.setDiningVenueService(actualDiningVenueService);
         UserContext.clear();
         proposalStore.clear();
     }
@@ -63,6 +79,98 @@ class PlanAdjustmentServiceTest {
                 .idempotencyKey("phase5-test-" + UUID.randomUUID())
                 .build();
         return plannerService.create(request);
+    }
+
+    private DiningVenueService fixtureDiningService;
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void knownMondayClosureCannotBeForceApplied() throws Exception {
+        var created = createTestSession("1天行程，必须去解放碑");
+        String id = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+        var stored = sessionRepositoryPort.findAnonymousByAccessToken(token);
+        var trip = new com.fasterxml.jackson.databind.ObjectMapper().convertValue(stored.trip(), Map.class);
+        var days = (List<Map<String,Object>>) trip.get("days");
+        var day = days.get(0); day.put("date", "2026-10-05");
+        var source = itineraryBuilder.createStop(attractionService.get("cq-jiefangbei"), "source", "10:00", "60分钟", "", "");
+        day.put("stops", new ArrayList<>(List.of(source)));
+        var revised = sessionRepositoryPort.update(stored, trip, 1, "TEST", "日期验证", "", List.of("source"));
+        assertEquals("UPDATED", revised.status());
+        var preview = plannerService.previewAdjustment(id, PlanConversationRequestDto.builder().sessionId(id).baseRevision(2)
+                .sessionAccessToken(token).message("把解放碑换成三峡博物馆")
+                .context(PlanPageContext.builder().activeDay(1).selectedStopId("source").build()).build());
+        assertEquals(200,preview.status());
+        assertEquals(false,preview.body().get("canApply"));
+        assertTrue(String.valueOf(preview.body().get("reasonCodes")).contains("CLOSED_ON_MONDAY"));
+        var applied = plannerService.applyAdjustment(id,ApplyAdjustmentRequestDto.builder()
+                .proposalId(String.valueOf(preview.body().get("proposalId"))).optionId("option-1")
+                .baseRevision(2).sessionAccessToken(token).forceApply(true).build());
+        assertEquals(400,applied.status());
+        assertEquals(2,sessionRepositoryPort.findAnonymousByAccessToken(token).currentVersion());
+    }
+
+    @Test
+    void explicitRepeatHasIndependentStopAndNoDuplicateWarning() {
+        var created = createTestSession("1天行程，必须去解放碑");
+        String id = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+        var preview = plannerService.previewAdjustment(id,PlanConversationRequestDto.builder().sessionId(id).baseRevision(1)
+                .sessionAccessToken(token).message("第1天晚上再去解放碑看夜景")
+                .context(PlanPageContext.builder().activeDay(1).build()).build());
+        assertEquals(200,preview.status());
+        assertFalse(Boolean.TRUE.equals(preview.body().get("requiresClarification")));
+        assertFalse(String.valueOf(preview.body().get("reasonCodes")).contains("DUPLICATE_VENUE"));
+        var proposal=proposalStore.get(String.valueOf(preview.body().get("proposalId")));
+        assertNotNull(proposal);
+        var ids = new java.util.HashSet<String>();
+        for(var d:com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper.days(proposal.getProposedTrip()))
+            for(var stop:com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper.dayStops(d))
+                assertTrue(ids.add(String.valueOf(stop.get("id"))),"重复访问仍需独立站点标识");
+    }
+
+    /** Controlled occupied blocks and POI results isolate dining intent from the initial planning template. */
+    private PlannerService.ServiceResult createDiningFixtureSession(String prompt, boolean lunch, boolean dinner) {
+        return createDiningFixtureSession(prompt, lunch, dinner, false);
+    }
+
+    private PlannerService.ServiceResult createDiningFixtureSession(String prompt, boolean lunch, boolean dinner, boolean busyTea) {
+        DiningVenueService dining = mock(DiningVenueService.class);
+        fixtureDiningService = dining;
+        when(dining.searchLiveDiningOrTea(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString()))
+                .thenAnswer(invocation -> {
+                    assertEquals("重庆市", invocation.getArgument(5), "指定餐厅查询必须保留当前行程城市");
+                    String query = invocation.getArgument(2);
+                    assertTrue(query.equals("陈胖子火锅(总店)") || query.equals("肯德基"), "指定店名必须原样传递给POI查询: " + query);
+                    return List.of(DiningVenue.builder().id("amap-fixture-venue")
+                            .name(query).district("渝中区").location("106.577000,29.556000")
+                            .duration("45分钟").specialtyDish("测试菜单").averageCost("待确认")
+                            .category(invocation.getArgument(3)).summary("模拟高德餐饮POI").distanceDesc("待核验").build());
+                });
+        when(dining.resolveDiningReplacementCandidates(anyString(), anyString(), anyString(), anyString(), any(), any()))
+                .thenAnswer(invocation -> {
+                    String slot = invocation.getArgument(3);
+                    String flavor = invocation.getArgument(2);
+                    assertFalse(flavor.matches(".*(?:把午餐|改成|我想|来点|替换为).*"), "泛需求传给搜索的必须是菜系或食物: " + flavor);
+                    String prefix = "TEA_BREAK".equals(slot) ? "【特色茶歇】" : "DINNER".equals(slot) ? "【晚餐推荐】" : "【午餐推荐】";
+                    return List.of(new AttractionDiningKnowledge.DiningOption("amap-fixture-cuisine", prefix + flavor + "体验店",
+                            "模拟菜单", slot, "消费待确认", "45分钟", "待核验", "模拟高德结果", "候选", "gold", "106.577000,29.556000"));
+                });
+        planAdjustmentService.setDiningVenueService(dining);
+        List<Map<String, Object>> stops = new ArrayList<>();
+        stops.add(itineraryBuilder.createStop(attractionService.get("cq-jiefangbei"), "day1-morning", "10:00", "60分钟", "", ""));
+        if (lunch) stops.add(itineraryBuilder.createDiningStop(new AttractionDiningKnowledge.DiningOption("fixture-lunch", "【午餐推荐】原午餐店",
+                "菜单", "LUNCH", "待确认", "45分钟", "待核验", "原餐饮", "测试", "gold", "106.577000,29.556000"), "day1-lunch", "12:00", "渝中区"));
+        if (dinner) stops.add(itineraryBuilder.createDiningStop(new AttractionDiningKnowledge.DiningOption("fixture-dinner", "【晚餐推荐】原晚餐店",
+                "菜单", "DINNER", "待确认", "45分钟", "待核验", "原餐饮", "测试", "gold", "106.577000,29.556000"), "day1-dinner", "18:00", "渝中区"));
+        if (busyTea) stops.add(itineraryBuilder.createStop(attractionService.get("cq-liziba"), "day1-busy-tea", "14:30", "150分钟", "", ""));
+        stops.add(itineraryBuilder.createStop(attractionService.get("cq-hongyadong"), "day1-evening", "20:00", "60分钟", "", ""));
+        Map<String, Object> trip = new LinkedHashMap<>(Map.of("version", 1, "city", "重庆市", "days",
+                new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("day", 1, "stops", stops))))));
+        TravelConstraints constraints = TravelConstraints.builder().destination("重庆市").durationDays(1).rawPrompt(prompt).build();
+        var created = sessionRepositoryPort.create("ANONYMOUS", UUID.randomUUID().toString(), prompt, constraints.asMap(),
+                com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot.empty(), trip, UUID.randomUUID().toString(), UUID.randomUUID().toString());
+        return new PlannerService.ServiceResult(200, Map.of("sessionId", created.session().sessionId(), "sessionAccessToken", created.accessToken(), "trip", trip));
     }
 
     @Test
@@ -543,9 +651,10 @@ class PlanAdjustmentServiceTest {
             for (Map<String, Object> stop : stops) {
                 String time = String.valueOf(stop.getOrDefault("time", ""));
                 String bestTime = String.valueOf(stop.getOrDefault("bestTime", ""));
-                assertFalse((time.contains("18:") || time.contains("19:") || time.contains("20:"))
-                                && bestTime.contains("17:00"),
-                        "晚间时段不能安排 17:00 闭馆景点");
+                assertTrue(com.ai.guide.domain.planner.engine.OpeningHoursPolicy.isTimeOpen(
+                        com.ai.guide.domain.planner.engine.OpeningHoursPolicy.evidence(
+                                String.valueOf(stop.getOrDefault("openingHours", "")), bestTime), time),
+                        "站点应处于已知营业区间，不能将 17:00 开始营业误判为闭馆");
             }
         }
     }
@@ -590,7 +699,7 @@ class PlanAdjustmentServiceTest {
     }
 
     @Test
-    void explicitReplacementCanBeAppliedAfterUserAcknowledgesWarning() {
+    void replacingAStopWithItselfDoesNotCreateANewRevision() {
         PlannerService.ServiceResult created = createTestSession("周二出发2天行程，喜欢城市和人文");
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
@@ -616,9 +725,9 @@ class PlanAdjustmentServiceTest {
                 .sessionAccessToken(token)
                 .build();
         PlannerService.ServiceResult applied = plannerService.applyAdjustment(sessionId, applyDto);
-        assertEquals(200, applied.status());
-        assertEquals(2, applied.body().get("currentVersion"));
-        assertEquals(true, applied.body().get("forced"));
+        assertEquals(false, previewRes.body().get("canApply"));
+        assertEquals(400, applied.status());
+        assertEquals(1, ((Map<?,?>)plannerService.get(sessionId, token).body().get("trip")).get("version"));
     }
 
     @Test
@@ -1345,11 +1454,13 @@ class PlanAdjustmentServiceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> proposedDay1Stops = (List<Map<String, Object>>) proposedDays.get(0).get("stops");
 
-        // Morning breakfast should be inserted as Stop 0 at 08:00
+        // Breakfast must fit the configured interval and retain the original visit time.
         assertEquals(originalStopCount + 1, proposedDay1Stops.size(), "Day 1 stops should increase by 1 for breakfast");
         Map<String, Object> breakfastStop = proposedDay1Stops.get(0);
         assertEquals("DINING", breakfastStop.get("type"));
-        assertEquals("08:00", breakfastStop.get("time"));
+        int breakfastStart = new com.ai.guide.domain.planner.engine.ItineraryTimeEngine().parseTimeMinutes(String.valueOf(breakfastStop.get("time")));
+        int breakfastDuration = new com.ai.guide.domain.planner.engine.ItineraryTimeEngine().parseDurationMinutes(String.valueOf(breakfastStop.get("duration")));
+        assertTrue(breakfastStart >= 450 && breakfastStart + breakfastDuration <= 570);
         assertTrue(String.valueOf(breakfastStop.get("name")).contains("早餐推荐")
                 || String.valueOf(breakfastStop.get("name")).contains("小面")
                 || String.valueOf(breakfastStop.get("name")).contains("面馆"));
@@ -1357,6 +1468,7 @@ class PlanAdjustmentServiceTest {
         // The second stop must be the original first attraction (e.g. 三峡博物馆), completely intact!
         assertEquals(originalFirstStopVenue, String.valueOf(proposedDay1Stops.get(1).get("venueId")),
                 "Original morning attraction must be preserved after breakfast insertion");
+        assertEquals(initDay1Stops.get(0).get("time"), proposedDay1Stops.get(1).get("time"));
 
         // Apply option-1
         String proposalId = (String) previewRes.body().get("proposalId");
@@ -1451,7 +1563,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test35_addDessertStopGeneratesDiningProposalWithoutRejection() {
-        PlannerService.ServiceResult created = createTestSession("1天行程，磁器口后街，低步行");
+        PlannerService.ServiceResult created = createDiningFixtureSession("1天行程，磁器口后街，低步行", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -1530,7 +1642,7 @@ class PlanAdjustmentServiceTest {
                     .duration("约 45 分钟")
                     .recommendedVisitMinutes(45)
                     .build();
-            runtimeAttractionDetailService.registerDynamicAttraction(cqupt);
+            runtimeAttractionDetailService.registerDynamicAttraction(cqupt, "重庆市");
         }
 
         PlannerService.ServiceResult created = createTestSession("2天行程，第1天解放碑洪崖洞，第2天南山一棵树与黄桷垭老街");
@@ -1656,10 +1768,21 @@ class PlanAdjustmentServiceTest {
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
+        // Isolate a feasible insertion window: the generated evening template is already dense.
+        // With full catalog visit durations, appending three stops after its night anchor is infeasible.
+        var stored = sessionRepositoryPort.findAnonymousByAccessToken(token);
+        @SuppressWarnings("unchecked")
+        Map<String,Object> fixtureTrip = new com.fasterxml.jackson.databind.ObjectMapper().convertValue(stored.trip(), Map.class);
+        var fixtureDays = com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper.days(fixtureTrip);
+        var anchor = itineraryBuilder.createStop(attractionService.get("cq-hongyadong"), "fixture-anchor", "10:00", "90分钟", "", "");
+        fixtureDays.get(0).put("stops", new ArrayList<>(List.of(anchor)));
+        fixtureDays.get(1).put("stops", new ArrayList<>());
+        assertEquals("UPDATED", sessionRepositoryPort.update(stored, fixtureTrip, 1, "TEST", "可行的多站插入窗口", "", List.of("fixture-anchor")).status());
+
         String userPrompt = "在洪崖洞之后接长江索道北站单程过江，南岸游览龙门浩老街与南滨路夜景，随后在南站打车返回解放碑";
         PlanConversationRequestDto req = PlanConversationRequestDto.builder()
                 .sessionId(sessionId)
-                .baseRevision(1)
+                .baseRevision(2)
                 .message(userPrompt)
                 .context(PlanPageContext.builder()
                         .activeDay(1)
@@ -1670,7 +1793,7 @@ class PlanAdjustmentServiceTest {
         PlannerService.ServiceResult previewRes = plannerService.previewAdjustment(sessionId, req);
         assertEquals(200, previewRes.status());
         assertTrue(Boolean.TRUE.equals(previewRes.body().get("ok")));
-        assertTrue(Boolean.TRUE.equals(previewRes.body().get("feasible")));
+        assertTrue(Boolean.TRUE.equals(previewRes.body().get("feasible")), String.valueOf(previewRes.body()));
         assertNotNull(previewRes.body().get("proposalId"));
 
         @SuppressWarnings("unchecked")
@@ -1682,14 +1805,14 @@ class PlanAdjustmentServiceTest {
         ApplyAdjustmentRequestDto applyReq = ApplyAdjustmentRequestDto.builder()
                 .proposalId(proposalId)
                 .optionId("option-1")
-                .baseRevision(1)
+                .baseRevision(2)
                 .sessionAccessToken(token)
                 .build();
 
         PlannerService.ServiceResult applyRes = plannerService.applyAdjustment(sessionId, applyReq);
         assertEquals(200, applyRes.status());
         assertTrue(Boolean.TRUE.equals(applyRes.body().get("applied")));
-        assertEquals(2, ((Number) applyRes.body().get("currentVersion")).intValue());
+        assertEquals(3, ((Number) applyRes.body().get("currentVersion")).intValue());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> updatedTrip = (Map<String, Object>) applyRes.body().get("trip");
@@ -1880,7 +2003,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test48_addTeahouseGaiwanteaStopGeneratesTeaBreakCandidatesAndDoesNotDefaultToLunch() {
-        PlannerService.ServiceResult created = createTestSession("1天行程，磁器口后街，低步行");
+        PlannerService.ServiceResult created = createDiningFixtureSession("1天行程，磁器口后街，低步行", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -1939,7 +2062,7 @@ class PlanAdjustmentServiceTest {
     }
 
     @Test
-    void test49_answerDiningOrTeaQuestionForNanAnTeahouse() {
+    void test49_explicitAreaWithoutProviderDoesNotReturnAnotherDistrictTeahouse() {
         PlannerService.ServiceResult created = createTestSession("1天行程，磁器口后街，低步行");
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
@@ -1958,10 +2081,9 @@ class PlanAdjustmentServiceTest {
 
         assertFalse(reply.contains("关于重庆旅游景点，您可以随时在行程中点击卡片提问"),
                 "问茶馆绝不能返回冷冰冰的景点回退文案");
-        assertTrue(reply.contains("南岸") && (reply.contains("茶馆") || reply.contains("茶社") || reply.contains("茶")),
-                "必须给出南岸周边的真实茶馆推荐，实际为: " + reply);
-        assertTrue(reply.contains("龙门浩") || reply.contains("南滨路"),
-                "南岸茶馆推荐应包含龙门浩或南滨路地标，实际为: " + reply);
+        assertTrue(reply.contains("未找到可核验") && reply.contains("位置"),
+                "无实时供应商且无法核验指定区域时，应明确请求确认位置，实际为: " + reply);
+        assertFalse(reply.contains("磁器口"), "不能用原行程所在的磁器口餐厅代替用户指定的南岸区域");
     }
 
     @Test
@@ -1990,7 +2112,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test51_reproduceChenPangziDiningReplacement() {
-        PlannerService.ServiceResult created = createTestSession("下午2点半出发，解放碑，洪崖洞");
+        PlannerService.ServiceResult created = createDiningFixtureSession("下午2点半出发，解放碑，洪崖洞", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
         Map<String, Object> trip = (Map<String, Object>) created.body().get("trip");
@@ -2032,11 +2154,12 @@ class PlanAdjustmentServiceTest {
         }
         assertTrue(String.valueOf(convRes.body().get("message")).contains("陈胖子火锅(总店)"),
                 "Message must contain 陈胖子火锅(总店) but got: " + convRes.body().get("message"));
+        verify(fixtureDiningService).searchLiveDiningOrTea(anyString(), anyString(), eq("陈胖子火锅(总店)"), eq("LUNCH"), eq(1), eq("重庆市"));
     }
 
     @Test
     void test52_reproduceChenPangziDiningWhenOnlyDinnerExists() {
-        PlannerService.ServiceResult created = createTestSession("下午2点半出发，解放碑，洪崖洞");
+        PlannerService.ServiceResult created = createDiningFixtureSession("下午2点半出发，解放碑，洪崖洞", false, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
         PlannerSessionRepositoryPort.StoredSession stored = sessionRepositoryPort.findAnonymousByAccessToken(token);
@@ -2103,11 +2226,12 @@ class PlanAdjustmentServiceTest {
         List<Map<String, Object>> proposedStops = (List<Map<String, Object>>) proposedDays.get(0).get("stops");
         boolean dinnerStillExists = proposedStops.stream().anyMatch(s -> String.valueOf(s.get("name")).contains("晚餐"));
         assertTrue(dinnerStillExists, "原晚餐站点必须被物理保护，不能被午餐加站给误删或篡改");
+        verify(fixtureDiningService).searchLiveDiningOrTea(anyString(), anyString(), eq("陈胖子火锅(总店)"), eq("LUNCH"), eq(1), eq("重庆市"));
     }
 
     @Test
     void test53_genericBrandDiningWithoutFoodSuffix() {
-        PlannerService.ServiceResult created = createTestSession("解放碑，较场口，洪崖洞，2天");
+        PlannerService.ServiceResult created = createDiningFixtureSession("解放碑，较场口，洪崖洞，2天", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2139,11 +2263,12 @@ class PlanAdjustmentServiceTest {
                 "目标商户必须精确提取为肯德基");
         assertEquals(Boolean.TRUE, opt1.get("directReplacement"),
                 "必须支持无后缀品牌的直接精确替换 directReplacement=true");
+        verify(fixtureDiningService).searchLiveDiningOrTea(anyString(), anyString(), eq("肯德基"), eq("LUNCH"), eq(1), eq("重庆市"));
     }
 
     @Test
     void test54_genericDessertCravingDoesNotBecomeDirectStoreName() {
-        PlannerService.ServiceResult created = createTestSession("解放碑，较场口，洪崖洞，2天");
+        PlannerService.ServiceResult created = createDiningFixtureSession("解放碑，较场口，洪崖洞，2天", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2164,8 +2289,8 @@ class PlanAdjustmentServiceTest {
         String message = String.valueOf(convRes.body().get("message"));
         System.out.println("Test 54 Message: " + message);
         assertFalse(message.contains("安排【点甜食的】"), "绝不能将泛需求‘点甜食的’当作指定店铺名称！");
-        assertTrue(message.contains("甜品") || message.contains("茶社") || message.contains("茶歇"),
-                "回复必须引导为甜品糖水或茶歇推荐方案，实际为: " + message);
+        assertTrue(message.contains("甜品"), "甜食需求不能被改成茶馆: " + message);
+        assertFalse(message.contains("品茗") || message.contains("茶社") || message.contains("老茶馆"));
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> candidates = (List<Map<String, Object>>) convRes.body().get("candidateReplacements");
@@ -2180,8 +2305,79 @@ class PlanAdjustmentServiceTest {
     }
 
     @Test
+    void colloquialDessertVariantsProduceEquivalentPreviewsOnSameTrip() {
+        var created = createDiningFixtureSession("市区一日游", true, true);
+        Object originalTrip = plannerService.get(String.valueOf(created.body().get("sessionId")),
+                String.valueOf(created.body().get("sessionAccessToken"))).body().get("trip");
+        Map<String, Object> first = null;
+        for (String message : List.of("我想吃点甜食的", "我想吃点甜食", "我想吃一点甜的", "想来点甜品吧", "我想吃点甜食的呀")) {
+            var body = previewDiningFixture(created, message);
+            assertEquals(true, body.get("feasible"), message + body);
+            assertEquals("TEA_BREAK", body.get("replacementMode"), message);
+            assertEquals("特色甜品糖水", ((Map<?, ?>) body.get("intent")).get("cuisineOrPlace"), message);
+            assertTrue(String.valueOf(body.get("message")).contains("甜品"), message);
+            assertFalse(String.valueOf(body.get("message")).contains("品茗"), message);
+            if (first != null) {
+                assertEquals(first.get("candidateReplacements"), body.get("candidateReplacements"), message);
+                assertEquals(first.get("proposedTrip"), body.get("proposedTrip"), message);
+            }
+            first = body;
+        }
+        verify(fixtureDiningService, times(5)).resolveDiningReplacementCandidates(anyString(), anyString(),
+                eq("特色甜品糖水"), eq("TEA_BREAK"), any(), any());
+        verify(fixtureDiningService, never()).searchLiveDiningOrTea(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString());
+        assertEquals(originalTrip, plannerService.get(String.valueOf(created.body().get("sessionId")),
+                String.valueOf(created.body().get("sessionAccessToken"))).body().get("trip"), "预览不得修改原行程");
+    }
+
+    @Test
+    void noDessertCandidatesIsExplainedAsSearchFailureRatherThanTimeConflict() {
+        var created = createDiningFixtureSession("市区一日游", true, true);
+        when(fixtureDiningService.resolveDiningReplacementCandidates(anyString(), anyString(), anyString(), anyString(), any(), any()))
+                .thenReturn(List.of());
+        for (String message : List.of("我想吃点甜食的", "我想吃点甜食")) {
+            var body = previewDiningFixture(created, message);
+            assertEquals(false, body.get("feasible"));
+            assertTrue(((List<?>) body.get("reasonCodes")).contains("DINING_CANDIDATES_UNAVAILABLE"));
+            assertFalse(((List<?>) body.get("reasonCodes")).contains("NO_FEASIBLE_MEAL_GAP"));
+            assertTrue(String.valueOf(body.get("message")).contains("甜品"));
+            assertTrue(String.valueOf(body.get("message")).contains("未找到可用候选"));
+            assertEquals(false, body.get("canApply"));
+            var applied = plannerService.applyAdjustment(String.valueOf(created.body().get("sessionId")),
+                    ApplyAdjustmentRequestDto.builder()
+                            .proposalId(String.valueOf(body.get("proposalId"))).baseRevision(1)
+                            .optionId("option-1").forceApply(true)
+                            .sessionAccessToken(String.valueOf(created.body().get("sessionAccessToken"))).build());
+            assertEquals(400, applied.status(), "强制应用不能绕过没有候选地点的失败");
+
+        }
+    }
+
+    @Test
+    void fullTeaWindowIsExplainedAsTimeConflictForBothDessertPhrases() {
+        var created = createDiningFixtureSession("市区一日游", true, true, true);
+        for (String message : List.of("我想吃点甜食的", "我想吃点甜食")) {
+            var body = previewDiningFixture(created, message);
+            assertEquals(false, body.get("feasible"));
+            assertTrue(((List<?>) body.get("reasonCodes")).contains("NO_FEASIBLE_MEAL_GAP"));
+            assertTrue(String.valueOf(body.get("message")).contains("空闲时间"));
+            assertFalse(String.valueOf(body.get("message")).contains("不太合理"));
+        }
+    }
+
+    private Map<String, Object> previewDiningFixture(PlannerService.ServiceResult created, String message) {
+        String session = String.valueOf(created.body().get("sessionId"));
+        var result = plannerService.previewAdjustment(session, PlanConversationRequestDto.builder()
+                .sessionId(session).baseRevision(1).message(message)
+                .context(PlanPageContext.builder().activeDay(1).build())
+                .sessionAccessToken(String.valueOf(created.body().get("sessionAccessToken"))).build());
+        assertEquals(200, result.status());
+        return result.body();
+    }
+
+    @Test
     void test55_genericHotpotCravingDoesNotBecomeDirectStoreName() {
-        PlannerService.ServiceResult created = createTestSession("解放碑，较场口，洪崖洞，2天");
+        PlannerService.ServiceResult created = createDiningFixtureSession("解放碑，较场口，洪崖洞，2天", false, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2197,7 +2393,7 @@ class PlanAdjustmentServiceTest {
 
         PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
         assertEquals(200, convRes.status());
-        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")));
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")), "Preview body: " + convRes.body());
 
         String message = String.valueOf(convRes.body().get("message"));
         System.out.println("Test 55 Message: " + message);
@@ -2219,7 +2415,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test56_genericBurgerCravingDoesNotBecomeStoreName() {
-        PlannerService.ServiceResult created = createTestSession("1天行程，市区游览");
+        PlannerService.ServiceResult created = createDiningFixtureSession("1天行程，市区游览", false, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2233,7 +2429,7 @@ class PlanAdjustmentServiceTest {
 
         PlannerService.ServiceResult convRes = plannerService.previewAdjustment(sessionId, convReq);
         assertEquals(200, convRes.status());
-        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")));
+        assertTrue(Boolean.TRUE.equals(convRes.body().get("feasible")), "Preview body: " + convRes.body());
 
         String message = String.valueOf(convRes.body().get("message"));
         assertFalse(message.contains("安排【汉堡】"), "绝不能将‘汉堡’直接作为店铺名安排: " + message);
@@ -2251,7 +2447,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test57_replaceLunchWithPizzaDoesNotCreateFakeStore() {
-        PlannerService.ServiceResult created = createTestSession("1天行程，中午吃点清淡的");
+        PlannerService.ServiceResult created = createDiningFixtureSession("1天行程，中午吃点清淡的", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2282,7 +2478,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void test58_eveningBarbecueCravingResolvesToRecommendations() {
-        PlannerService.ServiceResult created = createTestSession("1天行程，晚上看洪崖洞夜景");
+        PlannerService.ServiceResult created = createDiningFixtureSession("1天行程，晚上看洪崖洞夜景", true, true);
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -2344,6 +2540,80 @@ class PlanAdjustmentServiceTest {
         assertTrue(Boolean.TRUE.equals(convRes.body().get("ok")));
         String propId = String.valueOf(convRes.body().get("proposalId"));
         assertNotNull(propId);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void eveningOptimizationProtectsDaytimeAndMealsAndAppliesExactlyOneVersion() {
+        var created = createDiningFixtureSession("1天行程，喜欢夜景", true, true);
+        String sessionId = (String) created.body().get("sessionId"), token = (String) created.body().get("sessionAccessToken");
+        Map<String, Object> original = (Map<String, Object>) created.body().get("trip");
+        Map<String, Object> originalDay = ((List<Map<String, Object>>)original.get("days")).get(0);
+        var originals = (List<Map<String, Object>>)originalDay.get("stops");
+        var beforeMorning = new LinkedHashMap<>(originals.get(0));
+        var beforeLunch = new LinkedHashMap<>(originals.get(1));
+        var beforeDinner = new LinkedHashMap<>(originals.get(2));
+        String message = "将傍晚和晚间行程优化为最佳夜景观景点";
+        var context = PlanPageContext.builder().activeDay(1).build();
+        var request = PlanConversationRequestDto.builder().message(message).context(context).sessionAccessToken(token).baseRevision(1).build();
+        var preview = planAdjustmentService.preview(sessionId, request);
+        assertEquals(200, preview.status());
+        assertEquals(true, preview.body().get("canApply"));
+        assertEquals(1020, ((Map<String,Object>)preview.body().get("intent")).get("targetStartMinute"));
+        assertEquals(1440, ((Map<String,Object>)preview.body().get("intent")).get("targetEndMinute"));
+        var proposed = (Map<String,Object>)preview.body().get("proposedTrip");
+        var proposedStops = (List<Map<String,Object>>)((List<Map<String,Object>>)proposed.get("days")).get(0).get("stops");
+        assertEquals(beforeMorning, proposedStops.get(0));
+        assertEquals(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(beforeLunch).toString(), new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(proposedStops.get(1)).toString());
+        assertEquals(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(beforeDinner).toString(), new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(proposedStops.get(2)).toString());
+        assertNotEquals(originals.get(3).get("venueId"), proposedStops.get(3).get("venueId"));
+        assertEquals("20:00", proposedStops.get(3).get("time"));
+        assertEquals(1, ((List<?>)preview.body().get("stopChanges")).size());
+        assertEquals(1, ((Map<?,?>)plannerService.get(sessionId, token).body().get("trip")).get("version"));
+        context.setActiveProposalId((String) preview.body().get("proposalId"));
+        var repeat = planAdjustmentService.preview(sessionId, request);
+        assertEquals(preview.body().get("proposalId"), repeat.body().get("proposalId"));
+        assertEquals(true, repeat.body().get("reused"));
+        var applied = planAdjustmentService.apply(sessionId, ApplyAdjustmentRequestDto.builder().proposalId((String)preview.body().get("proposalId"))
+                .optionId("option-1").baseRevision(1).forceApply(true).sessionAccessToken(token).idempotencyKey("night-loop-test").build());
+        assertEquals(200, applied.status());
+        assertEquals(2, applied.body().get("currentVersion"));
+        assertEquals(beforeMorning, ((List<Map<String,Object>>)((List<Map<String,Object>>)((Map<String,Object>)applied.body().get("trip")).get("days")).get(0).get("stops")).get(0));
+    }
+
+    @Test
+    void fullyPinnedNightCannotPretendToGenerateAnApplicableChange() {
+        var created = createDiningFixtureSession("1天行程，喜欢夜景", true, true);
+        String id = (String)created.body().get("sessionId"), token = (String)created.body().get("sessionAccessToken");
+        var result = planAdjustmentService.preview(id, PlanConversationRequestDto.builder().message("将傍晚和晚间行程优化为最佳夜景观景点")
+                .sessionAccessToken(token).baseRevision(1).context(PlanPageContext.builder().activeDay(1).pinnedStopIds(List.of("day1-evening")).build()).build());
+        assertEquals(false, result.body().get("canApply"));
+        assertTrue(((List<?>)result.body().get("reasonCodes")).contains("NO_ACTUAL_CHANGE"));
+        assertTrue(String.valueOf(result.body().get("message")).contains("没有产生实际改动"));
+        var applied = planAdjustmentService.apply(id, ApplyAdjustmentRequestDto.builder().proposalId((String)result.body().get("proposalId"))
+                .optionId("option-1").baseRevision(1).forceApply(true).sessionAccessToken(token).build());
+        assertEquals(400, applied.status());
+        assertEquals(1, ((Map<?,?>)plannerService.get(id, token).body().get("trip")).get("version"));
+    }
+    @Test
+    @SuppressWarnings("unchecked")
+    void selectedOptionIsValidatedIndependentlyOfDefaultNoOp() {
+        var created=createTestSession("2天行程");String sessionId=String.valueOf(created.body().get("sessionId")),token=String.valueOf(created.body().get("sessionAccessToken"));
+        Map<String,Object> original=(Map<String,Object>)created.body().get("trip");
+        Map<String,Object> changed=new com.fasterxml.jackson.databind.ObjectMapper().convertValue(original,Map.class);
+        var stop=(Map<String,Object>)((List<?>)((Map<?,?>)((List<?>)changed.get("days")).get(0)).get("stops")).get(0);stop.put("duration","35分钟");
+        PendingIntentContinuations continuations=(PendingIntentContinuations)org.springframework.test.util.ReflectionTestUtils.getField(planAdjustmentService,"continuations");
+        assertNotNull(continuations);
+        continuations.begin(sessionId);
+        String epoch=continuations.epoch(sessionId);
+        String id="option-validation-"+UUID.randomUUID();
+        proposalStore.put(PlanAdjustmentProposal.builder().proposalId(id).sessionId(sessionId).baseRevision(1)
+            .conversationEpoch(epoch)
+            .intent(PlanAdjustmentIntent.builder().type(ConversationIntentType.REPLAN_DAY).operation("REPLAN_DAY").scope("DAY").dayNumber(1).build())
+            .proposedTrip(original).optionPlans(Map.of("option-1",original,"option-2",changed)).feasible(false).reasonCodes(List.of("NO_ACTUAL_CHANGE"))
+            .createdAt(System.currentTimeMillis()).expiresAt(System.currentTimeMillis()+60000).build());
+        assertEquals(400,plannerService.applyAdjustment(sessionId,ApplyAdjustmentRequestDto.builder().proposalId(id).optionId("option-1").baseRevision(1).forceApply(true).sessionAccessToken(token).build()).status(),"默认空改动永远不可强制应用");
+        assertEquals(200,plannerService.applyAdjustment(sessionId,ApplyAdjustmentRequestDto.builder().proposalId(id).optionId("option-2").baseRevision(1).forceApply(true).sessionAccessToken(token).build()).status(),"真实有效第二候选不受默认NO_ACTUAL_CHANGE误封");
     }
 }
 

@@ -72,11 +72,17 @@ public class RerankService {
             return Collections.emptyList();
         }
 
-        String cacheKey = query + "|" + topN;
+        topN = Math.max(1, Math.min(topN, documents.size()));
+        String candidateScope;
+        try {
+            byte[] bytes = objectMapper.writeValueAsBytes(documents);
+            candidateScope = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (Exception invalid) { throw new IllegalArgumentException("无法计算重排候选指纹", invalid); }
+        String cacheKey = candidateScope + "|" + query + "|" + topN;
 
         // L1: 精确匹配
         CacheEntry l1Hit = l1Cache.get(cacheKey);
-        if (l1Hit != null && !isExpired(l1Hit)) {
+        if (l1Hit != null && !isExpired(l1Hit) && documents.containsAll(l1Hit.result)) {
             l1Hits.incrementAndGet();
             return new ArrayList<>(l1Hit.result);
         }
@@ -85,8 +91,8 @@ public class RerankService {
         if (useSemanticCache) {
             String normalized = QueryNormalizer.normalize(query);
             if (!normalized.isEmpty()) {
-                CacheEntry l2Hit = l2Cache.get(normalized + "|" + topN);
-                if (l2Hit != null && !isExpired(l2Hit)) {
+                CacheEntry l2Hit = l2Cache.get(candidateScope + "|" + normalized + "|" + topN);
+                if (l2Hit != null && !isExpired(l2Hit) && documents.containsAll(l2Hit.result)) {
                     l2Hits.incrementAndGet();
                     putL1(cacheKey, l2Hit.result);
                     return new ArrayList<>(l2Hit.result);
@@ -97,11 +103,11 @@ public class RerankService {
             for (Map.Entry<Long, CacheEntry> entry : l3Cache.entrySet()) {
                 if (SimHash.isSimilar(fingerprint, entry.getKey())) {
                     CacheEntry l3Hit = entry.getValue();
-                    if (!isExpired(l3Hit)) {
+                    if (!isExpired(l3Hit) && candidateScope.equals(l3Hit.candidateScope) && documents.containsAll(l3Hit.result)) {
                         l3Hits.incrementAndGet();
                         putL1(cacheKey, l3Hit.result);
                         String normL2 = QueryNormalizer.normalize(query);
-                        if (!normL2.isEmpty()) putL2(normL2 + "|" + topN, l3Hit.result);
+                        if (!normL2.isEmpty()) putL2(candidateScope + "|" + normL2 + "|" + topN, l3Hit.result);
                         return new ArrayList<>(l3Hit.result);
                     }
                 }
@@ -110,15 +116,16 @@ public class RerankService {
 
         // 全部未命中 → 调用百炼 API
         misses.incrementAndGet();
-        List<String> result = callApiWithTimeout(query, documents, topN, timeoutMs);
+        RerankOutcome outcome = callApiWithTimeout(query, documents, topN, timeoutMs);
+        List<String> result = outcome.documents();
 
-        if (result != null && !result.isEmpty()) {
+        if (outcome.successful() && result != null && !result.isEmpty()) {
             putL1(cacheKey, result);
             if (useSemanticCache) {
                 String normL2 = QueryNormalizer.normalize(query);
-                if (!normL2.isEmpty()) putL2(normL2 + "|" + topN, result);
+                if (!normL2.isEmpty()) putL2(candidateScope + "|" + normL2 + "|" + topN, result);
                 long fingerprint = SimHash.compute(query + "|" + topN);
-                putL3(fingerprint, result);
+                putL3(fingerprint, result, candidateScope);
             }
         }
 
@@ -153,9 +160,9 @@ public class RerankService {
         l2Cache.put(key, new CacheEntry(result, System.currentTimeMillis()));
     }
 
-    private void putL3(long fingerprint, List<String> result) {
+    private void putL3(long fingerprint, List<String> result, String candidateScope) {
         evictIfNeeded(l3Cache);
-        l3Cache.put(fingerprint, new CacheEntry(result, System.currentTimeMillis()));
+        l3Cache.put(fingerprint, new CacheEntry(result, System.currentTimeMillis(), candidateScope));
     }
 
     private <K> void evictIfNeeded(ConcurrentHashMap<K, CacheEntry> cache) {
@@ -171,22 +178,31 @@ public class RerankService {
 
     // ==================== API 调用 ====================
 
-    private List<String> callApiWithTimeout(String query, List<String> documents, int topN, long timeoutMs) {
+    private record RerankOutcome(List<String> documents, boolean successful) {}
+    private RerankOutcome fallback(List<String> documents, int topN) {
+        return new RerankOutcome(new ArrayList<>(documents.subList(0, Math.min(documents.size(), topN))), false);
+    }
+    private RerankOutcome callApiWithTimeout(String query, List<String> documents, int topN, long timeoutMs) {
         apiCalls.incrementAndGet();
-        Future<List<String>> future = executor.submit(() -> rerankApi(query, documents, topN));
+        Future<RerankOutcome> future = null;
         try {
+            future = executor.submit(() -> rerankApi(query, documents, topN));
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            future.cancel(true);
+            if (future != null) future.cancel(true);
             log.warn("【Rerank】超时 {}ms，返回 Qdrant 原始排序兜底", timeoutMs);
-            return documents.subList(0, Math.min(documents.size(), topN));
+            return fallback(documents, topN);
+        } catch (InterruptedException e) {
+            if (future != null) future.cancel(true);
+            Thread.currentThread().interrupt();
+            return fallback(documents, topN);
         } catch (Exception e) {
             log.error("【Rerank】异常: {}", e.getMessage());
-            return documents.subList(0, Math.min(documents.size(), topN));
+            return fallback(documents, topN);
         }
     }
 
-    private List<String> rerankApi(String query, List<String> documents, int topN) {
+    private RerankOutcome rerankApi(String query, List<String> documents, int topN) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.set("Authorization", "Bearer " + apiKey);
@@ -210,26 +226,31 @@ public class RerankService {
             String response = restTemplate.postForObject(rerankUrl, request, String.class);
             if (response == null) {
                 log.error("【Rerank】接口返回为空");
-                return documents.subList(0, Math.min(documents.size(), topN));
+                return fallback(documents, topN);
             }
             JsonNode root = objectMapper.readTree(response);
             if (root == null || root.get("output") == null) {
                 log.error("【Rerank】接口返回格式异常");
-                return documents.subList(0, Math.min(documents.size(), topN));
+                return fallback(documents, topN);
             }
             JsonNode results = root.get("output").get("results");
-            List<String> reranked = new ArrayList<>();
+            if (results == null || !results.isArray() || results.isEmpty()) return fallback(documents, topN);
+            Set<String> reranked = new LinkedHashSet<>();
             for (int i = 0; i < results.size(); i++) {
-                int index = results.get(i).get("index").asInt();
-                if (index < documents.size()) reranked.add(documents.get(index));
+                JsonNode indexValue = results.get(i).get("index");
+                if (indexValue == null || !indexValue.isIntegralNumber()) return fallback(documents, topN);
+                int index = indexValue.asInt();
+                if (index < 0 || index >= documents.size()) return fallback(documents, topN);
+                reranked.add(documents.get(index));
+                if (reranked.size() == topN) break;
             }
-            return reranked;
+            return new RerankOutcome(new ArrayList<>(reranked), true);
         } catch (HttpStatusCodeException e) {
             log.error("【Rerank】HTTP 错误: {} {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return documents.subList(0, Math.min(documents.size(), topN));
+            return fallback(documents, topN);
         } catch (Exception e) {
             log.error("【Rerank】未知异常: {}", e.getMessage());
-            return documents.subList(0, Math.min(documents.size(), topN));
+            return fallback(documents, topN);
         }
     }
 
@@ -268,8 +289,11 @@ public class RerankService {
     private static class CacheEntry {
         final List<String> result;
         final long timestamp;
+        final String candidateScope;
 
-        CacheEntry(List<String> result, long timestamp) {
+        CacheEntry(List<String> result, long timestamp) { this(result, timestamp, ""); }
+        CacheEntry(List<String> result, long timestamp, String candidateScope) {
+            this.candidateScope = candidateScope;
             this.result = new ArrayList<>(result);
             this.timestamp = timestamp;
         }

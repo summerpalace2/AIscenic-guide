@@ -11,6 +11,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import javax.sql.DataSource;
 import java.io.File;
 import java.io.InputStream;
@@ -35,6 +38,7 @@ import java.util.Map;
 public class KnowledgeDbConfig {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeDbConfig.class);
+    private static final Object[] MIGRATION_LOCKS = java.util.stream.IntStream.range(0, 64).mapToObj(i -> new Object()).toArray();
     private static final String SQLITE_URL = "jdbc:sqlite:data/knowledge.db";
     private static final String SQLITE_DIR = "data";
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -89,6 +93,8 @@ public class KnowledgeDbConfig {
     private String postgresPassword;
 
     private DatabaseSettings databaseSettings;
+    @Value("${knowledge.database.sqlite.busy-timeout-ms:5000}")
+    private int sqliteBusyTimeoutMs = 5000;
 
     /** 创建本地 SQLite 或生产 PostgreSQL 数据源。 */
     @Bean
@@ -99,6 +105,10 @@ public class KnowledgeDbConfig {
             DriverManagerDataSource dataSource = new DriverManagerDataSource();
             dataSource.setDriverClassName(databaseSettings.driverClass());
             dataSource.setUrl(databaseSettings.url());
+            java.util.Properties properties = new java.util.Properties();
+            properties.setProperty("busy_timeout", String.valueOf(Math.max(500, sqliteBusyTimeoutMs)));
+            properties.setProperty("journal_mode", "WAL");
+            dataSource.setConnectionProperties(properties);
             File dir = new File(SQLITE_DIR);
             if (!dir.exists() && !dir.mkdirs()) {
                 throw new IllegalStateException("无法创建 SQLite 数据目录: " + dir.getAbsolutePath());
@@ -169,6 +179,7 @@ public class KnowledgeDbConfig {
                 "updated_at " + timeType + " NOT NULL" + timeDefault +
                 ")");
         ensureColumn(jdbcTemplate, "kb_document", "source_name " + varchar + " DEFAULT ''");
+        ensureColumn(jdbcTemplate, "kb_document", "index_revision INTEGER NOT NULL DEFAULT 0");
         log.info("[KnowledgeDB] kb_document 表已就绪");
 
         jdbcTemplate.update("CREATE TABLE IF NOT EXISTS users (" +
@@ -367,8 +378,10 @@ public class KnowledgeDbConfig {
                     "created_by VARCHAR(255) NOT NULL DEFAULT ''," +
                     "UNIQUE (trip_id, version_number)" +
                     ")");
-            jdbcTemplate.update("CREATE INDEX idx_trip_owner_updated ON trip (owner_id, updated_at)");
-            jdbcTemplate.update("CREATE INDEX idx_trip_version_trip ON trip_version (trip_id, version_number)");
+            jdbcTemplate.update("CREATE INDEX IF NOT EXISTS idx_trip_owner_updated ON trip (owner_id, updated_at)");
+            jdbcTemplate.update("CREATE INDEX IF NOT EXISTS idx_trip_version_trip ON trip_version (trip_id, version_number)");
+            verifyIndex(jdbcTemplate, "trip", "idx_trip_owner_updated", List.of("owner_id", "updated_at"));
+            verifyIndex(jdbcTemplate, "trip_version", "idx_trip_version_trip", List.of("trip_id", "version_number"));
         });
 
         applyMigration(jdbcTemplate, 2, "Trip mutation idempotency records", () -> {
@@ -383,7 +396,8 @@ public class KnowledgeDbConfig {
                     "created_at BIGINT NOT NULL," +
                     "PRIMARY KEY (owner_id, operation, idempotency_key)" +
                     ")");
-            jdbcTemplate.update("CREATE INDEX idx_trip_idempotency_trip ON trip_idempotency (trip_id)");
+            jdbcTemplate.update("CREATE INDEX IF NOT EXISTS idx_trip_idempotency_trip ON trip_idempotency (trip_id)");
+            verifyIndex(jdbcTemplate, "trip_idempotency", "idx_trip_idempotency_trip", List.of("trip_id"));
         });
 
         applyMigration(jdbcTemplate, 3, "Phase 5B legacy identity and Trip migration ledger", () -> {
@@ -564,21 +578,49 @@ public class KnowledgeDbConfig {
                     "confidence REAL NOT NULL DEFAULT 0.0, created_at BIGINT NOT NULL, updated_at BIGINT NOT NULL)");
             jdbcTemplate.update("CREATE INDEX IF NOT EXISTS idx_travel_memory_candidate_user ON travel_memory_candidate (user_id, status, updated_at DESC)");
         });
+        applyMigration(jdbcTemplate, 8, "Planner claim replay mapping", () -> {
+            ensureColumn(jdbcTemplate, "planner_session", "claimed_idempotency_key VARCHAR(128)");
+            jdbcTemplate.update("CREATE INDEX IF NOT EXISTS idx_planner_session_claimed_key ON planner_session (owner_type, owner_id, claimed_idempotency_key)");
+            verifyIndex(jdbcTemplate, "planner_session", "idx_planner_session_claimed_key", List.of("owner_type", "owner_id", "claimed_idempotency_key"));
+        });
     }
 
     private void applyMigration(JdbcTemplate jdbcTemplate, int version, String description,
                                 Runnable migration) {
-        Integer applied = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM schema_migration WHERE version = ?", Integer.class, version);
-        if (applied != null && applied > 0) return;
-        try {
-            migration.run();
-            jdbcTemplate.update("INSERT INTO schema_migration (version, description, applied_at) VALUES (?, ?, ?)",
-                    version, description, System.currentTimeMillis());
-            log.info("[KnowledgeDB] 已应用 schema migration {}: {}", version, description);
-        } catch (Exception error) {
-            throw new IllegalStateException("无法应用 schema migration " + version + ": " + description, error);
+        DataSource source = java.util.Objects.requireNonNull(jdbcTemplate.getDataSource());
+        String database = jdbcTemplate.execute((ConnectionCallback<String>) c -> c.getMetaData().getURL());
+        Object lock = MIGRATION_LOCKS[Math.floorMod(database.hashCode(), MIGRATION_LOCKS.length)];
+        synchronized (lock) {
+            try {
+                new TransactionTemplate(new DataSourceTransactionManager(source)).executeWithoutResult(status -> {
+                    // PostgreSQL also serializes separate application instances within this transaction.
+                    if (database.startsWith("jdbc:postgresql:"))
+                        jdbcTemplate.queryForList("SELECT pg_advisory_xact_lock(471932761)");
+                    Integer applied = jdbcTemplate.queryForObject(
+                            "SELECT COUNT(*) FROM schema_migration WHERE version = ?", Integer.class, version);
+                    if (applied != null && applied > 0) return;
+                    migration.run();
+                    jdbcTemplate.update("INSERT INTO schema_migration (version, description, applied_at) VALUES (?, ?, ?)",
+                            version, description, System.currentTimeMillis());
+                });
+            } catch (Exception error) {
+                throw new IllegalStateException("无法应用 schema migration " + version + ": " + description, error);
+            }
         }
+    }
+
+    private void verifyIndex(JdbcTemplate jdbc, String table, String index, List<String> columns) {
+        List<String> actual = jdbc.execute((ConnectionCallback<List<String>>) connection -> {
+            var ordered = new java.util.TreeMap<Integer, String>();
+            try (var rows = connection.getMetaData().getIndexInfo(null, null, table, false, false)) {
+                while (rows.next()) if (index.equalsIgnoreCase(rows.getString("INDEX_NAME"))) {
+                    String column = rows.getString("COLUMN_NAME");
+                    if (column != null) ordered.put(rows.getInt("ORDINAL_POSITION"), column.toLowerCase(Locale.ROOT));
+                }
+            }
+            return List.copyOf(ordered.values());
+        });
+        if (!columns.equals(actual)) throw new IllegalStateException("迁移索引结构不匹配：" + index);
     }
 
     private void initAttractions(JdbcTemplate jdbcTemplate) {
@@ -877,7 +919,7 @@ public class KnowledgeDbConfig {
         String username = configuredUsername;
         String password = configuredPassword;
 
-        if (url.isBlank() && !postgresHost.isBlank()) {
+        if (url.isBlank() && postgresHost != null && !postgresHost.isBlank()) {
             type = "postgresql";
             url = "jdbc:postgresql://" + postgresHost + ":" + postgresPort + "/"
                     + firstNonBlank(postgresDatabase, legacyPostgresDatabase);
@@ -892,6 +934,9 @@ public class KnowledgeDbConfig {
         }
 
         url = normalizeUrl(url);
+        if (type.equals("sqlite") && url.startsWith("jdbc:sqlite:")) {
+            return new DatabaseSettings("sqlite", url, "org.sqlite.JDBC", "", "");
+        }
         if (type.equals("postgres") || type.equals("postgresql") || url.startsWith("jdbc:postgresql:")) {
             return new DatabaseSettings("postgresql", url, "org.postgresql.Driver", username, password);
         }

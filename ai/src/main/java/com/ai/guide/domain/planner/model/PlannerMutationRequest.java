@@ -23,4 +23,5 @@ public class PlannerMutationRequest {
     private String stopId = "";
     private Integer expectedVersion;
     private String sessionAccessToken = "";
+    private boolean allowRepeat;
 }

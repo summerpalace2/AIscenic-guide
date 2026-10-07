@@ -59,16 +59,11 @@ public class RemoveStopAdjustmentStrategy implements AdjustmentStrategy {
 
         String stopId = String.valueOf(target.stop().get("id"));
         target.stops().remove(target.index());
+        if (target.index() == 0 && !target.stops().isEmpty())
+            RouteAwarePlanner.invalidateIncomingRoute(target.stops().get(0));
         ctx.getChangedSegments().add(stopId);
-        resolveAffectedDay(draftTrip, number(target.day().get("day")), byId, constraints);
+        LocalAdjustmentRepair.repair(draftTrip, number(target.day().get("day")), byId, constraints, intent, null, routeAwarePlanner);
         ctx.getOptionPlans().put("option-1", draftTrip);
-    }
-
-    private List<Map<String, Object>> resolveAffectedDay(Map<String, Object> trip, Integer dayNumber,
-                                                         Map<String, Attraction> byId, TravelConstraints constraints) {
-        Map<String, Object> affected = dayNumber == null ? null : findDay(trip, dayNumber);
-        if (affected == null) return List.of();
-        return routeAwarePlanner.resolveAndVerifyDays(new ArrayList<>(List.of(affected)), byId, constraints);
     }
 
     private PlannerService.ServiceResult error(int status, String message, AdjustmentContext ctx) {

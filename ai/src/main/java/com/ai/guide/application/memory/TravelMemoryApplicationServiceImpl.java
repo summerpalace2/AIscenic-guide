@@ -21,6 +21,11 @@ public class TravelMemoryApplicationServiceImpl implements TravelMemoryApplicati
     }
 
     @Override
+    public List<TravelMemory> listPage(String userId, int limit, int offset) {
+        return travelMemoryService.listPage(userId, limit, offset);
+    }
+
+    @Override
     public List<TravelMemoryService.MemoryCandidate> candidates(String userId) {
         return travelMemoryService.candidates(userId);
     }
@@ -73,5 +78,10 @@ public class TravelMemoryApplicationServiceImpl implements TravelMemoryApplicati
     @Override
     public String saveUserCustomizedPrompt(String userId, String customPrompt) {
         return travelMemoryService.saveUserCustomizedPrompt(userId, customPrompt);
+    }
+
+    @Override
+    public java.util.Map<String, Object> promptDetails(String userId) {
+        return travelMemoryService.promptDetails(userId);
     }
 }

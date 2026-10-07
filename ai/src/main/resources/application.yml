@@ -80,6 +80,12 @@ context:
 chat:
   stream:
     timeout-ms: "${CHAT_STREAM_TIMEOUT_MS:120000}"
+memory:
+  content:
+    max-chars: "${MEMORY_CONTENT_MAX_CHARS:6000}"
+  prompt:
+    # Full profiles remain editable; model injection reserves safety restrictions first.
+    max-chars: "${MEMORY_PROMPT_MAX_CHARS:6000}"
 # 业务元数据数据库。生产环境在 Zeabur 配置 KNOWLEDGE_DB_TYPE=postgresql、
 # KNOWLEDGE_DB_URL、KNOWLEDGE_DB_USERNAME、KNOWLEDGE_DB_PASSWORD；本地默认 SQLite。
 knowledge:
@@ -93,6 +99,11 @@ knowledge:
     url: "${KNOWLEDGE_DB_URL:}"
     username: "${KNOWLEDGE_DB_USERNAME:}"
     password: "${KNOWLEDGE_DB_PASSWORD:}"
+    sqlite:
+      busy-timeout-ms: "${KNOWLEDGE_SQLITE_BUSY_TIMEOUT_MS:5000}"
+  retrieval:
+    max-candidates: "${KNOWLEDGE_RETRIEVAL_MAX_CANDIDATES:200}"
+    excerpt-chars: "${KNOWLEDGE_RETRIEVAL_EXCERPT_CHARS:4096}"
   upload-dir: "${KNOWLEDGE_UPLOAD_DIR:uploads/knowledge}"
 # 服务端高德 Web Service 配置；未配置 Key 时由 Planner 返回明确的静态回退状态。
 amap:
@@ -113,7 +124,16 @@ amap:
       max-entries: "${AMAP_WEB_SERVICE_REQUEST_CACHE_MAX_ENTRIES:2048}"
       poi-ttl-ms: "${AMAP_WEB_SERVICE_POI_CACHE_TTL_MS:1800000}"
       route-ttl-ms: "${AMAP_WEB_SERVICE_ROUTE_CACHE_TTL_MS:1800000}"
+      empty-route-ttl-ms: "${AMAP_WEB_SERVICE_EMPTY_ROUTE_CACHE_TTL_MS:5000}"
       weather-ttl-ms: "${AMAP_WEB_SERVICE_WEATHER_CACHE_TTL_MS:600000}"
+
+trip:
+  plan:
+    max-days: "${TRIP_PLAN_MAX_DAYS:30}"
+    max-stops-per-day: "${TRIP_PLAN_MAX_STOPS_PER_DAY:40}"
+    max-total-stops: "${TRIP_PLAN_MAX_TOTAL_STOPS:500}"
+    max-text-chars: "${TRIP_PLAN_MAX_TEXT_CHARS:20000}"
+    max-json-bytes: "${TRIP_PLAN_MAX_JSON_BYTES:2097152}"
 
 # 标准服务探针：BFF/部署平台统一读取 /actuator/health，避免把“接口不存在”误报为后端离线。
 management:

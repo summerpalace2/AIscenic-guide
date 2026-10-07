@@ -51,6 +51,8 @@ public interface PlannerSessionRepositoryPort {
 
     StoredSession findAnonymousByAccessToken(String accessToken);
 
+    default StoredSession claimAnonymous(String sessionId, String accessToken, String userId) { return null; }
+
     StoredSession findByIdempotency(String ownerType, String ownerId, String idempotencyKey);
 
     List<StoredSession> list(String ownerType, String ownerId);

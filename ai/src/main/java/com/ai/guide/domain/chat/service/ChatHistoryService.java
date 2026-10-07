@@ -53,6 +53,18 @@ public class ChatHistoryService {
         return MESSAGE_KEY_PREFIX + sessionId;
     }
 
+    private String requireOwnedSession(String sessionId) {
+        String owner = UserContext.getUserId();
+        if (owner == null || owner.isBlank() || sessionId == null || sessionId.isBlank()) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "会话不存在或无权访问");
+        }
+        String scoped = sessionId.startsWith(owner + ":") ? sessionId : owner + ":" + sessionId;
+        if (redisTemplate.opsForZSet().score(SESSIONS_KEY_PREFIX + owner, scoped) == null) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "会话不存在或无权访问");
+        }
+        return scoped;
+    }
+
     private String sessionsKey() {
         if (UserContext.isAnonymous()) {
             return null;
@@ -154,6 +166,7 @@ public class ChatHistoryService {
      * 获取指定会话的所有消息（user + assistant 成对）
      */
     public List<ChatHistoryVO> getMessages(String sessionId) {
+        sessionId = requireOwnedSession(sessionId);
         try {
             String key = messageKey(sessionId);
             List<String> jsonList = redisTemplate.opsForList().range(key, 0, -1);
@@ -185,6 +198,7 @@ public class ChatHistoryService {
      * 删除指定会话
      */
     public void deleteSession(String sessionId) {
+        sessionId = requireOwnedSession(sessionId);
         try {
             String key = messageKey(sessionId);
             redisTemplate.delete(key);
@@ -194,6 +208,7 @@ public class ChatHistoryService {
             }
             // 同时清除摘要
             redisTemplate.delete(sessionId + ":summary");
+            redisTemplate.delete(sessionId + ":summary_snapshot");
             redisTemplate.delete(sessionId + ":compressed_count");
             log.info("[历史] 已删除会话: " + sessionId);
         } catch (Exception e) {

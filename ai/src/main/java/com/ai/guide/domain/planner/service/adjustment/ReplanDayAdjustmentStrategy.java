@@ -230,7 +230,10 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
 
         List<Map<String, Object>> stops = new ArrayList<>(dayStops(day));
         Set<String> tripUsed = usedVenues(draftTrip);
-        for (Map<String, Object> stop : stops) tripUsed.remove(String.valueOf(stop.get("venueId")));
+        List<Map<String, Object>> preservedStops = stops.stream().map(s -> (Map<String, Object>) new LinkedHashMap<String, Object>(s)).toList();
+        boolean scoped = intent != null && intent.getTargetStartMinute() != null && intent.getTargetEndMinute() != null;
+        for (Map<String, Object> stop : stops)
+            if (!scoped || inScope(stop, intent)) tripUsed.remove(String.valueOf(stop.get("venueId")));
 
         Attraction requestedTargetAttr = null;
         if (intent != null && intent.getTargetAttractionId() != null && !intent.getTargetAttractionId().isBlank()) {
@@ -241,7 +244,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         List<Map<String, Object>> newStops = new ArrayList<>();
         for (Map<String, Object> originalStop : stops) {
             String stopId = String.valueOf(originalStop.get("id"));
-            if (isProtectedStop(originalStop, pinned, constraints)) {
+            if (isProtectedStop(originalStop, pinned, constraints) || (scoped && (!inScope(originalStop, intent) || isDiningStop(originalStop)))) {
                 tripUsed.add(String.valueOf(originalStop.get("venueId")));
                 newStops.add(originalStop);
                 continue;
@@ -281,7 +284,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
             changedSegments.add(stopId);
         }
 
-        if (requestedTargetAttr != null && !targetInjected) {
+        if (requestedTargetAttr != null && !targetInjected && !scoped) {
             String newStopId = "day" + dayNumber + "-added-" + requestedTargetAttr.getId();
             Map<String, Object> added = itineraryBuilder.createStop(
                     requestedTargetAttr,
@@ -301,7 +304,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         for (Map<String, Object> s : newStops) {
             if (!isDiningStop(s)) nonDiningCount++;
         }
-        while (nonDiningCount > 4) {
+        while (!scoped && nonDiningCount > 4) {
             int removeIdx = -1;
             for (int i = newStops.size() - 1; i >= 0; i--) {
                 Map<String, Object> s = newStops.get(i);
@@ -319,8 +322,28 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         }
 
         day.put("stops", newStops);
-        List<Map<String, Object>> resolvedDays = resolveAffectedDay(draftTrip, dayNumber, byId, constraints);
-        routeAwarePlanner.backfillAdjacentEdgeCosts(resolvedDays, byId, constraints.getTransportPreference());
+        List<Map<String, Object>> resolvedDays = scoped ? List.of(day) : resolveAffectedDay(draftTrip, dayNumber, byId, constraints);
+        if (scoped) {
+            // Restore protected business fields before deriving routes from the final
+            // predecessor. Their old incoming edge belongs to the old route.
+            for (int i = 0; i < stops.size(); i++)
+                if (!inScope(stops.get(i), intent) || isDiningStop(stops.get(i)) || isProtectedStop(stops.get(i), pinned, constraints))
+                    newStops.set(i, preservedStops.get(i));
+            day.put("stops", newStops);
+        }
+        if (scoped) routeAwarePlanner.backfillAdjacentEdgeCosts(resolvedDays, byId,
+                constraints.getTransportPreference(), List.of(Map.of("day", day.get("day"), "stops", preservedStops)));
+        else routeAwarePlanner.backfillAdjacentEdgeCosts(resolvedDays, byId, constraints.getTransportPreference());
+    }
+
+    private boolean inScope(Map<String, Object> stop, PlanAdjustmentIntent intent) {
+        String time = safe(stop.getOrDefault("time", stop.get("startTime")));
+        if (!time.matches("\\d{1,2}:\\d{2}")) return false;
+        String[] parts = time.split(":");
+        int hour = Integer.parseInt(parts[0]), minute = Integer.parseInt(parts[1]);
+        if (hour > 23 || minute > 59) return false;
+        int value = hour * 60 + minute;
+        return value >= intent.getTargetStartMinute() && value < intent.getTargetEndMinute();
     }
 
     private List<Attraction> findCandidates(CandidateRankingEngine.CandidateContext context,
@@ -329,6 +352,9 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                                             PlanAdjustmentIntent intent,
                                             String slotTime) {
         List<Attraction> catalog = attractionService.list(null, null);
+        if (intent != null && intent.getPreferences() != null && intent.getPreferences().contains("NIGHT_VIEW")) {
+            catalog = catalog.stream().filter(a -> "夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "临江")).toList();
+        }
         boolean userRequestedSameDistrict = (intent != null && intent.getPreferences() != null && intent.getPreferences().contains("SAME_DISTRICT"))
                 || (intent != null && intent.getRawMessage() != null && (intent.getRawMessage().contains("同片区") || intent.getRawMessage().contains("同区")));
 

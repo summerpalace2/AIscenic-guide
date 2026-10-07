@@ -9,6 +9,10 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import com.ai.guide.domain.planner.service.IntentLanguagePolicy;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -62,6 +66,58 @@ public class TravelMemoryService {
     private final PreferencesService preferencesService;
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+    private final MemoryPreferenceProjector preferenceProjector;
+    private final TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Value("${memory.prompt.max-chars:6000}")
+    private int promptMaxChars = 6000;
+    @org.springframework.beans.factory.annotation.Value("${memory.content.max-chars:6000}")
+    private int contentMaxChars = 6000;
+    public static final class MemoryContextOverflowException extends IllegalArgumentException {
+        public MemoryContextOverflowException() {
+            super("安全限制与专属指令超过上下文预算，请先精简画像；不会截断或忽略这些限制。");
+        }
+    }
+
+    private String boundedPrompt(String userId) {
+        List<TravelMemory> memories = jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at "
+                        + "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC",
+                (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
+                        rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"),
+                        rs.getLong("created_at"), rs.getLong("updated_at")), userId);
+        var critical = new java.util.LinkedHashSet<String>();
+        var optional = new java.util.LinkedHashSet<String>();
+        for (TravelMemory item : memories) {
+            String content = item.content() == null ? "" : item.content().trim();
+            if (content.isBlank()) continue;
+            TravelMemory projected = preferenceProjector.project(item);
+            // The taxonomy only projects complete, recognised presentation preferences;
+            // any extra restriction or unknown language stays as raw TEXT. Unknown DIET
+            // statements must not lose an allergy simply because a keyword was not recognised.
+            boolean knownPreference = projected.preferenceKey() != null
+                    && !projected.preferenceKey().startsWith("TEXT:");
+            boolean safety = java.util.Set.of("ACCESSIBILITY", "PACE", "COMPANION").contains(item.category())
+                    || "DIET".equals(item.category()) && !knownPreference
+                    || content.matches("(?s).*(?:过敏|忌口|不|勿|禁止|避免|轮椅|台阶|膝盖|禁忌).*" );
+            if (safety) critical.add(content);
+            else optional.add(projected.preferenceSummary().trim());
+        }
+        UserPreferences preferences = preferencesService == null ? null : preferencesService.get(userId);
+        Object customized = preferences == null ? null : manualPrompt(new LinkedHashMap<>(preferences.legacyMetadata()));
+        if (customized instanceof String s && !s.isBlank()) critical.add(s.trim());
+        int budget = Math.max(1000, promptMaxChars);
+        StringBuilder result = new StringBuilder("【旅行偏好：安全限制与专属指令优先】\n");
+        for (String content : critical) result.append("• ").append(content).append('\n');
+        if (result.length() > budget - 150) {
+            throw new MemoryContextOverflowException();
+        }
+        int omitted = 0;
+        for (String content : optional) {
+            if (result.length() + content.length() + 3 <= budget - 150) result.append("• ").append(content).append('\n');
+            else omitted++;
+        }
+        if (omitted > 0) result.append("（另有").append(omitted).append("项偏好未注入本轮上下文，完整内容仍保存在画像中；不得声称已考虑全部偏好。）\n");
+        return result.toString();
+    }
 
     /** Lightweight constructor retained for pure candidate unit tests. */
     public TravelMemoryService(JdbcTemplate jdbc) {
@@ -72,24 +128,43 @@ public class TravelMemoryService {
         this(jdbc, preferencesService, null, null);
     }
 
-    @Autowired
     public TravelMemoryService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbc,
                                PreferencesService preferencesService,
                                @Autowired(required = false) ChatClient.Builder chatClientBuilder,
                                @Autowired(required = false) ObjectMapper objectMapper) {
+        this(jdbc, preferencesService, chatClientBuilder, objectMapper, new MemoryPreferenceProjector(null));
+    }
+
+    @Autowired
+    public TravelMemoryService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbc,
+                               PreferencesService preferencesService,
+                               @Autowired(required = false) ChatClient.Builder chatClientBuilder,
+                               @Autowired(required = false) ObjectMapper objectMapper,
+                               MemoryPreferenceProjector preferenceProjector) {
         this.jdbc = jdbc;
+        this.transactions = jdbc != null && jdbc.getDataSource() != null
+                ? new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())) : null;
         this.preferencesService = preferencesService;
         this.chatClient = chatClientBuilder != null ? chatClientBuilder.build() : null;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.preferenceProjector = preferenceProjector;
     }
 
     public List<TravelMemory> list(String userId) {
+        return listPage(userId, 50, 0);
+    }
+
+    public List<TravelMemory> listPage(String userId, int limit, int offset) {
+        if (limit < 1 || limit > 100 || offset < 0) {
+            throw new IllegalArgumentException("记忆分页要求limit为1至100，offset不得为负数");
+        }
         if (!validUser(userId) || jdbc == null) return List.of();
         return jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
-                        "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC LIMIT 50",
+                        "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
                 (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
                         rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
-                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
+                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId, limit, offset)
+                .stream().map(preferenceProjector::project).toList();
     }
 
     /**
@@ -123,6 +198,12 @@ public class TravelMemoryService {
      * 高频偏好场景确定性规则库（0ms 秒级直通，涵盖核心旅行生活高频画像）
      */
     Candidate matchRuleCandidate(String text) {
+        if (text.matches(".*(过敏|忌口|清真|素食|純素|纯素|乳糖不耐).*")
+                || text.matches(".*(不吃|不喝|不想吃|不想喝|不能吃|免葱|忌内脏|不喜欢|不爱|讨厌).*")
+                && !text.matches(".*(不是不|并非不|不会不|没有不).*")
+                && (text.contains("吃") || text.contains("喝") || matchPositiveDiet(text))) {
+            return new Candidate("DIET", text, 0.96);
+        }
         // 无障碍与适老化
         if (text.matches(".*(轮椅|无障碍|婴儿车|推车|腿脚不便|行动不便|拄拐|拐杖|术后|台阶高).*")) {
             return new Candidate("ACCESSIBILITY", "出行需要无障碍、少台阶与便于休息的安排", 0.95);
@@ -130,7 +211,7 @@ public class TravelMemoryService {
 
         // 饮食偏好：过敏、忌口、禁忌（最高优门禁，DEF-R3-03）
         if (text.matches(".*(过敏|忌口|清真|素食|纯素|不能吃花生|海鲜过敏|不吃内脏|忌内脏|乳糖不耐).*")) {
-            return new Candidate("DIET", "饮食有明确限制或过敏禁忌，需优先确认可选餐食", 0.96);
+            return new Candidate("DIET", text, 0.96);
         }
 
         // 饮食偏好：双重否定吃辣（如：“不是不吃辣”、“并非不吃辣”，识别为吃辣偏好）
@@ -144,6 +225,14 @@ public class TravelMemoryService {
                 return new Candidate("DIET", "饮食偏好清淡少辣（火锅偏好清汤或番茄锅，避开辛辣刺激）", 0.94);
             }
             return new Candidate("DIET", "饮食偏好清淡少辣，避开刺激性食物与忌口", 0.92);
+        }
+
+        // A rejection or mixed preference keeps every source clause; positive food
+        // words elsewhere must not override the rejected object.
+        if (IntentLanguagePolicy.clauses(text).stream().anyMatch(clause -> IntentLanguagePolicy.positiveText(clause).isBlank())
+                && !text.matches(".*(不是不|并非不|不会不|没有不).*")) {
+            return new Candidate(text.contains("吃") || text.contains("喝") || matchPositiveDiet(text)
+                    ? "DIET" : "CUSTOM", text, 0.92);
         }
 
         // 饮食偏好：火锅、重辣、江湖菜（排除否定语义后的正向偏好）
@@ -297,50 +386,58 @@ public class TravelMemoryService {
         }
     }
 
-    private void handleConflictingMemories(String userId, String newContent) {
-        if (!validUser(userId) || newContent == null || newContent.isBlank() || jdbc == null) return;
-        long now = System.currentTimeMillis();
-        List<Map<String, Object>> active = jdbc.queryForList(
-                "SELECT id, content FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED'", userId);
-        boolean anyCancelled = false;
-        for (Map<String, Object> row : active) {
-            String oldId = (String) row.get("id");
-            String oldContent = (String) row.get("content");
-            if (oldContent == null) continue;
+    private boolean matchPositiveDiet(String text) {
+        // Ask the existing rule path only for category, retaining the negative source itself.
+        String positive = text.replace("不喜欢", "喜欢").replace("不爱", "爱").replace("讨厌", "喜欢");
+        if (positive.equals(text)) return false;
+        Candidate candidate = matchRuleCandidate(positive);
+        return candidate != null && "DIET".equals(candidate.category());
+    }
 
-            boolean conflict = false;
-            // 辣度相反：若新确认的记忆包含“清淡|少辣|不吃辣|免辣”，查询该用户已有 CONFIRMED 记忆中若包含“麻辣|喜辣|爱吃辣|辣味|吃辣”，将其 UPDATE status = 'DELETED'；反之，若新记忆包含“麻辣|辣味|吃辣|火锅”，则将包含“清淡|不吃辣”的旧记录 UPDATE status = 'DELETED'
-            boolean newDoubleNegSpicy = newContent.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
-            boolean oldDoubleNegSpicy = oldContent.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
+    private int spicePolarity(String content) {
+        if (content == null) return 0;
+        String normalized = content.replace("不是不吃辣", "吃辣").replace("并非不吃辣", "吃辣")
+                .replace("不会不吃辣", "吃辣").replace("没有不吃辣", "吃辣");
+        if (normalized.matches(".*(清淡|少辣|不吃辣|不能吃辣|免辣|不辣|怕辣).*")) return -1;
+        String positive = IntentLanguagePolicy.positiveText(normalized);
+        return positive.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|重辣|嗜辣|无辣不欢).*") ? 1 : 0;
+    }
 
-            boolean newIsMild = !newDoubleNegSpicy && newContent.matches(".*(清淡|少辣|不吃辣|免辣).*");
-            boolean newIsSpicy = newDoubleNegSpicy || newContent.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|火锅).*");
-
-            boolean oldIsMild = !oldDoubleNegSpicy && oldContent.matches(".*(清淡|少辣|不吃辣|免辣).*");
-            boolean oldIsSpicy = oldDoubleNegSpicy || oldContent.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|火锅).*");
-
-            if (newIsMild && oldIsSpicy) {
-                conflict = true;
-            } else if (newIsSpicy && oldIsMild) {
-                conflict = true;
-            }
-
-            // 体力相反：若新记忆是“少走路|少爬坡|平路|避台阶”，则将已有的“特种兵|暴走|多走走”更新为 DELETED；反之亦然
-            if (newContent.matches(".*(少走路|少爬坡|平路|避台阶).*") && oldContent.matches(".*(特种兵|暴走|多走走).*")) {
-                conflict = true;
-            } else if (newContent.matches(".*(特种兵|暴走|多走走).*") && oldContent.matches(".*(少走路|少爬坡|平路|避台阶).*")) {
-                conflict = true;
-            }
-
+    private void handleConflictingMemories(String userId, String newContent, String excludedId) {
+        if (!validUser(userId) || newContent == null || jdbc == null) return;
+        for (Map<String,Object> row : jdbc.queryForList(
+                "SELECT id, content FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED'", userId)) {
+            String id = String.valueOf(row.get("id"));
+            if (id.equals(excludedId)) continue;
+            String old = String.valueOf(row.get("content"));
+            int before = spicePolarity(old), after = spicePolarity(newContent);
+            boolean conflict = before != 0 && after != 0 && before != after;
+            String oldPositive = IntentLanguagePolicy.positiveText(old);
+            String newPositive = IntentLanguagePolicy.positiveText(newContent);
+            conflict |= newContent.matches(".*(少走路|少爬坡|平路|避台阶).*")
+                    && oldPositive.matches(".*(特种兵|暴走|多走走).*");
+            conflict |= newPositive.matches(".*(特种兵|暴走|多走走).*")
+                    && old.matches(".*(少走路|少爬坡|平路|避台阶).*");
             if (conflict) {
-                jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ?", now, oldId, userId);
-                anyCancelled = true;
-                log.info("[TravelMemory] Cancelled conflicting memory id={}, oldContent='{}' due to newContent='{}'", oldId, oldContent, newContent);
+                var kept = new ArrayList<String>();
+                for (String clause : old.split("[，,；;。\\n、]+")) {
+                    boolean conflicting = spicePolarity(clause) != 0 && after != 0 && spicePolarity(clause) != after;
+                    conflicting |= newContent.matches(".*(少走路|少爬坡|平路|避台阶).*") && IntentLanguagePolicy.positiveText(clause).matches(".*(特种兵|暴走|多走走).*");
+                    conflicting |= newPositive.matches(".*(特种兵|暴走|多走走).*") && clause.matches(".*(少走路|少爬坡|平路|避台阶).*");
+                    if (!conflicting) { if (!clause.isBlank()) kept.add(clause.trim()); continue; }
+                    // Only retire a standalone preference clause. Unknown residual meaning must survive.
+                    String residual = clause.replaceAll("不能吃辣|不是不吃辣|并非不吃辣|不会不吃辣|没有不吃辣|不吃辣|爱吃辣|无辣不欢|麻辣|喜辣|辣味|吃辣|重辣|嗜辣|清淡|少辣|免辣|不辣|怕辣|少走路|少爬坡|平路|避台阶|特种兵|暴走|多走走", "");
+                    residual = preferenceProjector.removePresentationWords(residual).replaceAll("[\\s\\p{P}]+", "");
+                    if (!residual.isBlank()) throw new IllegalArgumentException("旧记忆包含相互冲突的偏好和其他信息，请先编辑这条记忆，保留过敏、同行人与其他限制：" + old);
+                }
+                if (kept.isEmpty()) jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", System.currentTimeMillis(), id, userId);
+                else jdbc.update("UPDATE travel_memory SET content = ?, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", String.join("，", kept), System.currentTimeMillis(), id, userId);
             }
         }
-        if (anyCancelled) {
-            try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
-        }
+    }
+
+    private <T> T atomic(Supplier<T> action) {
+        return transactions == null ? action.get() : transactions.execute(status -> action.get());
     }
 
     public TravelMemory confirm(String userId, String content, String category, String sourceType) {
@@ -348,12 +445,16 @@ public class TravelMemoryService {
     }
 
     public TravelMemory confirm(String userId, String content, String category, String sourceType, String sourceRef) {
+        return atomic(() -> confirmAtomic(userId, content, category, sourceType, sourceRef));
+    }
+
+    private TravelMemory confirmAtomic(String userId, String content, String category, String sourceType, String sourceRef) {
         requireUser(userId);
-        String safeContent = clean(content, 240);
+        String safeContent = completeText(content, contentMaxChars, "记忆内容");
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
         String safeCategory = normalizeCategory(category);
         long now = System.currentTimeMillis();
-        handleConflictingMemories(userId, safeContent);
+        handleConflictingMemories(userId, safeContent, null);
         List<TravelMemory> same = jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
                         "FROM travel_memory WHERE user_id = ? AND category = ? AND content = ? AND status = 'CONFIRMED' LIMIT 1",
                 (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
@@ -362,34 +463,44 @@ public class TravelMemoryService {
         if (!same.isEmpty()) {
             TravelMemory existing = same.get(0);
             jdbc.update("UPDATE travel_memory SET updated_at = ? WHERE id = ? AND user_id = ?", now, existing.id(), userId);
-            try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
-            return new TravelMemory(existing.id(), existing.category(), existing.content(), existing.sourceType(), existing.sourceRef(), existing.status(), existing.confidence(), existing.createdAt(), now);
+            synthesizePrependPrompt(userId, false);
+            return preferenceProjector.project(new TravelMemory(existing.id(), existing.category(), existing.content(), existing.sourceType(), existing.sourceRef(), existing.status(), existing.confidence(), existing.createdAt(), now));
         }
         String id = "mem-" + UUID.randomUUID();
         String source = "USER_EDIT".equalsIgnoreCase(sourceType) ? "USER_EDIT" : "CHAT_CONFIRMED";
         String safeSourceRef = sourceRef == null ? "" : clean(sourceRef, 120);
         jdbc.update("INSERT INTO travel_memory (id, user_id, category, content, source_type, source_ref, status, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?)",
                 id, userId, safeCategory, safeContent, source, safeSourceRef, source.equals("USER_EDIT") ? 1.0 : 0.9, now, now);
-        try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
-        return new TravelMemory(id, safeCategory, safeContent, source, safeSourceRef, "CONFIRMED", source.equals("USER_EDIT") ? 1.0 : 0.9, now, now);
+        synthesizePrependPrompt(userId, false);
+        return preferenceProjector.project(new TravelMemory(id, safeCategory, safeContent, source, safeSourceRef, "CONFIRMED", source.equals("USER_EDIT") ? 1.0 : 0.9, now, now));
     }
 
     public TravelMemory update(String userId, String id, String content, String category) {
+        return atomic(() -> updateAtomic(userId, id, content, category));
+    }
+
+    private TravelMemory updateAtomic(String userId, String id, String content, String category) {
         requireUser(userId);
-        String safeContent = clean(content, 240);
+        Integer existing = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", Integer.class, id, userId);
+        if (existing == null || existing == 0) throw new IllegalArgumentException("旅行记忆不存在或无权修改");
+        String safeContent = completeText(content, contentMaxChars, "记忆内容");
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
-        handleConflictingMemories(userId, safeContent);
+        handleConflictingMemories(userId, safeContent, id);
         int changed = jdbc.update("UPDATE travel_memory SET content = ?, category = ?, source_type = 'USER_EDIT', confidence = 1.0, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'",
                 safeContent, normalizeCategory(category), System.currentTimeMillis(), id, userId);
         if (changed == 0) throw new IllegalArgumentException("旅行记忆不存在或无权修改");
-        try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
+        synthesizePrependPrompt(userId, false);
         return list(userId).stream().filter(item -> item.id().equals(id)).findFirst().orElseThrow();
     }
 
     public void delete(String userId, String id) {
+        atomic(() -> { deleteAtomic(userId, id); return null; });
+    }
+
+    private void deleteAtomic(String userId, String id) {
         requireUser(userId);
         jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ?", System.currentTimeMillis(), id, userId);
-        try { synthesizePrependPrompt(userId, false); } catch (Exception ignored) {}
+        synthesizePrependPrompt(userId, false);
     }
 
     /** Stores one concise user preference cue, never a full transcript or assistant reply. */
@@ -414,14 +525,19 @@ public class TravelMemoryService {
     }
 
     public TravelMemory confirmCandidate(String userId, String candidateId) {
+        return atomic(() -> confirmCandidateAtomic(userId, candidateId));
+    }
+
+    private TravelMemory confirmCandidateAtomic(String userId, String candidateId) {
         requireUser(userId);
         if (jdbc == null) throw new IllegalArgumentException("记忆服务暂不可用");
         List<MemoryCandidate> rows = jdbc.query("SELECT id, category, content, source_ref, status, confidence, created_at, updated_at FROM travel_memory_candidate WHERE id = ? AND user_id = ? AND status = 'PENDING'",
                 (rs, row) -> new MemoryCandidate(rs.getString("id"), rs.getString("category"), rs.getString("content"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), candidateId, userId);
         if (rows.isEmpty()) throw new IllegalArgumentException("记忆候选不存在或已处理");
         MemoryCandidate candidate = rows.get(0);
+        int claimed = jdbc.update("UPDATE travel_memory_candidate SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'PENDING'", System.currentTimeMillis(), candidateId, userId);
+        if (claimed != 1) throw new IllegalArgumentException("记忆候选不存在或已处理");
         TravelMemory memory = confirm(userId, candidate.content(), candidate.category(), "CHAT_CONFIRMED", candidate.sourceRef());
-        jdbc.update("UPDATE travel_memory_candidate SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND user_id = ?", System.currentTimeMillis(), candidateId, userId);
         return memory;
     }
 
@@ -444,31 +560,35 @@ public class TravelMemoryService {
     }
 
     private void reviewUserObservations(String userId) {
-        UserPreferences preferences = preferencesService.get(userId);
-        Map<String, Object> metadata = new LinkedHashMap<>(preferences.legacyMetadata());
-        if (!Boolean.TRUE.equals(metadata.get("travelMemoryEnabled"))) return;
-        long now = System.currentTimeMillis();
-        // 废除旧有的 12 小时限制，记忆线索实时感知并处理
+        if (!Boolean.TRUE.equals(preferencesService.get(userId).legacyMetadata().get("travelMemoryEnabled"))) return;
         List<Observation> observations = jdbc.query("SELECT id, content FROM travel_memory_observation WHERE user_id = ? AND status = 'PENDING' ORDER BY created_at ASC LIMIT 60",
                 (rs, row) -> new Observation(rs.getString("id"), rs.getString("content")), userId);
-        for (Observation observation : observations) {
-            Candidate detected = suggest(observation.content());
-            if (detected == null) continue;
-            Integer duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory_candidate WHERE user_id = ? AND category = ? AND content = ? AND status = 'PENDING'", Integer.class, userId, detected.category(), detected.content());
-            if (duplicate == null || duplicate == 0) {
-                String id = "mem-candidate-" + UUID.randomUUID();
-                jdbc.update("INSERT INTO travel_memory_candidate (id, user_id, category, content, source_ref, status, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)",
-                        id, userId, detected.category(), detected.content(), clean(observation.content(), 120), detected.confidence(), now, now);
+        Map<String,Candidate> detected = new LinkedHashMap<>();
+        for (Observation observation : observations) detected.put(observation.id(), suggest(observation.content()));
+        // Extraction may call a model. Only DB writes and the projection CAS belong in the transaction.
+        atomic(() -> {
+            UserPreferences preferences = preferencesService.get(userId);
+            Map<String,Object> metadata = new LinkedHashMap<>(preferences.legacyMetadata());
+            if (!Boolean.TRUE.equals(metadata.get("travelMemoryEnabled"))) return null;
+            long now = System.currentTimeMillis();
+            for (Observation observation : observations) {
+                int claimed = jdbc.update("UPDATE travel_memory_observation SET status = 'REVIEWED' WHERE id = ? AND user_id = ? AND status = 'PENDING'", observation.id(), userId);
+                if (claimed != 1) continue;
+                Candidate candidate = detected.get(observation.id());
+                if (candidate == null) continue;
+                Integer duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory_candidate WHERE user_id = ? AND category = ? AND content = ? AND status = 'PENDING'", Integer.class, userId, candidate.category(), candidate.content());
+                if (duplicate == null || duplicate == 0) jdbc.update("INSERT INTO travel_memory_candidate (id, user_id, category, content, source_ref, status, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)",
+                        "mem-candidate-" + UUID.randomUUID(), userId, candidate.category(), candidate.content(), clean(observation.content(), 120), candidate.confidence(), now, now);
             }
-        }
-        jdbc.update("UPDATE travel_memory_observation SET status = 'REVIEWED' WHERE user_id = ? AND status = 'PENDING'", userId);
-        metadata.put("travelMemoryLastReviewAt", now);
-        preferencesService.merge(userId, new UserPreferencesPatch(null, null, null, null, null, null, null, metadata, preferences.revision()), preferences.revision());
+            metadata.put("travelMemoryLastReviewAt", now);
+            preferencesService.merge(userId, new UserPreferencesPatch(null,null,null,null,null,null,null,metadata,preferences.revision()), preferences.revision());
+            return null;
+        });
     }
 
     /**
-     * 智能萃取并生成前置提示词（Prepend Planning Prompt）。
-     * 具备新旧记忆冲突消歧能力：按时间戳正序分析，后产生的最新记忆自动覆盖旧冲突偏好。
+     * 根据已确认记忆的分类与原文生成前置提示词（Prepend Planning Prompt）。
+     * 冲突记忆由确认流程处理，画像只消费仍为 CONFIRMED 的记录，不丢弃未知词汇。
      * 同时保留用户之前手动定制过的专属指令（userCustomizedPrompt）。
      */
     public String synthesizePrependPrompt(String userId, boolean forceResynthesize) {
@@ -476,7 +596,7 @@ public class TravelMemoryService {
         UserPreferences preferences = preferencesService != null ? preferencesService.get(userId) : null;
         Map<String, Object> metadata = preferences != null ? new LinkedHashMap<>(preferences.legacyMetadata()) : new LinkedHashMap<>();
 
-        String userCustomized = (String) metadata.get("userCustomizedPrompt");
+        String userCustomized = manualPrompt(metadata);
 
         List<TravelMemory> items = jdbc.query(
                 "SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
@@ -485,101 +605,32 @@ public class TravelMemoryService {
                         rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
                         rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
 
-        java.util.LinkedHashSet<String> tasteTraits = new java.util.LinkedHashSet<>();
-        java.util.LinkedHashSet<String> diningTraits = new java.util.LinkedHashSet<>();
-        String paceTrait = null;
-        String scheduleTrait = null;
-        java.util.LinkedHashSet<String> sceneryTraits = new java.util.LinkedHashSet<>();
-        java.util.LinkedHashSet<String> companionTraits = new java.util.LinkedHashSet<>();
-        java.util.List<String> customDirectives = new java.util.ArrayList<>();
-
+        // Confirmed content is already the user's chosen preference. Group it by
+        // category without reinterpreting it through a vocabulary whitelist.
+        Map<String, java.util.LinkedHashSet<String>> grouped = new LinkedHashMap<>();
         for (TravelMemory item : items) {
-            String text = item.content();
-            if (text == null || text.isBlank()) continue;
-
-            // 1. 口味与辣度（集合化收集）
-            boolean doubleNegSpicy = text.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*");
-            if (doubleNegSpicy || text.matches(".*(麻辣|火锅|重辣|特辣|喜辣|爱吃辣|辣味|吃辣|九宫格|江湖菜).*")) {
-                tasteTraits.add("饮食偏好麻辣火锅与地道巴渝风味");
-            }
-            if (!doubleNegSpicy && text.matches(".*(清淡|少辣|微辣|不吃辣|不能吃辣|怕辣|免辣).*")) {
-                tasteTraits.add("饮食偏好清淡少辣");
-            }
-            if (text.matches(".*(甜品|甜食|糖水|吃甜|冰粉|凉糕).*")) {
-                tasteTraits.add("喜好特色甜品糖水与点心");
-            }
-
-            // 2. 餐饮特色品类
-            if (text.matches(".*(烧烤|烤串|烤脑花).*")) diningTraits.add("特色烧烤");
-            if (text.matches(".*(老火锅|九宫格|串串).*")) diningTraits.add("地道老火锅");
-            if (text.matches(".*(茶馆|老茶馆|盖碗茶|喝茶).*")) diningTraits.add("特色老茶馆与品茗");
-            if (text.matches(".*(咖啡|下午茶).*")) diningTraits.add("特色咖啡与下午茶");
-            if (text.matches(".*(小吃|小面|抄手).*")) diningTraits.add("地道特色小吃");
-
-            // 3. 体力节奏冲突替换（以最新出现的记忆为准）
-            if (text.matches(".*(少走路|少爬坡|平路|避开台阶|平缓|推车|膝盖).*")) {
-                paceTrait = "偏好平缓舒适少爬坡，尽量避开长台阶";
-            } else if (text.matches(".*(特种兵|紧凑|高强度|多打卡).*")) {
-                paceTrait = "偏好紧凑高效打卡";
-            } else if (text.matches(".*(慢节奏|从容|休闲|不赶时间).*")) {
-                paceTrait = "偏好慢节奏从容休闲";
-            }
-
-            // 4. 作息时间冲突替换（以最新出现的记忆为准）
-            if (text.matches(".*(晚起|自然醒|夜猫子|起不来|上午不出发).*")) {
-                scheduleTrait = "作息偏好从容晚起，早晨不安排过早出发";
-            } else if (text.matches(".*(早起|赶早|晨起).*")) {
-                scheduleTrait = "作息偏好早起早出发";
-            }
-
-            // 5. 景点与体验倾向
-            if (text.matches(".*(夜景).*")) sceneryTraits.add("山城震撼夜景");
-            if (text.matches(".*(8D|魔幻|索道|穿楼).*")) sceneryTraits.add("8D魔幻立体景观与轻轨索道");
-            if (text.matches(".*(室内|展馆|博物馆|防空洞|避暑).*")) sceneryTraits.add("室内文化场馆与避暑空间");
-            if (text.matches(".*(自然|山水|峡谷|吸氧|天坑).*")) sceneryTraits.add("自然山水与户外峡谷");
-            if (text.matches(".*(拍照|摄影|出片|机位).*")) sceneryTraits.add("摄影出片与绝佳机位");
-
-            // 6. 同行特点
-            if (text.matches(".*(长辈|父母|老人).*")) companionTraits.add("同行有长辈，注重适老舒适与休息设施");
-            if (text.matches(".*(儿童|孩子|宝宝|亲子).*")) companionTraits.add("家庭亲子出行，兼顾儿童友好与趣味");
-
-            // 7. 特殊或自定义记忆
-            if ("CUSTOM".equalsIgnoreCase(item.category()) && !text.matches(".*(饮食|偏好|习惯|出行).*")) {
-                customDirectives.add(text);
-            }
+            if (item.content() == null || item.content().isBlank()) continue;
+            String heading = switch (normalizeCategory(item.category())) {
+                case "DIET" -> "饮食喜好";
+                case "INTEREST" -> "景观偏好";
+                case "PACE", "TIME" -> "体力与作息";
+                case "ACCESSIBILITY" -> "无障碍需求";
+                case "COMPANION" -> "同行关照";
+                case "TRANSPORT" -> "交通偏好";
+                case "BUDGET" -> "预算偏好";
+                case "WEATHER" -> "天气适应";
+                case "STAY" -> "住宿偏好";
+                default -> "个性化要求";
+            };
+            grouped.computeIfAbsent(heading, key -> new java.util.LinkedHashSet<>()).add(preferenceProjector.project(item).preferenceSummary().trim());
         }
+        StringBuilder sb = new StringBuilder("【用户专属旅行偏好画像】\n");
+        grouped.forEach((heading, contents) -> sb.append("• ").append(heading).append("：")
+                .append(String.join("；", contents)).append("；\n"));
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("【用户专属旅行偏好画像】\n");
-
-        java.util.LinkedHashSet<String> diets = new java.util.LinkedHashSet<>();
-        diets.addAll(tasteTraits);
-        diets.addAll(diningTraits);
-        if (!diets.isEmpty()) {
-            sb.append("• 饮食喜好：").append(String.join("、", diets)).append("；\n");
-        }
-
-        if (!sceneryTraits.isEmpty()) {
-            sb.append("• 景观偏好：").append(String.join("、", sceneryTraits)).append("；\n");
-        }
-
-        List<String> paces = new ArrayList<>();
-        if (paceTrait != null) paces.add(paceTrait);
-        if (scheduleTrait != null) paces.add(scheduleTrait);
-        if (!paces.isEmpty()) {
-            sb.append("• 体力与作息：").append(String.join("，", paces)).append("；\n");
-        }
-
-        if (!companionTraits.isEmpty()) {
-            sb.append("• 同行关照：").append(String.join("，", companionTraits)).append("；\n");
-        }
-
-        if (!customDirectives.isEmpty()) {
-            sb.append("• 个性化要求：").append(String.join("；", customDirectives)).append("；\n");
-        }
-
-        // 关键：若用户有专属定制修改且未选择强制重置，永久保留用户自定义指令
-        if (!forceResynthesize && userCustomized != null && !userCustomized.isBlank()) {
+        String generated = sb.toString().trim();
+        // Regenerating memory-derived content must not erase independently authored notes.
+        if (!userCustomized.isBlank()) {
             sb.append("• 专属定制指令：").append(userCustomized.trim()).append("\n");
         }
 
@@ -588,8 +639,14 @@ public class TravelMemoryService {
             synthesized = "【用户专属旅行偏好画像】暂无特殊偏好，按常规经典游玩。";
         }
 
-        if (preferencesService != null && preferences != null) {
+        if (preferencesService != null && preferences != null
+                && (!synthesized.equals(preferences.legacyMetadata().get("profilePrependPrompt"))
+                || !generated.equals(preferences.legacyMetadata().get("generatedPrependPrompt"))
+                || !metadata.equals(preferences.legacyMetadata()))) {
             metadata.put("profilePrependPrompt", synthesized);
+            metadata.put("generatedPrependPrompt", generated);
+            metadata.put("manualPromptVersion", 2);
+            metadata.put("memoryProjectionVersion", MemoryPreferenceProjector.PROJECTION_VERSION);
             metadata.put("promptLastSynthesizedAt", System.currentTimeMillis());
             preferencesService.merge(userId, new UserPreferencesPatch(null, null, null, null, null, null, null, metadata, preferences.revision()), preferences.revision());
         }
@@ -598,17 +655,69 @@ public class TravelMemoryService {
     }
 
     public String saveUserCustomizedPrompt(String userId, String fullPromptText) {
+        return atomic(() -> saveManualPrompt(userId, fullPromptText));
+    }
+
+    private String saveManualPrompt(String userId, String fullPromptText) {
         if (!validUser(userId)) return fullPromptText;
         UserPreferences preferences = preferencesService != null ? preferencesService.get(userId) : null;
         Map<String, Object> metadata = preferences != null ? new LinkedHashMap<>(preferences.legacyMetadata()) : new LinkedHashMap<>();
-        String safePrompt = clean(fullPromptText, 1000);
-        metadata.put("profilePrependPrompt", safePrompt);
+        manualPrompt(metadata);
+        String safePrompt = completePromptText(fullPromptText);
+        // Compatibility for older editors: unchanged generated lines are not manual notes.
+        String baseline = String.valueOf(metadata.getOrDefault("generatedPrependPrompt", ""));
+        if (safePrompt.startsWith("【用户专属旅行偏好画像】") && !baseline.isBlank()) {
+            var generatedLines = new java.util.HashSet<String>();
+            for (String line : baseline.split("\\R")) generatedLines.add(promptLine(line));
+            safePrompt = java.util.Arrays.stream(safePrompt.split("\\R"))
+                    .filter(line -> !generatedLines.contains(promptLine(line)))
+                    .map(line -> line.startsWith("• 专属定制指令:") ? line.substring("• 专属定制指令:".length()) : line)
+                    .collect(java.util.stream.Collectors.joining("\n")).trim();
+        }
         metadata.put("userCustomizedPrompt", safePrompt);
+        metadata.put("manualPromptVersion", 2);
+        metadata.put("manualPromptNeedsReview", false);
         metadata.put("promptLastEditedAt", System.currentTimeMillis());
         if (preferencesService != null && preferences != null) {
             preferencesService.merge(userId, new UserPreferencesPatch(null, null, null, null, null, null, null, metadata, preferences.revision()), preferences.revision());
         }
+        synthesizePrependPrompt(userId, false);
         return safePrompt;
+    }
+
+    /** Ambiguous legacy full profiles are archived, never treated as an independent preference. */
+    private String manualPrompt(Map<String, Object> metadata) {
+        String manual = String.valueOf(metadata.getOrDefault("userCustomizedPrompt", ""));
+        if (number(metadata.get("manualPromptVersion")) < 2) {
+            if (manual.contains("【用户专属旅行偏好画像】")) {
+                metadata.put("legacyUserCustomizedPrompt", manual);
+                metadata.put("manualPromptNeedsReview", true);
+                manual = "";
+            }
+            metadata.put("userCustomizedPrompt", manual);
+            metadata.put("manualPromptVersion", 2);
+        }
+        return manual;
+    }
+
+    private String promptLine(String value) {
+        return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC).trim().replaceAll("\\s+", " ");
+    }
+
+    private String completePromptText(String value) {
+        String normalized = value == null ? "" : java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
+                .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "").replace("\r\n", "\n").trim();
+        if (normalized.length() > Math.max(1000, promptMaxChars)) throw new IllegalArgumentException("专属提示词超过长度上限，请精简后保存；原文未被截断。");
+        return normalized;
+    }
+
+    public Map<String, Object> promptDetails(String userId) {
+        String prompt = synthesizePrependPrompt(userId, false);
+        var preferences = preferencesService == null ? null : preferencesService.get(userId);
+        var metadata = preferences == null ? Map.<String,Object>of() : preferences.legacyMetadata();
+        return Map.of("prependPrompt", prompt, "userCustomizedPrompt", metadata.getOrDefault("userCustomizedPrompt", ""),
+                "legacyUserCustomizedPrompt", metadata.getOrDefault("legacyUserCustomizedPrompt", ""),
+                "manualPromptNeedsReview", Boolean.TRUE.equals(metadata.get("manualPromptNeedsReview")));
     }
 
     public String promptContext(String userId) {
@@ -616,12 +725,20 @@ public class TravelMemoryService {
         UserPreferences preferences = preferencesService != null ? preferencesService.get(userId) : null;
         if (preferences != null) {
             Object prompt = preferences.legacyMetadata().get("profilePrependPrompt");
-            if (prompt instanceof String s && !s.isBlank()) {
+            if (prompt instanceof String s && !s.isBlank() && !needsProjectionRefresh(preferences.legacyMetadata())) {
+                if (jdbc != null && s.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
                 return s + "\n（请在规划行程与推荐餐厅时严格遵循上述个性化偏好约束，非用户明确要求不得违背）";
             }
         }
         String synthesized = synthesizePrependPrompt(userId, false);
+        if (jdbc != null && synthesized.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
         return synthesized.isBlank() ? "" : synthesized + "\n（请在规划行程与推荐餐厅时严格遵循上述个性化偏好约束，非用户明确要求不得违背）";
+    }
+
+    private boolean needsProjectionRefresh(Map<String, Object> metadata) {
+        long synthesizedAt = number(metadata.get("promptLastSynthesizedAt"));
+        return number(metadata.get("manualPromptVersion")) < 2 || number(metadata.get("memoryProjectionVersion")) < MemoryPreferenceProjector.PROJECTION_VERSION
+                && synthesizedAt > 0 && synthesizedAt >= number(metadata.get("promptLastEditedAt"));
     }
 
     private boolean isCurrentTripOnly(String text) {
@@ -650,6 +767,11 @@ public class TravelMemoryService {
                 .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "");
         String compact = normalized.replaceAll("[\\r\\n\\t]+", " ").trim().replaceAll("\\s{2,}", " ");
         return compact.substring(0, Math.min(Math.max(0, max), compact.length()));
+    }
+    private String completeText(String value, int max, String label) {
+        String normalized = clean(value, Integer.MAX_VALUE);
+        if (normalized.length() > Math.max(1, max)) throw new IllegalArgumentException(label + "超过长度上限，请精简后保存；原文未被截断。");
+        return normalized;
     }
     private boolean validUser(String userId) { return userId != null && !userId.isBlank() && !"anonymous".equalsIgnoreCase(userId); }
     private void requireUser(String userId) { if (!validUser(userId)) throw new IllegalArgumentException("请先登录后管理旅行记忆"); }

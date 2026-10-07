@@ -89,8 +89,10 @@ class AdminApplicationServiceImplTest {
         updatePayload.put("siteName", "更新站点");
         updatePayload.put("asrEnabled", true);
 
-        applicationService.updateSettings(updatePayload);
-        assertFalse(updatePayload.containsKey("asrEnabled"));
-        verify(appConfigRepository).writeConfig("settings_", updatePayload);
+        assertThrows(IllegalArgumentException.class, () -> applicationService.updateSettings(updatePayload));
+        assertTrue(updatePayload.containsKey("asrEnabled"));
+        verify(appConfigRepository, never()).writeConfig(anyString(), anyMap());
+        applicationService.updateSettings(Map.of("siteName", "更新站点"));
+        verify(appConfigRepository).writeConfig("settings_", Map.of("siteName", "更新站点"));
     }
 }

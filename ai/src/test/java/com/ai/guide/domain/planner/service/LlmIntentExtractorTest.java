@@ -4,6 +4,7 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanPageContext;
+import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -15,8 +16,132 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class LlmIntentExtractorTest {
+
+    @Test
+    void longCompositeDiningAdditionKeepsStructuredOperationWhenQuestionAndPlaceWordsAppear() {
+        var result = extractor((system, user) -> """
+                {"operation":"ADD_STOP","scope":"DAY","cuisineOrPlace":"螺蛳粉","genericDiningCraving":true,"timeSlot":"LUNCH","confidence":0.96}
+                """, true, true, 0.75, 500).extract(
+                "三峡博物馆几点开门我之后自己确认，午餐帮我加一顿清淡一点的螺蛳粉，吃完再去洪崖洞看看",
+                PlanPageContext.builder().activeDay(2).selectedStopId("museum-stop").pinnedStopIds(List.of("pinned-stop")).build());
+        assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+        assertEquals(ConversationIntentType.ADD_STOP, result.intent().getType());
+        assertEquals("ADD_STOP", result.intent().getOperation());
+        assertEquals("DAY", result.intent().getScope());
+        assertEquals("螺蛳粉", result.intent().getCuisineOrPlace());
+        assertEquals("LUNCH", result.intent().getTimeSlot());
+        assertEquals(List.of("pinned-stop"), result.intent().getPinnedStopIds());
+    }
+
+    @Test
+    void structuredDiningOperationBeatsConflictingLegacyQaOrReplacementWithoutLosingTargetContext() {
+        for (ConversationIntentType legacyType : List.of(ConversationIntentType.PLACE_QUESTION, ConversationIntentType.SUGGEST_REPLACEMENTS)) {
+            ConversationIntentClassifier classifier = mock(ConversationIntentClassifier.class);
+            when(classifier.classify(any(), any())).thenReturn(PlanAdjustmentIntent.builder()
+                    .type(legacyType).scope("STOP").dayNumber(2).targetStopId("selected-lunch")
+                    .targetStopReference("午餐").replacementPlaceId("stale-catalog-id").preferences(List.of("FOOD")).build());
+            for (String operation : List.of("ADD_STOP", "REPLACE_STOP")) {
+                var extractor = new LlmIntentExtractor((system, user) -> "{\"operation\":\"" + operation
+                        + "\",\"scope\":\"DAY\",\"cuisineOrPlace\":\"驴肉火烧\",\"genericDiningCraving\":true,\"timeSlot\":\"LUNCH\",\"confidence\":0.96}",
+                        objectMapper, classifier, true, true, 0.75, 500);
+                var result = extractor.extract("景点几点开门我自己查询，按刚才商量的午餐安排吃驴肉火烧", PlanPageContext.builder()
+                        .activeDay(2).selectedStopId("selected-lunch").activeProposalId("proposal-1").pinnedStopIds(List.of("protected-1")).build());
+                assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+                assertEquals(operation, result.intent().getOperation(), legacyType.name());
+                assertEquals("ADD_STOP".equals(operation) ? ConversationIntentType.ADD_STOP : ConversationIntentType.SUGGEST_REPLACEMENTS,
+                        result.intent().getType(), legacyType.name());
+                assertEquals("selected-lunch", result.intent().getTargetStopId());
+                assertEquals(2, result.intent().getDayNumber());
+                assertEquals("proposal-1", result.intent().getProposalId());
+                assertEquals(List.of("protected-1"), result.intent().getPinnedStopIds());
+                assertEquals(null, result.intent().getReplacementPlaceId());
+            }
+        }
+    }
+
+    @Test
+    void structuredDiningFieldsSurviveMergeAndKeepExplicitLunchWithBarbecue() {
+        LlmIntentExtractor extractor = extractor((system, user) -> """
+                {"operation":"ADD_STOP","cuisineOrPlace":"驴肉火烧","genericDiningCraving":true,"timeSlot":"LUNCH","confidence":0.95}
+                """, true, true, 0.75, 500);
+        var result = extractor.extract("午餐想吃驴肉火烧，之后再看有没有烧烤", PlanPageContext.builder().activeDay(1).build());
+        assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+        assertEquals("驴肉火烧", result.intent().getCuisineOrPlace());
+        assertEquals(Boolean.TRUE, result.intent().getGenericDiningCraving());
+        assertEquals("LUNCH", result.intent().getTimeSlot());
+        assertEquals("驴肉火烧", result.intent().asMap().get("cuisineOrPlace"));
+        assertEquals(true, result.intent().asMap().get("genericDiningCraving"));
+    }
+
+    @Test
+    void modelExtractedSpecificVenueBeatsRegexSwallowingLongSentence() {
+        LlmIntentExtractor extractor = extractor((system, user) -> """
+                {"operation":"REPLACE_STOP","cuisineOrPlace":"宏盛餐馆(黄桷小区店)","genericDiningCraving":false,"timeSlot":"DINNER","confidence":0.96}
+                """, true, true, 0.75, 500);
+        var result = extractor.extract("把晚餐换成宏盛餐馆(黄桷小区店)，希望清淡不辣", PlanPageContext.builder().activeDay(1).build());
+        assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+        assertEquals("宏盛餐馆(黄桷小区店)", result.intent().getReplacementPlaceName());
+        assertEquals(Boolean.FALSE, result.intent().getGenericDiningCraving());
+    }
+
+    @Test
+    void snakeCaseDiningContractIsAcceptedAndNonDiningNullDoesNotInventFood() {
+        LlmIntentExtractor extractor = extractor((system, user) -> """
+                {"operation":"ADD_STOP","cuisine_or_place":"柳州螺蛳粉","generic_dining_craving":true,"time_window":"lunch","confidence":0.94}
+                """, true, true, 0.75, 500);
+        var result = extractor.extract("午饭吃柳州螺蛳粉", PlanPageContext.builder().activeDay(1).build());
+        assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+        assertEquals("柳州螺蛳粉", result.intent().getCuisineOrPlace());
+        assertEquals("LUNCH", result.intent().getTimeSlot());
+
+        var nonDining = extractor((system, user) -> """
+                {"operation":"REMOVE_STOP","cuisineOrPlace":null,"genericDiningCraving":null,"timeSlot":null,"confidence":0.94}
+                """, true, true, 0.75, 500).extract("删除这个景点", PlanPageContext.builder().selectedStopId("stop-1").build());
+        assertEquals("LLM_STRUCTURED", nonDining.intentExtractionSource());
+        assertEquals(null, nonDining.intent().getGenericDiningCraving());
+        assertFalse(nonDining.intent().asMap().containsKey("cuisineOrPlace"));
+    }
+
+    @Test
+    void userGuidanceGenericCravingAliasAcceptsOnlyBooleanOrNullAndCanonicalWins() {
+        for (String value : List.of("true", "false", "null")) {
+            var result = extractor((system, user) -> "{\"operation\":\"ADD_STOP\",\"cuisine_or_place\":\"驴肉火烧\","
+                    + "\"is_generic_craving\":" + value + ",\"time_window\":\"LUNCH\",\"confidence\":0.96}",
+                    true, true, 0.75, 500).extract("午餐吃驴肉火烧", PlanPageContext.builder().activeDay(1).build());
+            assertEquals("LLM_STRUCTURED", result.intentExtractionSource(), value);
+            assertEquals("null".equals(value) ? null : Boolean.valueOf(value), result.intent().getGenericDiningCraving());
+        }
+        var canonical = extractor((system, user) -> """
+                {"operation":"ADD_STOP","cuisineOrPlace":"驴肉火烧","genericDiningCraving":true,"is_generic_craving":false,"confidence":0.96}
+                """, true, true, 0.75, 500).extract("午餐吃驴肉火烧", PlanPageContext.builder().activeDay(1).build());
+        assertEquals(Boolean.TRUE, canonical.intent().getGenericDiningCraving());
+    }
+
+    @Test
+    void malformedStructuredDiningFieldsFallBackRatherThanCoerceOrTruncate() {
+        for (String fields : List.of(
+                "\"genericDiningCraving\":\"false\"",
+                "\"genericDiningCraving\":1",
+                "\"is_generic_craving\":\"false\"",
+                "\"is_generic_craving\":0",
+                "\"is_generic_craving\":[]",
+                "\"cuisineOrPlace\":[\"粤菜\"]",
+                "\"cuisineOrPlace\":\"" + "菜".repeat(121) + "\"",
+                "\"timeSlot\":\"MIDNIGHT\"",
+                "\"timeSlot\":12")) {
+            LlmIntentExtractor extractor = extractor((system, user) ->
+                    "{\"operation\":\"ADD_STOP\",\"confidence\":0.99," + fields + "}", true, true, 0.75, 500);
+            var result = extractor.extract("第二天加上北仓", PlanPageContext.builder().activeDay(1).build());
+            assertEquals("INVALID_OUTPUT", result.llmFallbackReason(), fields);
+            assertEquals("DETERMINISTIC_FALLBACK", result.intentExtractionSource(), fields);
+            assertEquals(ConversationIntentType.ADD_STOP, result.intent().getType());
+        }
+    }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConversationIntentClassifier rules = new ConversationIntentClassifier();

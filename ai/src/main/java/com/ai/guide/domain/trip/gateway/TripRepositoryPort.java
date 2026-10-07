@@ -74,6 +74,11 @@ public interface TripRepositoryPort {
     void reserveIdempotency(String ownerId, String operation, String key,
                             String fingerprint, String tripId, long now);
 
+    /** Stable planner identity reservation; a conflict must not abort the SQL transaction. */
+    default void reservePlannerLink(String ownerId, String sessionId, long now) {
+        reserveIdempotency(ownerId, "PLANNER_LINK", sessionId, sessionId, "", now);
+    }
+
     /**
      * 提交成功后完成幂等记录落盘
      */

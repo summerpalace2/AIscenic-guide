@@ -23,6 +23,8 @@ class KnowledgeDocumentServiceAsyncTest {
     @Test
     void textSyncUsesProvidedExecutorAndWritesSyncedState() throws Exception {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        when(jdbcTemplate.queryForObject(contains("SELECT index_revision"), eq(Long.class), eq("doc-1"))).thenReturn(0L);
+        when(jdbcTemplate.queryForObject(contains("SELECT COUNT(*)"), eq(Integer.class), eq("doc-1"), eq(0L))).thenReturn(1);
         ScenicDataImportService dataImportService = mock(ScenicDataImportService.class);
         AtomicReference<String> threadName = new AtomicReference<>();
         CountDownLatch completed = new CountDownLatch(1);
@@ -49,7 +51,7 @@ class KnowledgeDocumentServiceAsyncTest {
             assertEquals("test-knowledge-index", threadName.get());
             verify(jdbcTemplate, org.mockito.Mockito.timeout(2000)).update(
                     contains("vector_status = 'synced'"),
-                    eq("text-doc-1"), eq(3), eq("doc-1"));
+                    eq("text-doc-1"), eq(3), eq("doc-1"), eq(0L));
         } finally {
             executor.shutdownNow();
         }

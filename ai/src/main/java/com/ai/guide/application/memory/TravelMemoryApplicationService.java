@@ -22,6 +22,8 @@ public interface TravelMemoryApplicationService {
      */
     List<TravelMemory> list(String userId);
 
+    List<TravelMemory> listPage(String userId, int limit, int offset);
+
     /**
      * 查询系统基于对话线索为当前用户挖掘的待确认记忆候选建议列表
      *
@@ -119,4 +121,6 @@ public interface TravelMemoryApplicationService {
      * @return 保存成功后的提示词内容
      */
     String saveUserCustomizedPrompt(String userId, String customPrompt);
+
+    java.util.Map<String, Object> promptDetails(String userId);
 }

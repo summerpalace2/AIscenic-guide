@@ -142,6 +142,22 @@ public class PdfExportService {
         }
     }
 
+    /** Historical exports render persisted data and range; they never re-query today's mutable service logs. */
+    public byte[] exportStoredReport(Map<String,Object> report) {
+        if(report==null)throw new IllegalArgumentException("报告不能为空");
+        String raw=java.util.Objects.toString(report.get("data"),"{}");
+        try(var out=new ByteArrayOutputStream()) {
+            var data=new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw);
+            Document document=new Document(PageSize.A4,50,50,50,50);PdfWriter.getInstance(document,out);document.open();
+            BaseFont bf=getChineseFont();Font title=new Font(bf,18,Font.BOLD),body=new Font(bf,11);
+            document.add(new Paragraph(java.util.Objects.toString(report.get("title"),"运营历史报告"),title));
+            document.add(new Paragraph("报告类型："+report.get("type")+"；统计范围："+report.get("periodStart")+" — "+report.get("periodEnd"),body));
+            document.add(new Paragraph("以下内容为报告生成时保存的数据快照。",body));
+            var fields=data.fields();while(fields.hasNext()) {var entry=fields.next();document.add(new Paragraph(entry.getKey()+"："+(entry.getValue().isTextual()?entry.getValue().asText():entry.getValue().toPrettyString()),body));}
+            document.close();return out.toByteArray();
+        }catch(Exception e){throw new IllegalStateException("历史报告快照无法导出",e);}
+    }
+
     private void addStatRow(PdfPTable table, String label, String value, BaseFont bf) {
         Font font = new Font(bf, 12, Font.NORMAL);
         PdfPCell labelCell = new PdfPCell(new Phrase(label, font));

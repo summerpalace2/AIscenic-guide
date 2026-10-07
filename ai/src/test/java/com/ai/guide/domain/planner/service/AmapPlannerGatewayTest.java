@@ -92,6 +92,8 @@ class AmapPlannerGatewayTest {
         server.expect(requestTo(containsString("/v5/place/text")))
                 .andExpect(method(GET))
                 .andRespond(withSuccess(poiJson(), MediaType.APPLICATION_JSON));
+        server.expect(requestTo(containsString("/v3/geocode/geo")))
+                .andRespond(withSuccess(cityGeocodeJson(), MediaType.APPLICATION_JSON));
         server.expect(requestTo(containsString("/v3/weather/weatherInfo")))
                 .andExpect(method(GET))
                 .andRespond(withSuccess(weatherJson(), MediaType.APPLICATION_JSON));
@@ -150,6 +152,9 @@ class AmapPlannerGatewayTest {
         assertEquals(0, result.weatherSuccess());
         assertEquals("未知", ((Map<?, ?>) day.get("weather")).get("status"));
         assertEquals(0, ((Map<?, ?>) trip.get("sourceStatus")).get("weatherDaysResolved"));
+        assertEquals(0.0, ((Map<?, ?>) trip.get("sourceStatus")).get("dataCoverage"));
+        assertEquals(true, ((Map<?, ?>) trip.get("sourceStatus")).get("fallback"));
+        assertEquals("演示回退模式", trip.get("sourceMode"));
         server.verify();
         routeService.close();
     }
@@ -197,6 +202,8 @@ class AmapPlannerGatewayTest {
         AmapRouteService routeService = new AmapRouteService(
                 new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
         AmapPlannerGateway gateway = new AmapPlannerGateway(routeService, mock(ItineraryBuilder.class));
+        server.expect(requestTo(containsString("/v3/geocode/geo")))
+                .andRespond(withSuccess(cityGeocodeJson(), MediaType.APPLICATION_JSON));
         server.expect(requestTo(containsString("/v3/weather/weatherInfo")))
                 .andExpect(method(GET))
                 .andRespond(withSuccess(weatherJson(), MediaType.APPLICATION_JSON));
@@ -236,6 +243,8 @@ class AmapPlannerGatewayTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess("{\"status\":\"1\",\"pois\":[{\"id\":\"\",\"name\":\"\",\"location\":\"\"}]}",
                         MediaType.APPLICATION_JSON));
+        server.expect(requestTo(containsString("/v3/geocode/geo")))
+                .andRespond(withSuccess(cityGeocodeJson(), MediaType.APPLICATION_JSON));
         server.expect(requestTo(containsString("/v3/weather/weatherInfo")))
                 .andExpect(method(GET))
                 .andRespond(withSuccess(weatherJson(), MediaType.APPLICATION_JSON));
@@ -269,6 +278,10 @@ class AmapPlannerGatewayTest {
         stop.put("routePreference", "walking");
         stop.put("facts", new ArrayList<>());
         return stop;
+    }
+
+    private String cityGeocodeJson() {
+        return "{\"status\":\"1\",\"geocodes\":[{\"location\":\"106.58,29.56\",\"adcode\":\"500000\"}]}";
     }
 
     private String poiJson() {

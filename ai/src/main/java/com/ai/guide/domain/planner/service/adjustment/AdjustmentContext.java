@@ -30,6 +30,8 @@ public class AdjustmentContext {
     // Output state
     private final List<Map<String, Object>> candidateReplacements = new ArrayList<>();
     private final Map<String, Map<String, Object>> optionPlans = new LinkedHashMap<>();
+    // Server-owned expected targets survive repair; never embed these in the user's trip.
+    private final Map<String, List<String>> requiredStopIdsByOption = new LinkedHashMap<>();
     private final List<String> changedSegments = new ArrayList<>();
     private List<String> unchangedStops = new ArrayList<>();
     private final List<String> reasonCodes = new ArrayList<>();
@@ -99,6 +101,10 @@ public class AdjustmentContext {
 
     public Map<String, Map<String, Object>> getOptionPlans() {
         return optionPlans;
+    }
+
+    public Map<String, List<String>> getRequiredStopIdsByOption() {
+        return requiredStopIdsByOption;
     }
 
     public List<String> getChangedSegments() {

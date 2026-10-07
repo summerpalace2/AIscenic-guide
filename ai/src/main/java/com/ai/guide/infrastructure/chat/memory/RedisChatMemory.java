@@ -155,7 +155,7 @@ public class RedisChatMemory implements ChatMemory {
     public List<Message> get(String conversationId, int lastN) {
         String key = messageKey(conversationId);
         try {
-            List<String> allMessages = redisTemplate.opsForList().range(key, 0, -1);
+            List<String> allMessages = redisTemplate.opsForList().range(key, -Math.max(1,lastN), -1);
             if (allMessages == null || allMessages.isEmpty()) {
                 return List.of();
             }
@@ -182,6 +182,9 @@ public class RedisChatMemory implements ChatMemory {
     public void clear(String conversationId) {
         String key = messageKey(conversationId);
         redisTemplate.delete(key);
+        redisTemplate.delete(conversationId + ":summary_snapshot");
+        redisTemplate.delete(conversationId + ":summary");
+        redisTemplate.delete(conversationId + ":compressed_count");
         String sKey = sessionsKey();
         if (sKey != null) {
             redisTemplate.opsForZSet().remove(sKey, conversationId);
@@ -208,6 +211,87 @@ public class RedisChatMemory implements ChatMemory {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public record HistorySnapshot(long total, List<Message> messages) {}
+    public HistorySnapshot historySnapshot(String sessionKey, int lastN) {
+        try {
+            var script=new org.springframework.data.redis.core.script.DefaultRedisScript<List>(
+                "local total=redis.call('LLEN',KEYS[1]); local rows=redis.call('LRANGE',KEYS[1],-tonumber(ARGV[1]),-1); table.insert(rows,1,tostring(total)); return rows",List.class);
+            List<?> rows=redisTemplate.execute(script,List.of(messageKey(sessionKey)),String.valueOf(Math.max(1,lastN)));
+            if (rows == null || rows.isEmpty()) return null;
+            long total=Long.parseLong(String.valueOf(rows.get(0)));var result=new ArrayList<Message>();
+            for(int n=1;n<rows.size();n++) result.add(deserializeMessage(String.valueOf(rows.get(n))));
+            return new HistorySnapshot(total,result);
+        } catch(Exception e) { log.warn("[RedisChatMemory] 历史快照读取失败: {}",e.getMessage());return null; }
+    }
+
+    public List<Message> getRange(String sessionKey, long from, int count) {
+        if (count < 1) return List.of();
+        try {
+            var rows=redisTemplate.opsForList().range(messageKey(sessionKey),Math.max(0,from),Math.max(0,from)+count-1);
+            var result=new ArrayList<Message>();
+            if (rows != null) for(String row:rows) result.add(deserializeMessage(row));
+            return result;
+        } catch(Exception e) { log.warn("[RedisChatMemory] 未覆盖消息段读取失败: {}",e.getMessage());return List.of(); }
+    }
+
+    public record SummarySnapshot(String summary, long coveredThrough, List<String> criticalConstraints, Map<String, Long> criticalOrder) {
+        public SummarySnapshot {
+            criticalConstraints = criticalConstraints == null ? List.of() : List.copyOf(criticalConstraints);
+            criticalOrder = criticalOrder == null ? Map.of() : Map.copyOf(criticalOrder);
+        }
+        public SummarySnapshot(String summary, long coveredThrough) { this(summary, coveredThrough, List.of(), Map.of()); }
+        public SummarySnapshot(String summary, long coveredThrough, List<String> constraints) { this(summary, coveredThrough, constraints, Map.of()); }
+    }
+    /** Same record as the summary: history clear already removes this key, and compression cannot overwrite constraints. */
+    public List<String> rememberCriticalConstraints(String sessionKey, List<String> constraints, int maxChars) {
+        return rememberCriticalConstraints(sessionKey, constraints, maxChars, System.currentTimeMillis() * 1000L);
+    }
+    public List<String> rememberCriticalConstraints(String sessionKey, List<String> constraints, int maxBytes, long firstSequence) {
+        if (constraints == null || constraints.isEmpty()) {
+            return summarySnapshot(sessionKey).criticalConstraints();
+        }
+        try {
+            var script = new org.springframework.data.redis.core.script.DefaultRedisScript<String>(
+                    "local raw=redis.call('GET',KEYS[1]); local obj=raw and cjson.decode(raw) or {summary=cjson.null,coveredThrough=0}; " +
+                    "local items=obj.criticalConstraints or {}; local order=obj.criticalOrder or {}; if type(items)~='table' then items={} end; if type(order)~='table' then order={} end; " +
+                    "if tonumber(ARGV[3])<1000000000000 and redis.call('LLEN',KEYS[2])<=tonumber(ARGV[3]) then return #items==0 and '[]' or cjson.encode(items) end; local seen={}; local size=0; " +
+                    "for _,v in ipairs(items) do seen[v]=true; size=size+string.len(v) end; " +
+                    "for i,v in ipairs(cjson.decode(ARGV[1])) do if not seen[v] then table.insert(items,v); seen[v]=true; size=size+string.len(v) end; order[v]=math.max(order[v] or 0,tonumber(ARGV[3])+i-1) end; " +
+                    "if size>tonumber(ARGV[2]) then return 'OVERFLOW' end; table.sort(items,function(a,b) local x=order[a] or 0; local y=order[b] or 0; return x==y and a<b or x<y end); " +
+                    "obj.criticalConstraints=items; obj.criticalOrder=order; redis.call('SET',KEYS[1],cjson.encode(obj)); return cjson.encode(items)", String.class);
+            // Redis counts UTF-8 bytes. Use a conservative byte budget rather than silently clipping restrictions.
+            String result = redisTemplate.execute(script, List.of(sessionKey + ":summary_snapshot", messageKey(sessionKey)),
+                    objectMapper.writeValueAsString(constraints), String.valueOf(maxBytes), String.valueOf(firstSequence));
+            if ("OVERFLOW".equals(result)) throw new com.ai.guide.domain.chat.service.ChatContextBudgetPolicy.ContextBudgetException(
+                    "本会话的安全与行动限制超过存储预算（UTF-8字节），请精简重复限制或清空当前会话后重新提供；本次未调用模型，已有限制仍保留。");
+            if (result == null) throw new IllegalStateException("会话限制暂时无法保存，请稍后重试；本次未调用模型。");
+            return objectMapper.readValue(result, objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+        } catch (com.ai.guide.domain.chat.service.ChatContextBudgetPolicy.ContextBudgetException e) { throw e; }
+        catch (Exception e) { throw new com.ai.guide.domain.chat.service.ChatContextBudgetPolicy.ContextReadException(); }
+    }
+    public long messageCount(String sessionKey) {
+        try { Long value = redisTemplate.opsForList().size(messageKey(sessionKey)); return value == null ? 0 : value; } catch (Exception e) { return 0; }
+    }
+    public SummarySnapshot summarySnapshot(String sessionKey) {
+        try {
+            String json = redisTemplate.opsForValue().get(sessionKey + ":summary_snapshot");
+            if (json != null) return objectMapper.readValue(json, SummarySnapshot.class);
+            return new SummarySnapshot(redisTemplate.opsForValue().get(sessionKey + ":summary"), 0);
+        } catch (Exception e) {
+            log.warn("[RedisChatMemory] 摘要与安全限制快照暂不可用");
+            throw new com.ai.guide.domain.chat.service.ChatContextBudgetPolicy.ContextReadException();
+        }
+    }
+    public void saveSummarySnapshot(String sessionKey, String summary, long coveredThrough) {
+        try {
+            String json = objectMapper.writeValueAsString(new SummarySnapshot(summary, coveredThrough));
+            // Monotonic cursor prevents an older asynchronous compression overwriting a newer one.
+            var script = new org.springframework.data.redis.core.script.DefaultRedisScript<Long>(
+                "if redis.call('LLEN',KEYS[2])<tonumber(ARGV[1]) then return 0 end; local old=redis.call('GET',KEYS[1]); local next=cjson.decode(ARGV[2]); if old then local obj=cjson.decode(old); if tonumber(obj.coveredThrough)>=tonumber(ARGV[1]) then return 0 end; next.criticalConstraints=obj.criticalConstraints; next.criticalOrder=obj.criticalOrder end; redis.call('SET',KEYS[1],cjson.encode(next)); return 1", Long.class);
+            redisTemplate.execute(script,List.of(sessionKey+":summary_snapshot",messageKey(sessionKey)),String.valueOf(coveredThrough),json);
+        } catch (Exception e) { log.warn("[RedisChatMemory] 滚动摘要保存失败: {}", e.getMessage()); }
     }
 
     /**

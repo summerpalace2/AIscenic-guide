@@ -35,6 +35,7 @@
     "ticket": "免费开放 · 无需预约",
     "bestTime": "19:30 - 22:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "洪崖洞",
       "matches": [
         "洪崖洞",
@@ -87,6 +88,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "全天可游览",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "解放碑步行街",
       "alternatives": [
         "解放碑",
@@ -148,6 +150,7 @@
     "ticket": "免费开放 · 建议刷身份证",
     "bestTime": "09:00 - 17:00 (周一闭馆)",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆中国三峡博物馆",
       "matches": [
         "重庆中国三峡博物馆",
@@ -197,6 +200,7 @@
     "ticket": "免费开放 · 无需预约",
     "bestTime": "白天光线充足时",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "李子坝轻轨站",
       "alternatives": [
         "李子坝",
@@ -254,6 +258,7 @@
     "ticket": "江岸公共区域免费",
     "bestTime": "19:30 - 22:30",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆大剧院",
       "matches": [
         "重庆大剧院",
@@ -303,6 +308,7 @@
     "ticket": "免费开放 · 无需预约",
     "bestTime": "白天至傍晚",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "磁器口古镇",
       "matches": [
         "磁器口古镇",
@@ -352,6 +358,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "全天可游览",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "魁星楼",
       "matches": [
         "魁星楼",
@@ -400,6 +407,7 @@
     "ticket": "免费开放 · 无需预约",
     "bestTime": "17:00 - 22:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "十八梯传统风貌区",
       "matches": [
         "十八梯",
@@ -449,6 +457,7 @@
     "ticket": "园区免费 · 部分天台另收清洁费",
     "bestTime": "下午至日落时分",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "鹅岭二厂",
       "matches": [
         "鹅岭二厂",
@@ -497,6 +506,7 @@
     "ticket": "需购票 · 单程约20元",
     "bestTime": "傍晚日落或华灯初上时",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "长江索道",
       "matches": [
         "长江索道",
@@ -545,6 +555,7 @@
     "ticket": "需门票 · 约30元",
     "bestTime": "19:30 - 22:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "南山一棵树观景台",
       "matches": [
         "南山一棵树",
@@ -595,6 +606,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "18:00 - 21:30",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "长嘉汇弹子石老街",
       "matches": [
         "弹子石老街",
@@ -644,6 +656,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "傍晚至深夜",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "观音桥步行街",
       "matches": [
         "观音桥步行街",
@@ -692,6 +705,7 @@
     "ticket": "门票约 20 元 (含香火券)",
     "bestTime": "08:30 - 17:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "罗汉寺",
       "matches": [
         "罗汉寺",
@@ -740,6 +754,7 @@
     "ticket": "需购票 · 约25元",
     "bestTime": "09:00 - 17:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆湖广会馆",
       "matches": [
         "湖广会馆",
@@ -788,6 +803,7 @@
     "ticket": "街区免费 · 纪念馆免费开放",
     "bestTime": "上午或午后阳光斑驳时",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "中山四路",
       "matches": [
         "中山四路",
@@ -838,6 +854,7 @@
     "ticket": "需购票 · 约50元",
     "bestTime": "09:00 - 17:00 (周一闭馆)",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "白鹤梁水下博物馆",
       "matches": [
         "白鹤梁水下博物馆",
@@ -885,6 +902,7 @@
     "ticket": "需门票及中转车",
     "bestTime": "四季皆宜 · 清晨烟雾缭绕最佳",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "武隆天生三桥",
       "matches": [
         "武隆天生三桥",
@@ -931,6 +949,7 @@
     "ticket": "需门票",
     "bestTime": "08:30 - 17:00",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "大足石刻",
       "matches": [
         "大足石刻",
@@ -981,6 +1000,7 @@
     "ticket": "需门票",
     "bestTime": "下午至晚间",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "融汇温泉",
       "matches": [
         "重庆融汇温泉",
@@ -1031,6 +1051,7 @@
     "ticket": "景区免费 · 温泉另购",
     "bestTime": "四季皆宜",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "南温泉风景区",
       "matches": [
         "南温泉",
@@ -1078,6 +1099,7 @@
     "ticket": "免费开放 · 需提前实名预约",
     "bestTime": "09:00 - 16:30",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "渣滓洞",
       "matches": [
         "渣滓洞",
@@ -1127,6 +1149,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "午后至傍晚",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "马鞍山传统风貌区",
       "matches": [
         "马鞍山",
@@ -1176,6 +1199,7 @@
     "ticket": "免费开放 · 全天",
     "bestTime": "全天可游览",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "北仓文创街区",
       "matches": [
         "北仓",
@@ -1226,6 +1250,7 @@
     "ticket": "开放与预约以官方当日信息为准",
     "bestTime": "雨天或下午室内时段",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆科技馆",
       "matches": [
         "重庆科技馆",
@@ -1276,6 +1301,7 @@
     "ticket": "开放与预约以官方当日信息为准",
     "bestTime": "上午或雨天半日",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆自然博物馆",
       "matches": [
         "重庆自然博物馆",
@@ -1325,6 +1351,7 @@
     "ticket": "展览与开放安排以馆方当日信息为准",
     "bestTime": "午后或雨天",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆美术馆",
       "matches": [
         "重庆美术馆",
@@ -1374,6 +1401,7 @@
     "ticket": "入内开放信息以官方当日信息为准",
     "bestTime": "博物馆前后或傍晚",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆人民大礼堂",
       "matches": [
         "重庆人民大礼堂",
@@ -1423,6 +1451,7 @@
     "ticket": "公共广场免费开放 · 动态管理以现场为准",
     "bestTime": "傍晚至夜间",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "朝天门广场",
       "matches": [
         "朝天门广场",
@@ -1472,6 +1501,7 @@
     "ticket": "商业空间开放以商场当日信息为准",
     "bestTime": "午间、雨天或夜景前后",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆来福士广场",
       "matches": [
         "重庆来福士",
@@ -1521,6 +1551,7 @@
     "ticket": "公共滨江区域免费开放",
     "bestTime": "亮灯后至夜间",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "南滨路",
       "matches": [
         "南滨路",
@@ -1570,6 +1601,7 @@
     "ticket": "班次、票价和登船码头以官方当日信息为准",
     "bestTime": "夜间班次",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆两江游",
       "matches": [
         "重庆两江游",
@@ -1620,6 +1652,7 @@
     "ticket": "公共街区开放以现场为准",
     "bestTime": "下午至傍晚",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "龙门浩老街",
       "matches": [
         "龙门浩老街",
@@ -1669,6 +1702,7 @@
     "ticket": "票务与开放信息以官方当日信息为准",
     "bestTime": "上午或避开高温时段",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆动物园",
       "matches": [
         "重庆动物园",
@@ -1718,6 +1752,7 @@
     "ticket": "开放与预约以官方当日信息为准",
     "bestTime": "上午或下午室内时段",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "红岩革命纪念馆",
       "matches": [
         "红岩革命纪念馆",
@@ -1767,6 +1802,7 @@
     "ticket": "展馆开放与票务以官方当日信息为准",
     "bestTime": "下午室内时段",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "重庆建川博物馆",
       "matches": [
         "重庆建川博物馆",
@@ -1819,6 +1855,7 @@
     "ticket": "免费开放 · 无需门票",
     "bestTime": "上午或下午日间漫步",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "白沙古镇",
       "matches": [
         "白沙古镇",
@@ -1870,6 +1907,7 @@
     "ticket": "国家5A级景区门票",
     "bestTime": "上午至下午日间游览",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "四面山风景名胜区",
       "matches": [
         "四面山",
@@ -1922,6 +1960,7 @@
     "ticket": "免费开放 · 凭有效身份证件入馆",
     "bestTime": "上午或下午室内时段",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "聂荣臻元帅陈列馆",
       "matches": [
         "聂荣臻元帅陈列馆",
@@ -1973,6 +2012,7 @@
     "ticket": "免费开放 · 全天游览",
     "bestTime": "上午或下午闲步品茶",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "中山古镇",
       "matches": [
         "中山古镇",
@@ -2026,6 +2066,7 @@
     "ticket": "免费开放 · 全天漫步",
     "bestTime": "18:30-22:00夜间江风漫步与夜景摄影",
     "amapQuery": {
+      "city": "重庆市",
       "keywords": "几江滨江路",
       "matches": [
         "几江滨江路",

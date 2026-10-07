@@ -12,6 +12,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 
 /**
  * 高德路线与地理编码两级请求缓存
@@ -52,11 +53,16 @@ public final class AmapRequestCache {
                     boolean dedupEnabled,
                     Supplier<T> loader,
                     Predicate<T> cacheable) {
+        return getOrLoad(key, cacheEnabled, dedupEnabled, loader, result -> cacheable.test(result) ? ttlNanos : 0L);
+    }
+
+    public <T> T getOrLoad(RequestKey key, boolean cacheEnabled, boolean dedupEnabled,
+                          Supplier<T> loader, ToLongFunction<T> resultTtl) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(loader, "loader");
-        Objects.requireNonNull(cacheable, "cacheable");
+        Objects.requireNonNull(resultTtl, "resultTtl");
 
-        if (cacheEnabled && ttlNanos > 0) {
+        if (cacheEnabled) {
             CacheEntry cached = completed.get(key);
             if (cached != null) {
                 if (cached.expiresAtNanos() > ticker.getAsLong()) {
@@ -66,7 +72,11 @@ public final class AmapRequestCache {
             }
         }
 
-        if (!dedupEnabled) return loader.get();
+        if (!dedupEnabled) {
+            T result = loader.get();
+            cacheResult(key, result, cacheEnabled, resultTtl);
+            return result;
+        }
 
         CompletableFuture<Object> ownerFuture = new CompletableFuture<>();
         CompletableFuture<Object> sharedFuture = inFlight.putIfAbsent(key, ownerFuture);
@@ -74,9 +84,7 @@ public final class AmapRequestCache {
 
         try {
             T result = loader.get();
-            if (cacheEnabled && ttlNanos > 0 && cacheable.test(result)) {
-                put(key, result, ticker.getAsLong() + ttlNanos);
-            }
+            cacheResult(key, result, cacheEnabled, resultTtl);
             ownerFuture.complete(result);
             return result;
         } catch (Throwable failure) {
@@ -84,6 +92,15 @@ public final class AmapRequestCache {
             throw propagate(failure);
         } finally {
             inFlight.remove(key, ownerFuture);
+        }
+    }
+    private <T> void cacheResult(RequestKey key, T result, boolean enabled, ToLongFunction<T> resultTtl) {
+        if (!enabled) return;
+        long ttl = resultTtl.applyAsLong(result);
+        if (ttl > 0) {
+            long now = ticker.getAsLong();
+            long expiry = now > Long.MAX_VALUE - ttl ? Long.MAX_VALUE : now + ttl;
+            put(key, result, expiry);
         }
     }
 

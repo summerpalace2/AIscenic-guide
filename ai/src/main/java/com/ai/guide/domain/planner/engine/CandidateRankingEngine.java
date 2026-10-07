@@ -146,38 +146,17 @@ public class CandidateRankingEngine {
     }
 
     public boolean isOpeningCompatible(Attraction attraction, String slotTime, ItineraryTimeEngine timeEngine) {
-        if (attraction == null || slotTime == null || slotTime.isBlank()) return true;
-        int slotMinutes = timeEngine == null ? 720 : timeEngine.parseTimeMinutes(slotTime);
-        if (slotMinutes <= 0) return true;
+        return attraction == null || OpeningHoursPolicy.isTimeOpen(OpeningHoursPolicy.evidence(attraction.getOpeningHours(), attraction.getBestTime()), slotTime);
+    }
 
-        // 跨午夜拦截：当天排程大于等于 24:00 (1440 分钟) 或携带跨天标记视为不可行
-        if (slotMinutes >= 24 * 60 || slotTime.contains("(+")) {
-            return false;
-        }
+    public boolean isOpeningCompatible(Attraction attraction, String slotTime, String date, ItineraryTimeEngine timeEngine) {
+        String evidence = attraction == null ? "" : OpeningHoursPolicy.evidence(attraction.getOpeningHours(), attraction.getBestTime());
+        return attraction == null || (OpeningHoursPolicy.isTimeOpen(evidence, slotTime)
+                && !OpeningHoursPolicy.isClosed(evidence, date, slotTime));
+    }
 
-        // 索道与高空观光设施官方营业时间门禁：通常 08:00 - 22:00（21:30 停止检票/售票）
-        String attrName = safe(attraction.getName());
-        String attrCat = safe(attraction.getCategory());
-        boolean isCableway = attrName.contains("索道") || attrCat.contains("索道")
-                || (attraction.getTags() != null && attraction.getTags().contains("索道"));
-        if (isCableway) {
-            if (slotMinutes < 8 * 60 || slotMinutes >= 22 * 60) {
-                return false;
-            }
-        }
-
-        // 博物馆/陈列馆/科技馆类通常 17:00 闭馆
-        String bestTime = safe(attraction.getBestTime());
-        String category = safe(attraction.getCategory());
-        String name = safe(attraction.getName());
-        if (bestTime.contains("17:00") || category.contains("博物馆") || name.contains("博物馆") || name.contains("陈列馆")) {
-            if (slotMinutes >= 17 * 60) {
-                return false;
-            }
-        }
-
-        boolean isEve = timeEngine != null && timeEngine.isEveningSlot(slotTime);
-        return !(bestTime.contains("17:00") && isEve);
+    public static boolean isClosedOnDate(Attraction attraction, String date) {
+        return attraction != null && OpeningHoursPolicy.isClosed(OpeningHoursPolicy.evidence(attraction.getOpeningHours(), attraction.getBestTime()), date, null);
     }
 
     private String safe(Object val) {

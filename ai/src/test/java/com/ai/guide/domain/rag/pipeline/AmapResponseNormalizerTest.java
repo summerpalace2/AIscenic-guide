@@ -13,6 +13,20 @@ class AmapResponseNormalizerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void preservesV5CategoryAndNestedBusinessAreaWithV3Fallback() throws Exception {
+        var response = objectMapper.readTree("""
+                {"status":"1","pois":[
+                  {"id":"museum","typecode":"140600","business":{"business_area":"本地商圈"},"business_area":"旧字段"},
+                  {"id":"legacy","typecode":"110101","business_area":"兼容商圈"}
+                ]}
+                """);
+        var candidates = AmapResponseNormalizer.normalizePois(response);
+        assertEquals("140600", candidates.get(0).typecode());
+        assertEquals("本地商圈", candidates.get(0).businessArea());
+        assertEquals("兼容商圈", candidates.get(1).businessArea());
+    }
+
+    @Test
     void preservesFirstUsablePoiPhotoAndTitle() throws Exception {
         var response = objectMapper.readTree("""
                 {"status":"1","pois":[{"id":"poi-1","name":"洪崖洞","location":"106.58,29.56","photos":[{"url":"","title":"空图"},{"src":"https://example.invalid/hongya.jpg","title":"夜景"}]}]}

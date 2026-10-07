@@ -64,20 +64,26 @@ class VoiceApplicationServiceImplTest {
     }
 
     @Test
-    @DisplayName("synthesize - 非法音色与语种回退默认值并成功委派网关")
-    void testSynthesizeFallbackParams() {
-        byte[] bytes = new byte[]{10, 20};
-        when(voiceGatewayPort.synthesize(eq("重庆欢迎你"), eq("106"), eq("zh")))
-                .thenReturn(ResponseEntity.ok(bytes));
-
-        // 传入非法音色 999 与非法语种 fr，应回落为 106 与 zh
-        ResponseEntity<byte[]> resp = service.synthesize(Map.of(
-                "text", "重庆欢迎你",
-                "voice", "999",
-                "lang", "fr"
-        ));
-        assertEquals(HttpStatus.OK, resp.getStatusCode());
-        assertArrayEquals(bytes, resp.getBody());
-        verify(voiceGatewayPort).synthesize(eq("重庆欢迎你"), eq("106"), eq("zh"));
+    void explicitInvalidVoiceAndLanguageRejectWithoutCallingSupplier() {
+        assertEquals(400, service.synthesize(Map.of("text","重庆欢迎你","voice","999","lang","fr")).getStatusCode().value());
+        var nullable=new java.util.HashMap<String,String>(); nullable.put("audio",null);
+        assertEquals(400, service.transcribe(nullable).getCode());
+        nullable.clear();nullable.put("text",null);
+        assertEquals(400, service.synthesize(nullable).getStatusCode().value());
+        assertEquals(400,service.transcribe(Map.of("audio","AQI=","dev_pid","invalid")).getCode());
+        assertEquals(400,service.transcribe(Map.of("audio","data:audio/mp3;base64,AQI=")).getCode());
+        assertEquals(413,service.synthesize(Map.of("text","a".repeat(2001))).getStatusCode().value());
+        verifyNoInteractions(voiceGatewayPort);
+    }
+    @Test
+    void disabledTtsReadsLiveRuntimeSetting() {
+        var repository=mock(com.ai.guide.domain.admin.gateway.AppConfigRepositoryPort.class);
+        when(repository.readConfig("settings_")).thenReturn(Map.of("ttsEnabled","false"));
+        ((VoiceApplicationServiceImpl)service).setRuntimePolicy(new com.ai.guide.domain.admin.service.RuntimeSettingsPolicy(repository));
+        assertEquals(503,service.synthesize(Map.of("text","hello")).getStatusCode().value());
+        verifyNoInteractions(voiceGatewayPort);
+        when(repository.readConfig("settings_")).thenReturn(Map.of("ttsEnabled","true"));
+        when(voiceGatewayPort.synthesize("hello","106","zh")).thenReturn(ResponseEntity.ok(new byte[]{1}));
+        assertEquals(200,service.synthesize(Map.of("text","hello")).getStatusCode().value());
     }
 }

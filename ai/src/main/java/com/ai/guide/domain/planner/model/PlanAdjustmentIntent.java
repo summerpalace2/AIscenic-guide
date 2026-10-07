@@ -16,7 +16,7 @@ import java.util.Map;
  * 架构职责：承载自然语言分类器或大模型解析出的具体调整意图、目标天数、目标站点、替换候选索引及置信度。
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
 public class PlanAdjustmentIntent {
@@ -51,12 +51,24 @@ public class PlanAdjustmentIntent {
     private Integer candidateIndex;
     private String targetAttractionId;
     private String timeSlot;
+    /** Half-open adjustment interval; all stops outside it remain unchanged. */
+    private Integer targetStartMinute;
+    private Integer targetEndMinute;
+    /** Server-owned continuation resolution; never accepted from an external DTO. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private boolean timeScopeResolved;
+    /** Pure cuisine/dish or venue extracted by the server model; null means legacy fallback. */
+    private String cuisineOrPlace;
+    /** Tri-state: null means unknown, true a food category, false a specific venue. */
+    private Boolean genericDiningCraving;
     private String clarificationQuestion;
     @Builder.Default
     private double confidence = 1.0;
     @Builder.Default
     private boolean requiresClarification = false;
     private String rawMessage;
+    @Builder.Default
+    private List<String> compoundActions = new ArrayList<>();
 
     public String getOperation() {
         if (operation != null && !operation.isBlank()) return operation;
@@ -104,7 +116,11 @@ public class PlanAdjustmentIntent {
         if (proposalId != null && !proposalId.isBlank()) map.put("proposalId", proposalId);
         if (optionId != null && !optionId.isBlank()) map.put("optionId", optionId);
         if (candidateIndex != null) map.put("candidateIndex", candidateIndex);
+        if (targetStartMinute != null) map.put("targetStartMinute", targetStartMinute);
+        if (targetEndMinute != null) map.put("targetEndMinute", targetEndMinute);
         if (timeSlot != null && !timeSlot.isBlank()) map.put("timeSlot", timeSlot);
+        if (cuisineOrPlace != null && !cuisineOrPlace.isBlank()) map.put("cuisineOrPlace", cuisineOrPlace);
+        if (genericDiningCraving != null) map.put("genericDiningCraving", genericDiningCraving);
         if (clarificationQuestion != null && !clarificationQuestion.isBlank()) map.put("clarificationQuestion", clarificationQuestion);
         map.put("confidence", confidence);
         map.put("requiresClarification", requiresClarification);

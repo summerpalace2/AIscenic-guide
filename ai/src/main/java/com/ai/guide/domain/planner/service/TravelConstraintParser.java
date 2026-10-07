@@ -3,6 +3,8 @@ package com.ai.guide.domain.planner.service;
 import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
@@ -27,6 +29,9 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
     private static final Pattern DEPARTURE = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回重庆以外|回家|回)");
     private static final Pattern DAYS = Pattern.compile("([一二三四五六七八九十\\d]+)\\s*天");
     private static final Pattern TIME_BUDGET = Pattern.compile("(半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟))");
+    private static final Pattern CLOCK_DEPARTURE_CLAUSE = Pattern.compile(
+            "\\s*(?:(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)\\s*)?"
+                    + "(?:\\d{1,2}|[一二两三四五六七八九十]+)(?::\\d{2}|点|时)(?:半|\\d{1,2}分?)?\\s*(?:出发|起步|动身)");
     private static final Pattern TIME_INTERVAL = Pattern.compile(
             "(?:从)?\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?\\s*(?:到|至|\\-|~|——|—)\\s*(早上|早晨|上午|中午|下午|傍晚|晚上|夜间)?\\s*(\\d{1,2}(?::\\d{2})?|[一二两三四五六七八九十百]+)(?:点|时)?(半)?");
     private static final Pattern EXPLICIT_START_PLACE = Pattern.compile(
@@ -55,6 +60,12 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private final ConstraintConflictDetector conflictDetector;
     private final LlmShadowPreferenceExtractor shadowExtractor;
+    private TaxonomyPort taxonomy = new TaxonomyProvider();
+
+    @Autowired(required = false)
+    public void setTaxonomy(TaxonomyPort taxonomy) {
+        if (taxonomy != null) this.taxonomy = taxonomy;
+    }
 
     @Autowired
     public TravelConstraintParser(ConstraintConflictDetector conflictDetector,
@@ -207,7 +218,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         String diet = positiveKeyword(source, "素食") ? "素食"
                 : positiveKeyword(source, "清真") ? "清真"
                 : positiveKeyword(source, "清淡不辣") || positiveKeyword(source, "清淡") ? "清淡不辣"
-                : positiveKeyword(source, "九宫格老火锅") || positiveKeyword(source, "九宫格火锅") || positiveKeyword(source, "火锅") ? "重庆火锅"
+                : positiveKeyword(source, "九宫格老火锅") || positiveKeyword(source, "九宫格火锅") || positiveKeyword(source, "火锅") ? "火锅"
                 : positiveKeyword(source, "地道江湖菜") || positiveKeyword(source, "江湖菜") ? "地道江湖菜"
                 : positiveKeyword(source, "街头小吃小面") || positiveKeyword(source, "小吃") || positiveKeyword(source, "小面") ? "街头小吃"
                 : positiveKeyword(source, "本地菜优先") || positiveKeyword(source, "本地菜") || positiveKeyword(source, "美食") || positiveKeyword(source, "吃") ? "本地菜优先" : "未提供";
@@ -235,7 +246,8 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
         List<String> mustVisit = extractMustVisit(source);
         Map<String, ConstraintOrigin> origins = new LinkedHashMap<>();
-        if (source.contains("重庆") || source.contains("成都") || source.contains("西安")) origins.put("destination", ConstraintOrigin.PROMPT);
+        Destination destination = resolveDestination(activeSource);
+        if (destination.explicit()) origins.put("destination", ConstraintOrigin.PROMPT);
         if (startPlaceFound) origins.put("startPlace", ConstraintOrigin.PROMPT);
         if (timeBudgetFound) origins.put("timeBudgetMinutes", ConstraintOrigin.PROMPT);
         if (arrivalFound || intervalArrival != null) origins.put("arrivalAt", ConstraintOrigin.PROMPT);
@@ -252,18 +264,13 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         if (!avoid.isEmpty()) origins.put("avoid", ConstraintOrigin.PROMPT);
 
         List<String> missing = criticalMissing(arrivalFound || intervalArrival != null, departureFound || intervalDeparture != null, daysFound || durationSpecified);
+        if (destination.city() == null) missing.add("destination");
         LlmShadowPreferenceExtractor.ShadowExtractionResult shadow = shadowExtractor != null
                 ? shadowExtractor.extractShadowPreferences(source)
                 : null;
 
-        String resolvedDestination = "重庆";
-        if (source != null) {
-            if (source.contains("成都")) resolvedDestination = "成都";
-            else if (source.contains("西安")) resolvedDestination = "西安";
-        }
-
         return TravelConstraints.builder()
-                .destination(resolvedDestination)
+                .destination(destination.city())
                 .startPlace(extractedStartPlace)
                 .timeBudgetMinutes(timeBudgetMinutes)
                 .arrivalAt(arrivalAt)
@@ -284,6 +291,27 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
                 .rawPrompt(source)
                 .origins(origins)
                 .build();
+    }
+
+    private record Destination(String city, boolean explicit) {}
+
+    private Destination resolveDestination(String source) {
+        Map<String,String> aliases = taxonomy.getCityAliases();
+        List<Map.Entry<String,String>> matches = aliases.entrySet().stream()
+                .filter(entry -> positiveKeyword(source, entry.getKey()))
+                .sorted(java.util.Comparator.<Map.Entry<String,String>>comparingInt(entry -> entry.getKey().length()).reversed())
+                .toList();
+        Set<String> cities = new LinkedHashSet<>();
+        List<String> acceptedNames = new ArrayList<>();
+        for (var match : matches) {
+            if (acceptedNames.stream().anyMatch(name -> name.contains(match.getKey()))) continue;
+            acceptedNames.add(match.getKey());
+            cities.add(match.getValue());
+        }
+        if (cities.size() == 1) return new Destination(cities.iterator().next(), true);
+        if (cities.size() > 1) return new Destination(null, true);
+        List<String> defaults = taxonomy.getHints("defaultDestination");
+        return new Destination(defaults.isEmpty() ? null : defaults.get(0), false);
     }
 
     private int calculateDaysFromDayOfWeek(String arrivalAt, String departureAt) {
@@ -390,6 +418,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         boolean duration = constraints.originOf("durationDays") != ConstraintOrigin.DEFAULT
                 || constraints.getTimeBudgetMinutes() > 0 || arrival || departure;
         List<String> missing = criticalMissing(arrival, departure, duration);
+        if (constraints.getDestination() == null || constraints.getDestination().isBlank()) missing.add("destination");
         constraints.setCriticalMissingFields(missing);
         constraints.setNeedsClarification(!missing.isEmpty());
     }
@@ -523,6 +552,10 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private String normalizeStartPlace(String value) {
         if (value == null || value.isBlank()) return "未提供";
+        // A departure clock is a separate clause, even without punctuation.
+        // Match clock grammar plus an action, rather than special-casing any place name.
+        Matcher departureClause = CLOCK_DEPARTURE_CLAUSE.matcher(value);
+        if (departureClause.find()) value = value.substring(0, departureClause.start());
         String normalized = value.trim()
                 .replaceFirst("^(?:的|在)\\s*", "")
                 .replaceFirst("(?:出发|开始|作为起点)$", "")

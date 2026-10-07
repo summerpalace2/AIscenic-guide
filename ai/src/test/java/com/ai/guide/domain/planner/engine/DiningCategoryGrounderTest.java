@@ -1,11 +1,26 @@
 package com.ai.guide.domain.planner.engine;
 
 import org.junit.jupiter.api.Test;
+import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class DiningCategoryGrounderTest {
 
     private final DiningCategoryGrounder grounder = new DiningCategoryGrounder();
+
+    @Test
+    void sharedTaxonomyUpdatesAreVisibleWithoutRecreatingGrounder() {
+        TaxonomyPort taxonomy = mock(TaxonomyPort.class);
+        AtomicBoolean activeBrand = new AtomicBoolean(false);
+        when(taxonomy.isKnownBrand("星河拾味")).thenAnswer(invocation -> activeBrand.get());
+        grounder.setTaxonomy(taxonomy);
+        assertFalse(grounder.hasDiningKeywords("星河拾味"));
+        activeBrand.set(true);
+        assertTrue(grounder.hasDiningKeywords("星河拾味"));
+        assertFalse(grounder.isGenericDiningCraving("星河拾味"));
+    }
 
     @Test
     void testGenericFoodCravingsAreIdentifiedWithoutHardcoding() {
@@ -43,7 +58,7 @@ class DiningCategoryGrounderTest {
         assertEquals("西式快餐轻食", grounder.resolveRequestedFlavor("我想吃汉堡", "特色美食"));
         assertEquals("西式快餐轻食", grounder.resolveRequestedFlavor("把午餐改成披萨", "特色美食"));
         assertEquals("特色甜品糖水", grounder.resolveRequestedFlavor("我想吃点甜食的", "特色美食"));
-        assertEquals("重庆火锅", grounder.resolveRequestedFlavor("我想吃火锅", "特色美食"));
+        assertEquals("火锅", grounder.resolveRequestedFlavor("我想吃火锅", "特色美食"));
         assertEquals("特色烧烤烤肉", grounder.resolveRequestedFlavor("晚上吃点烧烤", "特色美食"));
 
         assertEquals("TEA_BREAK", grounder.resolveSlotType("我想吃点甜食的"));

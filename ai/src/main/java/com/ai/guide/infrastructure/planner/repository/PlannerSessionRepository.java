@@ -138,17 +138,28 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     }
 
     @Override
+    public StoredSession claimAnonymous(String sessionId, String accessToken, String userId) {
+        if (sessionId == null || accessToken == null || accessToken.isBlank() || userId == null || userId.isBlank()) return null;
+        // One conditional write is the ownership boundary, including concurrent claims.
+        jdbcTemplate.update("UPDATE planner_session SET owner_type = 'USER', owner_id = ?, access_token_hash = '', "
+                + "claimed_idempotency_key = idempotency_key, idempotency_key = NULL, updated_at = ? WHERE session_id = ? AND owner_type = 'ANONYMOUS' AND access_token_hash = ?",
+                userId, System.currentTimeMillis(), sessionId, sha256(accessToken));
+        return find(sessionId, "USER", userId, "");
+    }
+
+    @Override
     public StoredSession findByIdempotency(String ownerType, String ownerId, String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) return null;
         List<StoredSession> rows = jdbcTemplate.query(
                 "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
                         "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE owner_type = ? AND owner_id = ? AND idempotency_key = ?",
+                        "FROM planner_session WHERE owner_type = ? AND owner_id = ? AND (idempotency_key = ? OR claimed_idempotency_key = ?)",
                 (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
                         rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
                         rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
                         rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
-                ownerType, ownerId, idempotencyKey);
+                ownerType, ownerId, idempotencyKey, idempotencyKey);
+        if (rows.size() > 1) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "该幂等键在认领前后对应多个草稿，请恢复指定会话或使用新键。");
         return rows.isEmpty() ? null : rows.get(0);
     }
 

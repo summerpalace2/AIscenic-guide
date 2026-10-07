@@ -295,7 +295,7 @@ public class IntentRadarService {
      */
     public RadarResult scan(String message) {
         if (message == null || message.trim().length() < 2) return null;
-        String text = message.trim();
+        String text = com.ai.guide.domain.planner.service.IntentLanguagePolicy.positiveText(message.trim());
 
         // 避免纯系统指令被误判为微调诉求
         if (text.startsWith("/") || text.matches("^(确定|取消|返回|跳过|刷新|是|否|好|对)$")) {

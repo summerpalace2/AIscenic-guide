@@ -44,13 +44,18 @@ public class TripService {
     private final TripRepositoryPort repository;
     private final TripReplanEngine replanEngine;
     private final ObjectMapper objectMapper;
+    private TripPlanLimits planLimits;
 
     public TripService(TripRepositoryPort repository, TripReplanEngine replanEngine,
                        ObjectMapper objectMapper) {
         this.repository = repository;
         this.replanEngine = replanEngine;
         this.objectMapper = objectMapper;
+        this.planLimits = new TripPlanLimits(objectMapper);
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setPlanLimits(TripPlanLimits planLimits) { this.planLimits = planLimits; }
 
     public List<Trip> list(String ownerId) {
         return repository.list(owner(ownerId));
@@ -63,7 +68,8 @@ public class TripService {
     @Transactional
     public OperationResult create(String ownerId, Map<String, Object> request) {
         String effectiveOwner = owner(ownerId);
-        WriteInput input = parseWrite(request);
+        WriteInput input;
+        try { input = parseWrite(request); } catch (IllegalArgumentException invalid) { return OperationResult.badRequest(invalid.getMessage()); }
         String fingerprint = fingerprint("CREATE", input.title(), input.plan(), input.idempotencyKey());
         OperationResult replay = replay(effectiveOwner, "CREATE", input.idempotencyKey(), fingerprint);
         if (replay != null) return replay;
@@ -71,6 +77,10 @@ public class TripService {
         String tripId = "trip-" + UUID.randomUUID();
         Map<String, Object> snapshot = withFormalId(input.plan(), tripId);
         String title = title(input.title(), snapshot);
+        snapshot.put("title", title);
+        try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
+            return OperationResult.badRequest(invalid.getMessage());
+        }
         long now = System.currentTimeMillis();
         try {
             OperationResult reserved = reserveIdempotency(effectiveOwner, "CREATE", input.idempotencyKey(), fingerprint, tripId, now);
@@ -95,7 +105,14 @@ public class TripService {
         if (requiredExpectedVersion(body) == null) {
             return OperationResult.badRequest("expectedVersion 为必填整数");
         }
-        WriteInput input = parseWrite(body);
+        WriteInput input;
+        try { input = parseWrite(body); } catch (IllegalArgumentException invalid) {
+            Trip existing = repository.find(effectiveOwner, tripId);
+            if (existing == null) return OperationResult.notFound("行程不存在");
+            int expected = requiredExpectedVersion(body);
+            if (expected != existing.currentVersion()) return conflict(tripId, expected, existing);
+            return OperationResult.badRequest(invalid.getMessage());
+        }
         String fingerprint = fingerprint("UPDATE", tripId, input.title(), input.plan(),
                 input.expectedVersion(), input.idempotencyKey());
         OperationResult replay = replay(effectiveOwner, "UPDATE", input.idempotencyKey(), fingerprint);
@@ -108,6 +125,10 @@ public class TripService {
 
         Map<String, Object> snapshot = withFormalId(input.plan(), tripId);
         String title = title(input.title().isBlank() ? current.title() : input.title(), snapshot);
+        snapshot.put("title", title);
+        try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
+            return OperationResult.badRequest(invalid.getMessage());
+        }
         if (sameSnapshot(current.plan(), snapshot) && current.title().equals(title)) {
             OperationResult reserved = reserveIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey(), fingerprint,
                     tripId, System.currentTimeMillis());
@@ -147,6 +168,12 @@ public class TripService {
             Map<String, Object> rebased = tryRebase(current.plan(), latest.plan(), snapshot);
             if (rebased != null) {
                 snapshot = withFormalId(rebased, tripId);
+                title = title(text(snapshot.get("title")), snapshot);
+                snapshot.put("title", title);
+                try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
+                    repository.deleteIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey());
+                    return OperationResult.badRequest(invalid.getMessage());
+                }
                 expected = latest.currentVersion();
                 nextVersion = expected + 1;
                 now = System.currentTimeMillis();
@@ -196,6 +223,10 @@ public class TripService {
         }
         Map<String, Object> snapshot = withFormalId(replanned.plan(), tripId);
         String title = title(current.title(), snapshot);
+        snapshot.put("title", title);
+        try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
+            return OperationResult.badRequest(invalid.getMessage());
+        }
         if (sameSnapshot(current.plan(), snapshot)) {
             OperationResult reserved = reserveIdempotency(effectiveOwner, "REPLAN", idempotencyKey, fingerprint,
                     tripId, System.currentTimeMillis());
@@ -266,10 +297,73 @@ public class TripService {
     @Transactional
     public OperationResult savePlannerSnapshot(String ownerId, Map<String, Object> plan,
                                                String idempotencyKey) {
+        String effectiveOwner = owner(ownerId);
+        Map<String, Object> snapshot = copyMap(plan);
+        try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
+            return OperationResult.badRequest(invalid.getMessage());
+        }
+        String key = text(idempotencyKey);
+        String requestFingerprint = fingerprint("PLANNER_SAVE", plannerBusinessSnapshot(snapshot));
+        OperationResult replay = replay(effectiveOwner, "PLANNER_SAVE", key, requestFingerprint);
+        if (replay != null) {
+            String requestedTripId = text(snapshot.get("formalTripId"));
+            if (replay.trip() != null && !requestedTripId.isBlank()
+                    && !requestedTripId.equals(replay.trip().id())) {
+                return OperationResult.idempotencyConflict(replay.trip().id(), replay.trip().currentVersion());
+            }
+            return replay;
+        }
+        // This identity survives a process failure between committing the formal Trip
+        // and linking its draft. Reserve it in the same transaction as the Trip write.
+        String plannerSessionId = text(snapshot.get("plannerSessionId"));
+        if (!plannerSessionId.isBlank()) {
+            repository.reservePlannerLink(effectiveOwner, plannerSessionId, System.currentTimeMillis());
+            TripRepositoryPort.IdempotencyRecord link = repository.findIdempotency(
+                    effectiveOwner, "PLANNER_LINK", plannerSessionId);
+            if (link != null && !text(link.tripId()).isBlank()) {
+                String requestedTripId = text(snapshot.get("formalTripId"));
+                if (!requestedTripId.isBlank() && !requestedTripId.equals(link.tripId())) {
+                    return OperationResult.idempotencyConflict(link.tripId(), link.versionNumber());
+                }
+                snapshot.put("formalTripId", link.tripId());
+                if (sourceTripVersion(snapshot.get("sourceTripVersion")) == null) {
+                    snapshot.put("sourceTripVersion", link.versionNumber());
+                }
+            }
+        }
+        OperationResult reserved = reserveIdempotency(effectiveOwner, "PLANNER_SAVE", key,
+                requestFingerprint, text(snapshot.get("formalTripId")), System.currentTimeMillis());
+        if (reserved != null) return reserved;
+        // The outer bridge owns the save key across CREATE, ID linking and UPDATE.
+        // Internal mutations do not reuse it in different operation namespaces.
+        OperationResult result = savePlannerSnapshotInternal(effectiveOwner, snapshot);
+        if (result.status() >= 400 || result.trip() == null) {
+            repository.deleteIdempotency(effectiveOwner, "PLANNER_SAVE", key);
+            if (!plannerSessionId.isBlank()) {
+                var link = repository.findIdempotency(effectiveOwner, "PLANNER_LINK", plannerSessionId);
+                if (link != null && link.versionNumber() == 0) {
+                    repository.deleteIdempotency(effectiveOwner, "PLANNER_LINK", plannerSessionId);
+                }
+            }
+        } else {
+            completeIdempotency(effectiveOwner, "PLANNER_SAVE", key, result.trip());
+            if (!plannerSessionId.isBlank()) {
+                var link = repository.findIdempotency(effectiveOwner, "PLANNER_LINK", plannerSessionId);
+                // Keep the first saved baseline for a draft that never completed its
+                // link, so later edits to the formal Trip still participate in CAS.
+                if (link == null || link.versionNumber() == 0 || !result.trip().id().equals(link.tripId())) {
+                    completeIdempotency(effectiveOwner, "PLANNER_LINK", plannerSessionId, result.trip());
+                }
+            }
+        }
+        return result;
+    }
+
+    private OperationResult savePlannerSnapshotInternal(String ownerId, Map<String, Object> plan) {
         Map<String, Object> snapshot = copyMap(plan);
         String formalTripId = text(snapshot.get("formalTripId"));
         String title = text(snapshot.get("title"));
-        String key = text(idempotencyKey);
+        String key = "";
         if (formalTripId.isBlank()) {
             Map<String, Object> request = new LinkedHashMap<>();
             request.put("plan", snapshot);
@@ -286,6 +380,14 @@ public class TripService {
             request.put("title", title);
             request.put("idempotencyKey", key);
             return create(ownerId, request);
+        }
+        String effectiveTitle = title(title.isBlank() ? current.title() : title, snapshot);
+        Map<String, Object> currentBusiness = plannerBusinessSnapshot(current.plan());
+        currentBusiness.put("title", current.title());
+        Map<String, Object> incomingBusiness = plannerBusinessSnapshot(snapshot);
+        incomingBusiness.put("title", effectiveTitle);
+        if (sameSnapshot(currentBusiness, incomingBusiness)) {
+            return OperationResult.success(200, "行程未发生变化", "NOOP", current);
         }
         Integer sourceTripVersion = sourceTripVersion(snapshot.get("sourceTripVersion"));
         int expectedVersion = sourceTripVersion == null ? current.currentVersion() : sourceTripVersion;
@@ -322,11 +424,20 @@ public class TripService {
         return res;
     }
 
-    private static final Set<String> INTERNAL_METADATA_KEYS = Set.of(
-            "id", "formalTripId", "sourceTripVersion", "plannerSessionId",
-            "plannerVersion", "appliedPreferences", "plannerSessionRestoreSource",
-            "sourceTripId", "sourcePlannerRevision", "version", "status", "createdAt", "updatedAt"
+    private static final Set<String> PLANNER_SAVE_METADATA_KEYS = Set.of(
+            "id", "formalTripId", "sourceTripId", "sourceTripVersion", "plannerSessionId",
+            "plannerVersion", "sourcePlannerRevision", "plannerSessionRestoreSource",
+            "plannerSessionRestoreDegradation", "version", "status", "createdAt", "updatedAt"
     );
+
+    private Map<String, Object> plannerBusinessSnapshot(Map<String, Object> plan) {
+        Map<String, Object> result = copyMap(plan);
+        PLANNER_SAVE_METADATA_KEYS.forEach(result::remove);
+        result.put("title", title(text(result.get("title")), result));
+        return result;
+    }
+
+    private static final Set<String> INTERNAL_METADATA_KEYS = PLANNER_SAVE_METADATA_KEYS;
 
     private Map<String, Object> tryRebase(Map<String, Object> base, Map<String, Object> latest, Map<String, Object> incoming) {
         if (base == null) base = Map.of();
@@ -340,11 +451,7 @@ public class TripService {
 
         boolean incomingHasChanges = false;
         for (String key : allKeys) {
-            if (INTERNAL_METADATA_KEYS.contains(key)
-                    || key.startsWith("planner")
-                    || key.startsWith("source")
-                    || key.startsWith("applied")
-                    || key.startsWith("formal")) {
+            if (INTERNAL_METADATA_KEYS.contains(key)) {
                 continue;
             }
 
@@ -352,15 +459,17 @@ public class TripService {
             Object latestVal = latest.get(key);
             Object incVal = incoming.get(key);
 
-            boolean latestChanged = !Objects.equals(baseVal, latestVal);
-            boolean incChanged = !Objects.equals(baseVal, incVal);
+            // Persisted JSON uses Integer while restored snapshots can use Long for the
+            // same revision. Compare JSON meaning, not implementation-specific number classes.
+            boolean latestChanged = !canonicalJson(baseVal).equals(canonicalJson(latestVal));
+            boolean incChanged = !canonicalJson(baseVal).equals(canonicalJson(incVal));
 
             if (incChanged) {
                 incomingHasChanges = true;
             }
 
             if (latestChanged && incChanged) {
-                if (!Objects.equals(latestVal, incVal)) {
+                if (!canonicalJson(latestVal).equals(canonicalJson(incVal))) {
                     return null;
                 }
                 merged.put(key, incVal);
@@ -438,6 +547,15 @@ public class TripService {
             plan.remove("idempotencyKey");
             plan.remove("changeReason");
         }
+        if (!(plan.get("days") instanceof List<?> days)) {
+            throw new IllegalArgumentException("正式行程必须包含完整的 days 数组；修改标题也需提交完整计划");
+        }
+        for (Object day : days) {
+            if (!(day instanceof Map<?, ?> map) || !(map.get("stops") instanceof List<?>)) {
+                throw new IllegalArgumentException("行程每日安排必须包含 stops 数组");
+            }
+        }
+        planLimits.validate(plan);
         String title = text(body.get("title"));
         if (title.isBlank()) title = text(plan.get("title"));
         return new WriteInput(plan, title, integer(body.get("expectedVersion")),

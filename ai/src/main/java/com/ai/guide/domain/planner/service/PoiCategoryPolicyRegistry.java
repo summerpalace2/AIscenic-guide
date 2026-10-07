@@ -31,6 +31,11 @@ public class PoiCategoryPolicyRegistry {
      */
     public boolean isDiningStop(Map<?, ?> stop) {
         if (stop == null) return false;
+        String typecode = stop.get("typecode") == null ? "" : String.valueOf(stop.get("typecode")).trim();
+        if (AmapPoiTaxonomy.isValidCode(typecode)) return typecode.startsWith("05");
+        if (typecode.startsWith("05")) return true;
+        if (typecode.startsWith("10") || typecode.startsWith("11") || typecode.startsWith("14")
+                || typecode.startsWith("15") || typecode.startsWith("06") || typecode.startsWith("0806")) return false;
         String type = String.valueOf(stop.get("type"));
         if ("DINING".equalsIgnoreCase(type)) return true;
         Object isDiningObj = stop.get("isDining");
@@ -46,9 +51,33 @@ public class PoiCategoryPolicyRegistry {
      */
     public PoiDomainType resolveCategory(Map<?, ?> stop) {
         if (stop == null) return PoiDomainType.SCENIC;
+
+        // Provider categories take precedence over name heuristics. Scenic is 11,
+        // whereas transport facilities are 15 in the AMap taxonomy.
+        String typecode = stop.get("typecode") == null ? "" : String.valueOf(stop.get("typecode")).trim();
+        if (!typecode.isBlank()) {
+            if (typecode.startsWith("10")) return PoiDomainType.HOTEL;
+            if (typecode.startsWith("0806")) return PoiDomainType.THEATER;
+            if (typecode.startsWith("06")) return PoiDomainType.SHOPPING;
+            if (AmapPoiTaxonomy.isScenicVenue(typecode) || AmapPoiTaxonomy.isCulturalVenue(typecode)) return PoiDomainType.SCENIC;
+            if (typecode.startsWith("15")) return PoiDomainType.TRANSIT;
+            if (typecode.startsWith("05")) return PoiDomainType.DINING;
+            // An unsupported provider category must not become dining merely
+            // because its name mentions food. Scenic eligibility is checked separately.
+            if (AmapPoiTaxonomy.isValidCode(typecode)) return PoiDomainType.SCENIC;
+        }
         if (isDiningStop(stop)) return PoiDomainType.DINING;
+
+        // 2. 降级容错：根据名称语义特征识别
         String type = String.valueOf(stop.get("type"));
         String name = String.valueOf(stop.get("name"));
+        if (name.contains("茶馆") || name.contains("茶室") || name.contains("茶楼") || name.contains("老茶舍")
+                || name.contains("咖啡") || name.contains("餐馆") || name.contains("餐厅") || name.contains("酒楼")
+                || name.contains("大排档") || name.contains("小吃") || name.contains("火锅") || name.contains("面馆")
+                || name.contains("甜品") || name.contains("糖水") || type.contains("餐饮") || type.contains("美食")
+                || type.contains("茶艺") || type.contains("冷饮")) {
+            return PoiDomainType.DINING;
+        }
         if (name.contains("剧场") || name.contains("演艺") || name.contains("大剧院") || name.contains("川剧")
                 || name.contains("盛典") || name.contains("大戏") || name.contains("实景演出") || name.contains("歌舞") || name.contains("演出")) {
             return PoiDomainType.THEATER;

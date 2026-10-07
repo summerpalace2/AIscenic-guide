@@ -1,6 +1,8 @@
 package com.ai.guide.domain.planner.service.adjustment;
 
 import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.dining.model.DiningVenue;
+import com.ai.guide.domain.planner.service.AttractionDiningKnowledge;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.TravelConstraints;
@@ -36,13 +38,29 @@ public final class PlanAdjustmentHelper {
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> days(Map<String, Object> trip) {
         if (trip == null) return new ArrayList<>();
-        return (List<Map<String, Object>>) trip.computeIfAbsent("days", k -> new ArrayList<>());
+        Object d = trip.get("days");
+        if (d instanceof List<?>) {
+            return (List<Map<String, Object>>) d;
+        }
+        try {
+            return (List<Map<String, Object>>) trip.computeIfAbsent("days", k -> new ArrayList<>());
+        } catch (UnsupportedOperationException e) {
+            return new ArrayList<>();
+        }
     }
 
     @SuppressWarnings("unchecked")
     public static List<Map<String, Object>> dayStops(Map<String, Object> day) {
         if (day == null) return new ArrayList<>();
-        return (List<Map<String, Object>>) day.computeIfAbsent("stops", k -> new ArrayList<>());
+        Object s = day.get("stops");
+        if (s instanceof List<?>) {
+            return (List<Map<String, Object>>) s;
+        }
+        try {
+            return (List<Map<String, Object>>) day.computeIfAbsent("stops", k -> new ArrayList<>());
+        } catch (UnsupportedOperationException e) {
+            return new ArrayList<>();
+        }
     }
 
     public static Map<String, Object> findDay(Map<String, Object> trip, int dayNumber) {
@@ -104,14 +122,32 @@ public final class PlanAdjustmentHelper {
     }
 
     public static String extractDistrictFromStop(Map<String, Object> stop) {
-        if (stop == null) return "渝中区";
+        if (stop == null) return "";
         String direct = safe(stop.get("district"));
         if (!direct.isBlank() && !"待确认".equals(direct)) return direct;
-        String addr = safe(stop.get("address"));
-        for (String d : List.of("渝中区", "江北区", "南岸区", "沙坪坝区", "九龙坡区", "渝北区", "武隆区", "大足区")) {
-            if (addr.contains(d) || addr.contains(d.replace("区", ""))) return d;
-        }
-        return "渝中区";
+        return "";
+    }
+
+    public static AttractionDiningKnowledge.DiningOption verifiedDiningOption(DiningVenue venue, String slotType) {
+        if (venue == null || safe(venue.getId()).isBlank() || safe(venue.getName()).isBlank()
+                || !isValidCoordinate(venue.getLocation())) return null;
+        String prefix = switch (slotType) {
+            case "BREAKFAST" -> "【早餐推荐】";
+            case "DINNER" -> "【晚餐推荐】";
+            case "TEA_BREAK" -> "【特色茶歇】";
+            case "NIGHT_SNACK" -> "【宵夜推荐】";
+            default -> "【午餐推荐】";
+        };
+        return new AttractionDiningKnowledge.DiningOption(venue.getId(), prefix + venue.getName(),
+                venue.getSpecialtyDish(), venue.getCategory(), venue.getAverageCost(), venue.getDuration(),
+                venue.getDistanceDesc(), venue.getSummary(), venue.getRecommendationReason(), venue.getTone(), venue.getLocation());
+    }
+
+    public static boolean matchesRequestedDiningVenue(String requestedName, String actualName) {
+        String requested = safe(requestedName).replaceAll("^【[^】]+】", "").replaceAll("[\\p{Punct}\\p{Z}\\p{IsPunctuation}]+", "");
+        String actual = safe(actualName).replaceAll("^【[^】]+】", "").replaceAll("[\\p{Punct}\\p{Z}\\p{IsPunctuation}]+", "");
+        return requested.length() >= 2 && actual.length() >= 2
+                && (actual.contains(requested) || requested.contains(actual));
     }
 
     public static Attraction resolveStopAnchor(Map<String, Object> stop, ItineraryBuilderPort itineraryBuilder) {
@@ -128,7 +164,7 @@ public final class PlanAdjustmentHelper {
                 .id(venueId.isBlank() ? "anchor-" + Math.abs(name.hashCode()) : venueId)
                 .name(name)
                 .district(dist)
-                .location(loc.isBlank() ? "106.577000,29.556000" : loc)
+                .location(isValidCoordinate(loc) ? loc : null)
                 .build();
     }
 
@@ -218,57 +254,85 @@ public final class PlanAdjustmentHelper {
     }
 
     public static String resolveTripCity(Map<String, Object> trip, StoredSession session, PlanAdjustmentIntent intent) {
-        if (intent != null) {
-            String venue = safeText(intent.getRequestedVenueName());
-            String raw = safeText(intent.getRawMessage());
-            if (venue != null && venue.contains("成都") || raw != null && raw.contains("成都")) return "成都市";
-            if (venue != null && venue.contains("西安") || raw != null && raw.contains("西安")) return "西安市";
-            if (venue != null && venue.contains("重庆") || raw != null && raw.contains("重庆")) return "重庆市";
-        }
-        if (session != null) {
-            String prompt = safeText(session.prompt());
-            if (prompt != null && prompt.contains("成都")) return "成都市";
-            if (prompt != null && prompt.contains("西安")) return "西安市";
-            if (prompt != null && prompt.contains("重庆")) return "重庆市";
-            if (session.constraints() != null) {
-                Object dest = session.constraints().get("destination");
-                if (dest != null && !String.valueOf(dest).isBlank()) {
-                    String d = String.valueOf(dest);
-                    if (d.contains("成都")) return "成都市";
-                    if (d.contains("西安")) return "西安市";
-                    if (d.contains("重庆")) return "重庆市";
-                }
-            }
-        }
+        // Structured itinerary/session data is authoritative; restaurant names are not city selectors.
         if (trip != null) {
-            Object cityObj = trip.get("city");
-            if (cityObj != null && !String.valueOf(cityObj).isBlank()) {
-                String c = String.valueOf(cityObj);
-                if (c.contains("成都")) return "成都市";
-                if (c.contains("西安")) return "西安市";
-                if (c.contains("重庆")) return "重庆市";
-            }
-            Object destObj = trip.get("destination");
-            if (destObj != null && !String.valueOf(destObj).isBlank()) {
-                String d = String.valueOf(destObj);
-                if (d.contains("成都")) return "成都市";
-                if (d.contains("西安")) return "西安市";
-                if (d.contains("重庆")) return "重庆市";
-            }
-            for (Map<String, Object> day : days(trip)) {
-                for (Map<String, Object> stop : dayStops(day)) {
-                    String name = safeText(String.valueOf(stop.getOrDefault("name", "")));
-                    String dist = safeText(String.valueOf(stop.getOrDefault("district", "")));
-                    if ((name != null && name.contains("成都")) || (dist != null && (dist.contains("成都") || dist.matches(".*(锦江|青羊|金牛|武侯|成华|高新|天府新区|双流|郫都|温江|新都|龙泉驿|都江堰).*")))) {
-                        return "成都市";
-                    }
-                    if ((name != null && name.contains("西安")) || (dist != null && (dist.contains("西安") || dist.matches(".*(碑林|雁塔|新城|莲湖|未央|灞桥|长安|临潼).*")))) {
-                        return "西安市";
-                    }
-                }
+            String city = firstNonBlank(safe(trip.get("city")), safe(trip.get("destination")));
+            if (city != null) return city;
+            if (trip.get("constraints") instanceof Map<?, ?> values) {
+                city = safeText(safe(values.get("destination")));
+                if (city != null) return city;
             }
         }
-        return "重庆市";
+        if (session != null && session.constraints() != null) {
+            return safeText(safe(session.constraints().get("destination")));
+        }
+        return null;
+    }
+
+    public static String resolveTripCity(Map<String, Object> trip, TravelConstraints constraints) {
+        String city = resolveTripCity(trip, (StoredSession) null, null);
+        return city != null ? city : (constraints == null ? null : safeText(constraints.getDestination()));
+    }
+
+    public static boolean isValidCoordinate(String location) {
+        if (location == null) return false;
+        String[] parts = location.split(",", -1);
+        if (parts.length != 2) return false;
+        try {
+            double longitude = Double.parseDouble(parts[0].trim());
+            double latitude = Double.parseDouble(parts[1].trim());
+            return Double.isFinite(longitude) && Double.isFinite(latitude)
+                    && longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    public static String resolveDefaultCoordinate(Map<String, Object> draftTrip, TravelConstraints constraints, List<Map<String, Object>> stops) {
+        if (stops != null && !stops.isEmpty()) {
+            double sumLng = 0;
+            double sumLat = 0;
+            double minLng = Double.MAX_VALUE;
+            double maxLng = -Double.MAX_VALUE;
+            double minLat = Double.MAX_VALUE;
+            double maxLat = -Double.MAX_VALUE;
+            String lastValidLoc = null;
+            int count = 0;
+
+            for (Map<String, Object> s : stops) {
+                String loc = safe(s.get("location"));
+                if (isValidCoordinate(loc)) {
+                    try {
+                        String[] parts = loc.split(",");
+                        double lng = Double.parseDouble(parts[0].trim());
+                        double lat = Double.parseDouble(parts[1].trim());
+                        // 严防 NaN 与超出经纬度物理边界的毒丸数据
+                        if (!Double.isNaN(lng) && !Double.isNaN(lat)
+                                && !Double.isInfinite(lng) && !Double.isInfinite(lat)
+                                && lng >= -180.0 && lng <= 180.0 && lat >= -90.0 && lat <= 90.0) {
+                            sumLng += lng;
+                            sumLat += lat;
+                            minLng = Math.min(minLng, lng);
+                            maxLng = Math.max(maxLng, lng);
+                            minLat = Math.min(minLat, lat);
+                            maxLat = Math.max(maxLat, lat);
+                            lastValidLoc = String.format(java.util.Locale.ROOT, "%.6f,%.6f", lng, lat);
+                            count++;
+                        }
+                    } catch (Exception ignored) {}
+                }
+            }
+            if (count > 0) {
+                // 如果多个打卡点跨度过大（如相距上百公里的远郊武隆与巫山，经纬度跨度超过0.5度），
+                // 算术平均质心会畸变落入深山无人区；此时应锚定最新（最后一个有效）游览点
+                if ((maxLng - minLng > 0.5 || maxLat - minLat > 0.5) && lastValidLoc != null) {
+                    return lastValidLoc;
+                }
+                return String.format(java.util.Locale.ROOT, "%.6f,%.6f", sumLng / count, sumLat / count);
+            }
+        }
+        String start = extractStartCoordinate(draftTrip, constraints);
+        return isValidCoordinate(start) ? start : null;
     }
 
     public static Integer number(Object value) {

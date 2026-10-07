@@ -148,7 +148,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     public Map<String, Object> planFromLocation(TravelConstraints constraints, int version) {
         if (runtimeLocationPlanner == null) return null;
         Map<String, Object> trip = runtimeLocationPlanner.plan(constraints, version);
-        if (trip != null && !trip.isEmpty() && !Boolean.TRUE.equals(trip.get("degraded"))) {
+        if (trip != null && !trip.isEmpty() && !allStops(trip).isEmpty()) {
             int weatherSuccess = hydrateWeather(trip);
             Map<String, Object> status = mutableMap(trip.get("sourceStatus"));
             status.put("weather", weatherSuccess > 0 ? "已查询" : "待确认");
@@ -158,6 +158,14 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             trip.put("sourceStatus", status);
         }
         return trip;
+    }
+
+    private String tripCity(Map<String, Object> trip) {
+        Map<String, Object> constraints = mutableMap(trip.get("constraints"));
+        String destination = text(constraints.get("destination"));
+        if (destination.isBlank()) destination = text(trip.get("city"));
+        // Older catalog drafts predate structured constraints and use the product default.
+        return destination.isBlank() ? new TravelConstraints().getDestination() : destination;
     }
 
     private int hydratePois(Map<String, Object> trip) {
@@ -172,7 +180,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             AmapResponseNormalizer.PoiCandidate selected = null;
             String lastReason = "";
             for (String keyword : keywords) {
-                PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
+                PoiOutcome outcome = routeService.searchPoi(keyword, tripCity(trip));
                 lastReason = outcome.reason();
                 selected = select(outcome.candidates(), attraction);
                 if (selected != null) break;
@@ -191,7 +199,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         List<Map<String, Object>> days = dayMaps(trip);
         boolean hasMatchableDate = days.stream().anyMatch(day -> isoDate(day.get("date")) != null);
         WeatherOutcome outcome = hasMatchableDate
-                ? routeService.weather("500000")
+                ? routeService.weather(tripCity(trip))
                 : new WeatherOutcome(OutcomeStatus.UNAVAILABLE,
                         null, "行程没有可匹配的 ISO 日期，跳过高德天气查询。", Instant.now());
         String providerReason = outcome.reason() == null || outcome.reason().isBlank()
@@ -261,7 +269,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
 
         List<java.util.concurrent.CompletableFuture<RoutePairOutcome>> futures = tasks.stream()
                 .map(t -> java.util.concurrent.CompletableFuture.supplyAsync(() -> routeService.routePair(
-                        t.origin(), t.destination(), "重庆市", t.originPoi(), t.destinationPoi(), t.preference()
+                        t.origin(), t.destination(), tripCity(trip), t.originPoi(), t.destinationPoi(), t.preference()
                 ), hydrationExecutor))
                 .toList();
 
@@ -398,9 +406,9 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         long unknownFacts = facts.stream().filter(fact -> "未知".equals(fact.get("status"))).count();
         long dynamicFacts = facts.stream().filter(fact -> "动态".equals(fact.get("status"))).count();
         long citedFacts = facts.stream().filter(fact -> fact.get("citations") instanceof List<?> list && !list.isEmpty()).count();
-        double poiCoverage = poiTotal == 0 ? 1 : (double) poiSuccess / poiTotal;
-        double routeCoverage = routePairs == 0 ? 1 : (double) routeResolved / routePairs;
-        double weatherCoverage = weatherTotal == 0 ? 1 : round((double) weatherAvailable / weatherTotal);
+        double poiCoverage = poiTotal == 0 ? 0 : (double) poiSuccess / poiTotal;
+        double routeCoverage = poiTotal == 0 ? 0 : routePairs == 0 ? 1 : (double) routeResolved / routePairs;
+        double weatherCoverage = poiTotal == 0 ? 0 : weatherTotal == 0 ? 1 : round((double) weatherAvailable / weatherTotal);
         double dataCoverage = round((poiCoverage + routeCoverage + weatherCoverage) / 3);
         Map<String, Object> status = mutableMap(trip.get("sourceStatus"));
         status.put("provider", "高德 Web Service API");
@@ -422,9 +430,9 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         status.put("dataCoverage", dataCoverage);
         status.put("unknownFactCount", unknownFacts);
         status.put("dynamicFactCount", dynamicFacts);
-        status.put("fallback", available < expected || routeResolved < routePairs);
+        status.put("fallback", poiTotal == 0 || available < expected || routeResolved < routePairs);
         trip.put("sourceStatus", status);
-        trip.put("sourceMode", available == expected ? "高德实时接口" : available > 0 ? "高德接口部分可用" : "演示回退模式");
+        trip.put("sourceMode", poiTotal > 0 && available == expected ? "高德实时接口" : available > 0 ? "高德接口部分可用" : "演示回退模式");
         Map<String, Object> quality = mutableMap(trip.get("qualityMetrics"));
         quality.put("citationCoverage", status.get("citationCoverage"));
         quality.put("dataCoverage", Map.of("overall", dataCoverage, "poi", round(poiCoverage),

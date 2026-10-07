@@ -101,7 +101,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
         // 游客体验页只提供普通旅行问答；会话由 BFF 生成的匿名 chat id 隔离，
         // 不拥有规划、偏好写入、行程保存或管理能力。
-        if ("GET".equals(method) && "/ai/chat/stream".equals(path)) return true;
+        if (("GET".equals(method) || "POST".equals(method)) && "/ai/chat/stream".equals(path)) return true;
         if ("GET".equals(method) && ("/ai/search/baidu".equals(path) || path.startsWith("/ai/search/"))) return true;
         if ("POST".equals(method) && "/ai/planner/v1/plan".equals(path)) return true;
         if ("POST".equals(method) && (
@@ -132,7 +132,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (contextPath != null && !contextPath.isBlank() && path.startsWith(contextPath)) {
             path = path.substring(contextPath.length());
         }
-        return "/ai/admin".equals(path) || path.startsWith("/ai/admin/");
+        return "/ai/admin".equals(path) || path.startsWith("/ai/admin/") || "/ai/analytics".equals(path) || path.startsWith("/ai/analytics/");
     }
 
     private void unauthorized(HttpServletResponse response) throws IOException {

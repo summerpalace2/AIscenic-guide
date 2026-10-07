@@ -154,7 +154,7 @@ public class RedTeamAdversarialAssaultTest {
             List<Map<String, Object>> days = (List<Map<String, Object>>) trip.get("days");
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> stops = (List<Map<String, Object>>) days.get(0).get("stops");
-            String firstStopId = String.valueOf(stops.get(0).get("id"));
+            String firstStopId = firstScenicStopId(stops);
 
             // 生成一个预览 Proposal
             PlanConversationRequestDto previewReq = PlanConversationRequestDto.builder()
@@ -166,8 +166,7 @@ public class RedTeamAdversarialAssaultTest {
                     .build();
             PlannerService.ServiceResult previewRes = plannerService.previewAdjustment(sId, previewReq);
             assertEquals(200, previewRes.status());
-            String propId = String.valueOf(previewRes.body().get("proposalId"));
-            assertFalse(propId.startsWith("clarification-"), "必须生成有效替换方案提案");
+            String propId = requireApplicableProposal(previewRes);
             proposalIds.add(propId);
         }
 
@@ -220,7 +219,7 @@ public class RedTeamAdversarialAssaultTest {
         List<Map<String, Object>> days = (List<Map<String, Object>>) trip.get("days");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> stops = (List<Map<String, Object>>) days.get(0).get("stops");
-        String firstStopId = String.valueOf(stops.get(0).get("id"));
+        String firstStopId = firstScenicStopId(stops);
 
         PlanConversationRequestDto previewReq = PlanConversationRequestDto.builder()
                 .sessionId(sessionId)
@@ -231,8 +230,7 @@ public class RedTeamAdversarialAssaultTest {
                 .build();
         PlannerService.ServiceResult previewRes = plannerService.previewAdjustment(sessionId, previewReq);
         assertEquals(200, previewRes.status());
-        String proposalId = String.valueOf(previewRes.body().get("proposalId"));
-        assertFalse(proposalId.startsWith("clarification-"), "必须生成有效替换方案提案");
+        String proposalId = requireApplicableProposal(previewRes);
 
         int threads = 10;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -275,36 +273,34 @@ public class RedTeamAdversarialAssaultTest {
         assertEquals(threads - 1, conflictOrNotFoundCount.get(), "其余并发线程必须被互斥且因提案已被消费而安全拦截！");
     }
 
+    private String firstScenicStopId(List<Map<String, Object>> stops) {
+        PoiCategoryPolicyRegistry policies = new PoiCategoryPolicyRegistry();
+        return stops.stream().filter(stop -> !policies.isDiningStop(stop))
+                .map(stop -> String.valueOf(stop.get("id"))).findFirst().orElseThrow();
+    }
+
+    private String requireApplicableProposal(PlannerService.ServiceResult preview) {
+        assertNotNull(preview.body().get("proposalId"), () -> "并发测试需要真实可应用提案: " + preview.body());
+        assertEquals(true, preview.body().get("feasible"), () -> "提案不可行: " + preview.body());
+        String proposalId = String.valueOf(preview.body().get("proposalId"));
+        PlanAdjustmentProposal proposal = proposalStore.get(proposalId);
+        assertNotNull(proposal);
+        assertTrue(proposal.getOptionPlans().containsKey("option-1"));
+        return proposalId;
+    }
+
     @Test
-    @DisplayName("战役 2C：【致命漏洞实证】sessionApplyLocks.clear() 阈值导致并发锁对象逃逸与互斥失效")
+    @DisplayName("战役 2C：【致命漏洞实证】固定锁条纹在高会话数下保持同一锁对象")
     void testAttack2C_SessionApplyLocksWipeVulnerability() throws Exception {
         Field locksField = PlanAdjustmentService.class.getDeclaredField("sessionApplyLocks");
         locksField.setAccessible(true);
 
-        @SuppressWarnings("unchecked")
-        ConcurrentHashMap<String, Object> locks = (ConcurrentHashMap<String, Object>) locksField.get(planAdjustmentService);
-        locks.clear();
-
-        // 模拟填入 5001 个虚假 session lock
-        for (int i = 0; i < 5001; i++) {
-            locks.put("dummy-sess-" + i, new Object());
-        }
-        assertEquals(5001, locks.size());
-
-        // 现在获取一个特定会话的目标锁对象
-        Object lockBefore = locks.computeIfAbsent("target-session", k -> new Object());
-
-        // 模拟触发 clear 执行（如行 529-531）
-        if (locks.size() > 5000) {
-            locks.clear();
-        }
-
-        // 此时另一个并发线程进来获取同一个 target-session 的锁对象：
-        Object lockAfter = locks.computeIfAbsent("target-session", k -> new Object());
-
-        // 【红方破防漏洞确认】：两次获取到的根本不是同一个锁对象！
-        assertNotSame(lockBefore, lockAfter,
-                "【漏洞确认】由于全局 clear() 粗暴清理，导致同一 session 的并发线程拿到不同锁对象，互斥彻底失效！");
+        Object[] locks = (Object[]) locksField.get(planAdjustmentService);
+        assertEquals(128, locks.length, "锁条纹大小有界，不随会话增长");
+        int index = Math.floorMod("target-session".hashCode(), locks.length);
+        Object before = locks[index];
+        for (int i=0;i<5001;i++) assertNotNull(locks[Math.floorMod(("dummy-session-"+i).hashCode(),locks.length)]);
+        assertSame(before,locks[index],"等待者始终共享同一把锁；不得删除后重建");
     }
 
     // =========================================================================

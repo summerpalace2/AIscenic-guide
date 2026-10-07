@@ -81,7 +81,7 @@ class AnalyticsApplicationServiceImplTest {
     @Test
     void testResolveReportDate() {
         assertNull(applicationService.resolveReportDate(null));
-        assertEquals("2026-10-04", applicationService.resolveReportDate(Map.of("period_end", "2026-10-04T12:00:00")));
+        assertEquals("2026-10-04", applicationService.resolveReportDate(Map.of("periodEnd", "2026-10-04T12:00:00")));
         assertEquals("2026-10-03", applicationService.resolveReportDate(Map.of("periodStart", "2026-10-03T12:00:00")));
         assertEquals("short", applicationService.resolveReportDate(Map.of("periodStart", "short")));
     }
@@ -91,13 +91,14 @@ class AnalyticsApplicationServiceImplTest {
         when(analyticsService.getReport("r-none")).thenReturn(null);
         assertNull(applicationService.exportReportPdf("r-none"));
 
-        when(analyticsService.getReport("r1")).thenReturn(Map.of("period_end", "2026-10-04 00:00:00"));
+        when(analyticsService.getReport("r1")).thenReturn(Map.of("periodEnd", "2026-10-04 00:00:00"));
         byte[] bytes = new byte[]{1, 2, 3};
-        when(pdfExportService.exportDailyReport("2026-10-04")).thenReturn(bytes);
+        when(pdfExportService.exportStoredReport(Map.of("periodEnd", "2026-10-04 00:00:00"))).thenReturn(bytes);
         ReportExportResult result = applicationService.exportReportPdf("r1");
         assertNotNull(result);
         assertArrayEquals(bytes, result.pdfData());
         assertEquals("2026-10-04", result.fileName());
+        verify(pdfExportService, never()).exportDailyReport(anyString());
     }
 
     @Test

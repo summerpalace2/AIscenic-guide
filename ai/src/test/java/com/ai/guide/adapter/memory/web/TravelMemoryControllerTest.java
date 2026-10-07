@@ -216,7 +216,7 @@ class TravelMemoryControllerTest {
     @Test
     void testGetPrependPrompt_Success() {
         UserContext.set("user-123", "USER");
-        when(memoryApplicationService.getPromptContext("user-123")).thenReturn("用户偏好少走路");
+        when(memoryApplicationService.promptDetails("user-123")).thenReturn(Map.of("prependPrompt", "用户偏好少走路", "userCustomizedPrompt", ""));
 
         ResponseEntity<?> resp = controller.getPrependPrompt();
         assertEquals(200, resp.getStatusCode().value());
@@ -229,6 +229,7 @@ class TravelMemoryControllerTest {
     void testUpdatePrependPrompt_Resynthesize() {
         UserContext.set("user-123", "USER");
         when(memoryApplicationService.resynthesizePrependPrompt("user-123")).thenReturn("新合成偏好");
+        when(memoryApplicationService.promptDetails("user-123")).thenReturn(Map.of("prependPrompt", "新合成偏好", "userCustomizedPrompt", ""));
 
         ResponseEntity<?> resp = controller.updatePrependPrompt(Map.of("action", "resynthesize"));
         assertEquals(200, resp.getStatusCode().value());
@@ -242,6 +243,7 @@ class TravelMemoryControllerTest {
     void testUpdatePrependPrompt_Save() {
         UserContext.set("user-123", "USER");
         when(memoryApplicationService.saveUserCustomizedPrompt("user-123", "自定义偏好")).thenReturn("自定义偏好");
+        when(memoryApplicationService.promptDetails("user-123")).thenReturn(Map.of("prependPrompt", "自定义偏好", "userCustomizedPrompt", "自定义偏好"));
 
         ResponseEntity<?> resp = controller.updatePrependPrompt(Map.of("prependPrompt", "自定义偏好"));
         assertEquals(200, resp.getStatusCode().value());

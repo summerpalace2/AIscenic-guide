@@ -198,6 +198,8 @@ public class AdminController {
         try {
             adminApplicationService.updateSettings(body);
             return Result.success("更新成功", null);
+        } catch (IllegalArgumentException e) {
+            return Result.error(400,e.getMessage());
         } catch (Exception e) {
             return Result.error(500, "更新失败，请稍后重试");
         }

@@ -19,6 +19,8 @@ import java.util.List;
 @AllArgsConstructor
 public class PlanPageContext {
     private Integer activeDay;
+    private String pendingIntentId;
+    private boolean resetConversation;
     private String selectedStopId;
     @Builder.Default
     private List<String> selectedStopIds = new ArrayList<>();

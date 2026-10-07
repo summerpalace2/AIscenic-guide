@@ -64,7 +64,7 @@ public class AnalyticsApplicationServiceImpl implements AnalyticsApplicationServ
     @Override
     public String resolveReportDate(Map<String, Object> report) {
         if (report == null) return null;
-        String date = (String) report.get("period_end");
+        String date = (String) report.get("periodEnd");
         if (date == null || date.isEmpty()) date = (String) report.get("periodStart");
         if (date != null && date.length() >= 10) date = date.substring(0, 10);
         return date;
@@ -75,7 +75,7 @@ public class AnalyticsApplicationServiceImpl implements AnalyticsApplicationServ
         Map<String, Object> report = analyticsService.getReport(reportId);
         if (report == null) return null;
         String date = resolveReportDate(report);
-        byte[] pdf = pdfExportService.exportDailyReport(date);
+        byte[] pdf = pdfExportService.exportStoredReport(report);
         return new ReportExportResult(pdf, date != null ? date : reportId);
     }
 

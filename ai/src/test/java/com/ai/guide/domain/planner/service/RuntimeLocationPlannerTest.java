@@ -55,7 +55,7 @@ class RuntimeLocationPlannerTest {
             }
         };
 
-        TravelConstraints constraints = new TravelConstraintParser().parse("我在测试起点 给我3小时的旅游规划");
+        TravelConstraints constraints = new TravelConstraintParser().parse("我在测试起点 上午8点出发 给我3小时的旅游规划");
         var trip = new RuntimeLocationPlanner(provider).plan(constraints, 1);
 
         assertNotNull(trip);
@@ -113,6 +113,9 @@ class RuntimeLocationPlannerTest {
         AmapResponseNormalizer.Coordinate target = new AmapResponseNormalizer.Coordinate(106.585, 29.565);
         AmapResponseNormalizer.PoiCandidate start = poi("jfb", "解放碑", origin);
         AmapResponseNormalizer.PoiCandidate nearby = poi("hyd", "洪崖洞", target);
+        AmapResponseNormalizer.PoiCandidate restaurant = new AmapResponseNormalizer.PoiCandidate(
+                "restaurant", "附近火锅店", new AmapResponseNormalizer.Coordinate(106.581, 29.561), "重庆市渝中区",
+                "餐饮服务;中餐厅", null, null, "restaurant", null, null, 4.6, null, "050100", null);
         AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
                 "WALKING", 800, 600, 800, 1, List.of(), "106.58,29.56;106.585,29.565", true);
         RouteOutcome route = new RouteOutcome(
@@ -121,12 +124,14 @@ class RuntimeLocationPlannerTest {
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
             @Override public PoiOutcome searchPoi(String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
-            @Override public PoiOutcome searchAround(String l, int r, String t, String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(nearby), "", Instant.now()); }
+            @Override public PoiOutcome searchAround(String l, int r, String t, String k, String c) {
+                return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(t.startsWith("05") ? restaurant : nearby), "", Instant.now());
+            }
             @Override public RoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) { return new RoutePairOutcome(route, route, route, p, false); }
         };
 
         RuntimeLocationPlanner planner = new RuntimeLocationPlanner(provider);
-        TravelConstraints constraints = new TravelConstraintParser().parse("我在解放碑 给我3小时的旅游规划 想吃火锅");
+        TravelConstraints constraints = new TravelConstraintParser().parse("我在解放碑 中午12点出发 给我3小时的旅游规划 想吃火锅");
         var trip = planner.plan(constraints, 1);
 
         assertNotNull(trip);
@@ -166,7 +171,7 @@ class RuntimeLocationPlannerTest {
         };
 
         RuntimeLocationPlanner planner = new RuntimeLocationPlanner(provider);
-        TravelConstraints constraints = new TravelConstraintParser().parse("我在重庆大学A校园 给我3小时的旅游规划");
+        TravelConstraints constraints = new TravelConstraintParser().parse("我在重庆大学A校园 上午8点出发 给我3小时的旅游规划");
         var trip = planner.plan(constraints, 1);
 
         assertNotNull(trip);
@@ -207,7 +212,7 @@ class RuntimeLocationPlannerTest {
         assertEquals(RuntimeLocationPlanner.PoiCategory.HISTORIC_CULTURE,
                 RuntimeLocationPlanner.detectCategory("磁器口古镇", "风景名胜;古镇老街;著名古镇"));
         assertEquals(RuntimeLocationPlanner.PoiCategory.LANDMARK_VIEW,
-                RuntimeLocationPlanner.detectCategory("洪崖洞民俗风貌区", "风景名胜;风景名胜;国家级景点"));
+                RuntimeLocationPlanner.detectCategory("任意观景地标", "风景名胜;观景点", "110209"));
         assertEquals(RuntimeLocationPlanner.PoiCategory.RELIGIOUS_TEMPLE,
                 RuntimeLocationPlanner.detectCategory("罗汉寺", "风景名胜;宗教名胜;寺庙"));
         assertEquals(RuntimeLocationPlanner.PoiCategory.COMMERCIAL_STREET,

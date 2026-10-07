@@ -39,66 +39,40 @@ public final class TravelDateResolver {
      */
     public static String resolveItineraryDate(TravelConstraints constraints, int day) {
         int dayOffset = Math.max(0, day - 1);
-        if (constraints == null) {
-            return LocalDate.now().plusDays(dayOffset).toString();
-        }
+        LocalDate today = LocalDate.now();
+        if (constraints == null) return today.plusDays(dayOffset).toString();
+        LocalDate arrival = parseDateEvidence(constraints.getArrivalAt(), today);
+        if (arrival != null) return arrival.plusDays(dayOffset).toString();
+        LocalDate departure = parseDateEvidence(constraints.getDepartureAt(), today);
+        if (departure != null) return departure.minusDays(Math.max(1, constraints.getDurationDays()) - 1L)
+                .plusDays(dayOffset).toString();
+        LocalDate prompt = parseDateEvidence(constraints.getRawPrompt(), today);
+        return (prompt == null ? today : prompt).plusDays(dayOffset).toString();
+    }
 
-        String source = String.join(" ",
-                constraints.getArrivalAt() == null ? "" : constraints.getArrivalAt(),
-                constraints.getRawPrompt() == null ? "" : constraints.getRawPrompt());
-
-        // 1. 具体 ISO 日期格式：2026-09-17
+    private static LocalDate parseDateEvidence(String source, LocalDate today) {
+        if (source == null || source.isBlank()) return null;
         Matcher iso = ISO_DATE.matcher(source);
         if (iso.find()) {
-            try {
-                return LocalDate.parse(iso.group(1), DateTimeFormatter.ISO_LOCAL_DATE).plusDays(dayOffset).toString();
-            } catch (DateTimeParseException ignored) {}
+            try { return LocalDate.parse(iso.group(1), DateTimeFormatter.ISO_LOCAL_DATE); }
+            catch (DateTimeParseException ignored) {}
         }
-
-        // 2. 中文月日格式：9月17日 / 9月17号
         Matcher md = CHINESE_MONTH_DAY.matcher(source);
         if (md.find()) {
-            try {
-                int month = Integer.parseInt(md.group(1));
-                int dayOfMonth = Integer.parseInt(md.group(2));
-                int currentYear = LocalDate.now().getYear();
-                return LocalDate.of(currentYear, month, dayOfMonth).plusDays(dayOffset).toString();
-            } catch (Exception ignored) {}
+            try { return LocalDate.of(today.getYear(), Integer.parseInt(md.group(1)), Integer.parseInt(md.group(2))); }
+            catch (RuntimeException ignored) {}
         }
-
-        // 3. 相对日期：今天、明天、后天
-        if (TODAY.matcher(source).find()) {
-            return LocalDate.now().plusDays(dayOffset).toString();
-        }
-        if (TOMORROW.matcher(source).find()) {
-            return LocalDate.now().plusDays(1).plusDays(dayOffset).toString();
-        }
-        if (DAY_AFTER_TOMORROW.matcher(source).find()) {
-            return LocalDate.now().plusDays(2).plusDays(dayOffset).toString();
-        }
-        if (DAY_AFTER_NEXT.matcher(source).find()) {
-            return LocalDate.now().plusDays(3).plusDays(dayOffset).toString();
-        }
-
-        // 4. 星期几格式：周六 / 星期天
+        // Longest relative date wins; "后天" is contained in "大后天".
+        if (DAY_AFTER_NEXT.matcher(source).find()) return today.plusDays(3);
+        if (DAY_AFTER_TOMORROW.matcher(source).find()) return today.plusDays(2);
+        if (TOMORROW.matcher(source).find()) return today.plusDays(1);
+        if (TODAY.matcher(source).find()) return today;
         Matcher weekday = WEEKDAY.matcher(source);
         if (weekday.find()) {
-            DayOfWeek target = switch (weekday.group(1)) {
-                case "一" -> DayOfWeek.MONDAY;
-                case "二" -> DayOfWeek.TUESDAY;
-                case "三" -> DayOfWeek.WEDNESDAY;
-                case "四" -> DayOfWeek.THURSDAY;
-                case "五" -> DayOfWeek.FRIDAY;
-                case "六" -> DayOfWeek.SATURDAY;
-                default -> DayOfWeek.SUNDAY;
-            };
-            return LocalDate.now().with(TemporalAdjusters.nextOrSame(target)).plusDays(dayOffset).toString();
+            int index = "一二三四五六日".indexOf(weekday.group(1));
+            return today.with(TemporalAdjusters.nextOrSame(DayOfWeek.of(index < 0 ? 7 : index + 1)));
         }
-
-        // 5. 缺省回退：默认今天
-        // 当未提供任何显式日期（如“我在重庆交通大学 为我规划一个3小时旅游方案”或普通未带日期规划）时，
-        // 默认将第1天设为今天，确保高德实时与预报天气查询可正常匹配并返回可用数据。
-        return LocalDate.now().plusDays(dayOffset).toString();
+        return null;
     }
 
     /**
@@ -108,7 +82,8 @@ public final class TravelDateResolver {
         if (constraints == null) return false;
         String source = String.join(" ",
                 constraints.getArrivalAt() == null ? "" : constraints.getArrivalAt(),
-                constraints.getRawPrompt() == null ? "" : constraints.getRawPrompt());
+                constraints.getRawPrompt() == null ? "" : constraints.getRawPrompt(),
+                constraints.getDepartureAt() == null ? "" : constraints.getDepartureAt());
         return ISO_DATE.matcher(source).find()
                 || CHINESE_MONTH_DAY.matcher(source).find()
                 || TODAY.matcher(source).find()

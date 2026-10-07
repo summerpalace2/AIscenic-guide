@@ -33,6 +33,36 @@ import static org.springframework.http.HttpMethod.GET;
 class AmapRouteServiceTest {
 
     @Test
+    void resolvesNamedCityAdcodeBeforeWeatherAndCachesTheResult() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        AmapRouteService service = new AmapRouteService(new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/v3/geocode/geo")))
+                .andRespond(withSuccess("""
+                        {"status":"1","geocodes":[{"location":"120.15,30.28","adcode":"330100"}]}
+                        """, MediaType.APPLICATION_JSON));
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/v3/weather/weatherInfo")))
+                .andExpect(org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam("city", "330100"))
+                .andRespond(withSuccess("{\"status\":\"1\",\"forecasts\":[]}", MediaType.APPLICATION_JSON));
+        assertEquals(OutcomeStatus.SUCCESS, service.weather("杭州市").status());
+        assertEquals(OutcomeStatus.SUCCESS, service.weather("杭州市").status());
+        server.verify();
+        service.close();
+    }
+
+    @Test
+    void doesNotSubstituteAnotherCityWhenGeocodingFails() {
+        RestTemplate restTemplate = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
+        AmapRouteService service = new AmapRouteService(new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
+        server.expect(requestTo(org.hamcrest.Matchers.containsString("/v3/geocode/geo")))
+                .andRespond(withSuccess("{\"status\":\"1\",\"geocodes\":[]}", MediaType.APPLICATION_JSON));
+        assertEquals(OutcomeStatus.INVALID, service.weather("未解析城市").status());
+        server.verify();
+        service.close();
+    }
+
+    @Test
     void successfulRouteAndWeatherResultsAreReused() {
         RestTemplate restTemplate = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).ignoreExpectOrder(true).build();

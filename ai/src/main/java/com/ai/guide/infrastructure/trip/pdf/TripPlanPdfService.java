@@ -1,6 +1,8 @@
 package com.ai.guide.infrastructure.trip.pdf;
 
 import com.ai.guide.domain.trip.gateway.TripPlanPdfExportPort;
+import com.ai.guide.domain.trip.service.TripPlanLimits;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lowagie.text.Anchor;
 import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
@@ -38,10 +40,15 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
     private static volatile BaseFont CACHED_FONT;
     private static final Object FONT_LOCK = new Object();
     private static final java.util.concurrent.Semaphore PDF_SEMAPHORE = new java.util.concurrent.Semaphore(4);
+    private TripPlanLimits planLimits = new TripPlanLimits(new ObjectMapper());
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setPlanLimits(TripPlanLimits planLimits) { this.planLimits = planLimits; }
 
     @Override
     public byte[] export(Map<String, Object> plan) {
         if (plan == null) plan = Map.of();
+        planLimits.validate(plan);
         try {
             PDF_SEMAPHORE.acquire();
         } catch (InterruptedException e) {
