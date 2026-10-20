@@ -31,7 +31,8 @@ class PlanningRouteRepairRegressionTest {
     @Test void dynamicCoordinateEndpointReplacesOldIncomingEdge() {
         var costs=mock(RouteCostProvider.class);when(costs.resolveFinalEdge(any(),any(),any()))
                 .thenReturn(RouteCost.verifiedAmap(1000,2700,100,"TRANSIT"));
-        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),new LocalPlanRepairer());
+        var taxonomy=com.ai.guide.testing.PlannerTaxonomyFixtures.taxonomy();
+        var planner=new RouteAwarePlanner(costs,new PlanVerifier(taxonomy),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer(),new com.ai.guide.domain.planner.service.PlannerMetricsLogger(),null,taxonomy);
         var a=stop("amap-dining-A","10:00",30);var b=stop("B","10:31",30);
         b.put("resolvedRouteCost",RouteCost.estimated(100,1,0,"WALKING","old X-to-B").asMap());
         b.put("routeFromPrevious",Map.of("selected",Map.of("durationSeconds",60)));
@@ -52,7 +53,7 @@ class PlanningRouteRepairRegressionTest {
     @Test void scopedBackfillPreservesUnchangedIncomingMetadata() {
         var costs=mock(RouteCostProvider.class);
         when(costs.resolveFinalEdge(any(),any(),any())).thenReturn(RouteCost.estimated(200,15,100,"TRANSIT","new edge"));
-        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),new LocalPlanRepairer());
+        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer());
         var a=stop("A","10:00",30);var lunch=stop("lunch","12:00",60);var evening=stop("evening","20:00",30);
         lunch.put("resolvedRouteCost",RouteCost.unavailable("original evidence").asMap());
         lunch.put("walk","original untouched");
@@ -66,7 +67,7 @@ class PlanningRouteRepairRegressionTest {
     @Test void routeRecalculationInvalidatesFallbackGeometryButKeepsAccessibility() {
         var costs=mock(RouteCostProvider.class);when(costs.resolveFinalEdge(any(),any(),any()))
                 .thenReturn(RouteCost.estimated(100,15,0,"TRANSIT","new edge"));
-        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),new LocalPlanRepairer());
+        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer());
         var a=stop("new-A","10:00",30);var b=stop("B","12:00",30);
         b.put("walkingInfo",Map.of("polyline",List.of(List.of(116.1,39.8),List.of(116.3,39.9)),"summary","old edge","accessibility","elevator"));
         b.put("mapContext",Map.of("polyline",List.of(List.of(116.1,39.8),List.of(116.3,39.9)),"coordinate","116.3,39.9"));
@@ -82,7 +83,7 @@ class PlanningRouteRepairRegressionTest {
         b.put("walkingInfo",Map.of("polyline",List.of(List.of(116.1,39.8),List.of(116.3,39.9)),"accessibility","elevator"));
         b.put("resolvedRouteCost",RouteCost.estimated(1000,40,0,"TRANSIT","old-A-to-B").asMap());
         var trip=new LinkedHashMap<String,Object>();trip.put("days",new ArrayList<>(List.of(day(1,List.of(a,b)))));
-        var planner=new RouteAwarePlanner(mock(RouteCostProvider.class),new PlanVerifier(),new LocalPlanRepairer());
+        var planner=new RouteAwarePlanner(mock(RouteCostProvider.class),new PlanVerifier(),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer());
         var intent=PlanAdjustmentIntent.builder().type(ConversationIntentType.REMOVE_STOP).targetStopId("A").build();
         var ctx=new AdjustmentContext(null,intent,null,trip,trip,new TravelConstraints(),Map.of(),new ObjectMapper());
         new RemoveStopAdjustmentStrategy(planner).apply(ctx);
@@ -101,19 +102,20 @@ class PlanningRouteRepairRegressionTest {
         assertEquals("2026-10-10",com.ai.guide.domain.planner.service.TravelDateResolver.resolveItineraryDate(c,3));
     }
     @Test void missingCoordinatesInvalidateOldRoute() {
-        var costs=mock(RouteCostProvider.class);var planner=new RouteAwarePlanner(costs,new PlanVerifier(),new LocalPlanRepairer());
+        var costs=mock(RouteCostProvider.class);var planner=new RouteAwarePlanner(costs,new PlanVerifier(),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer());
         var a=stop("A","10:00",30);a.remove("location");var b=stop("B","11:00",30);
         b.put("resolvedRouteCost",RouteCost.estimated(100,1,0,"WALKING","old edge").asMap());
         b.put("routeFromPrevious",Map.of("selected",Map.of("durationSeconds",60)));
         planner.backfillAdjacentEdgeCosts(List.of(day(1,List.of(a,b))),Map.of(),"TRANSIT");
         verifyNoInteractions(costs);assertEquals("UNAVAILABLE",b.get("routeDataStatus"));
-        assertFalse(b.containsKey("routeFromPrevious"));assertEquals(15,new ItineraryTimeEngine().transferMinutes(a,b));
+        assertFalse(b.containsKey("routeFromPrevious"));assertEquals(-1,new ItineraryTimeEngine().transferMinutes(a,b));
     }
     @Test void removeReattachesActualRepairedTree() {
         var costs=mock(RouteCostProvider.class);
         when(costs.resolveFinalEdge(any(),any(),any())).thenAnswer(x ->
                 RouteCost.estimated(1000, x.getArgument(1,Attraction.class).getId().equals("C") ? 180 : 15,0,"TRANSIT","test"));
-        var planner=new RouteAwarePlanner(costs,new PlanVerifier(),new LocalPlanRepairer());
+        var taxonomy=com.ai.guide.testing.PlannerTaxonomyFixtures.taxonomy();
+        var planner=new RouteAwarePlanner(costs,new PlanVerifier(taxonomy),com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer(),new com.ai.guide.domain.planner.service.PlannerMetricsLogger(),null,taxonomy);
         var d=day(1,List.of(stop("A","08:00",30),stop("X","09:00",30),stop("B","13:00",30),stop("C","17:00",30)));
         var trip=new LinkedHashMap<String,Object>();trip.put("days",new ArrayList<>(List.of(d)));
         var intent=PlanAdjustmentIntent.builder().type(ConversationIntentType.REMOVE_STOP).targetStopId("X").build();
@@ -137,7 +139,7 @@ class PlanningRouteRepairRegressionTest {
         assertEquals("18:00",constraints.getArrivalAt());assertTrue(constraints.getMustVisit().isEmpty());
         var d=PlanAdjustmentHelper.days(trip).get(1);
         var violation=new PlanVerifier.PlanViolation("DAY_SCHEDULE_OVERFLOW",1,"replacement","replacement","test",true);
-        var result=new LocalPlanRepairer().repair(List.of(d),new PlanVerifier.VerificationResult(false,List.of(violation),Map.of()),local,List.of());
+        var result=com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer().repair(List.of(d),new PlanVerifier.VerificationResult(false,List.of(violation),Map.of()),local,List.of());
         assertEquals(List.of("120分钟","120分钟","120分钟"),PlanAdjustmentHelper.dayStops(result.get(0)).stream().map(s -> s.get("duration")).toList());
     }
 }

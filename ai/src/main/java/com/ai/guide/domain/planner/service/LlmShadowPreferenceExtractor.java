@@ -1,6 +1,9 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +21,14 @@ import java.util.Map;
 public class LlmShadowPreferenceExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(LlmShadowPreferenceExtractor.class);
+    private final PlannerTaxonomyPort taxonomy;
+
+    @Autowired
+    public LlmShadowPreferenceExtractor(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+    }
+
+    public LlmShadowPreferenceExtractor() { this(TaxonomyPort.empty()); }
 
     public record ShadowExtractionResult(
             Map<String, Object> openPreferences,
@@ -44,25 +55,26 @@ public class LlmShadowPreferenceExtractor {
         Map<String, Object> open = new LinkedHashMap<>();
         List<String> inferred = new ArrayList<>();
 
-        if (prompt.matches(".*(不想太赶|慢节奏|悠闲|轻松|别太累|不赶时间).*")) {
-            open.put("pacing", "RELAXED");
-            inferred.add("慢节奏游览");
-        }
-        if (prompt.matches(".*(避开网红|不去人多|小众|清幽|人少|清静).*")) {
-            open.put("crowdPreference", "AVOID_CROWDED");
-            inferred.add("小众清幽");
-        }
-        if (prompt.matches(".*(老重庆|市井|地道|母城记忆|烟火气|老街坊).*")) {
-            open.put("experienceTheme", "AUTHENTIC_LOCAL");
-            inferred.add("地道老重庆");
-        }
-        if (prompt.matches(".*(拍照出片|拍照|摄影|机位|打卡|旅拍).*")) {
-            open.put("photographyFocus", true);
-            inferred.add("摄影取景");
-        }
+        addConfiguredPreference(prompt, "shadowPacing", "pacing", false, open, inferred);
+        addConfiguredPreference(prompt, "shadowCrowd", "crowdPreference", false, open, inferred);
+        addConfiguredPreference(prompt, "shadowExperience", "experienceTheme", false, open, inferred);
+        addConfiguredPreference(prompt, "shadowPhotography", "photographyFocus", true, open, inferred);
 
         double confidence = inferred.isEmpty() ? 0.0 : 0.85;
         log.debug("[LLM-Shadow] Prompt open semantic extraction: {} -> {}", prompt, open);
         return new ShadowExtractionResult(open, inferred, ConstraintOrigin.USER_TEXT, confidence, true);
+    }
+
+    private void addConfiguredPreference(String prompt, String key, String outputKey, boolean booleanValue,
+                                         Map<String, Object> open, List<String> inferred) {
+        List<String> rule = taxonomy.getHints(key);
+        if (rule.isEmpty()) return;
+        String[] result = rule.get(0).split("\\|", 2);
+        if (result.length != 2 || result[0].isBlank() || result[1].isBlank()) return;
+        if (rule.stream().skip(1).anyMatch(prompt::contains)) {
+            Object value = booleanValue ? Boolean.TRUE : result[0];
+            open.put(outputKey, value);
+            inferred.add(result[1]);
+        }
     }
 }

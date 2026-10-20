@@ -1,0 +1,23 @@
+{
+  "outcome": "benefited",
+  "reason": "采用 FQ2 实际跨层白名单与请求边界核验方法，确认知识管理 multipart 和 JSON 更新遗漏城市归属，并发现列表摘要被当作完整正文编辑的路径。",
+  "effect": "在当前知识管理合同中补齐 scope/city 和完整正文详情读取，以实际本地 HTTP 上游断言、真实 SQLite 独立反例和浏览器管理操作验证；结论限于覆盖路径，不推断真实 PostgreSQL/Qdrant 或全国资产完整性。",
+  "evidence": [
+    {
+      "role": "change",
+      "path": "D:/loop-p0-functional-inventory-1-home/server/retrieval-adapter.mjs"
+    },
+    {
+      "role": "verification",
+      "path": "D:/loop-p0-functional-inventory-1-home/server/knowledge-metadata.integration.test.mjs"
+    },
+    {
+      "role": "verification",
+      "path": "D:/scenic-guide/knowledge-city-contract-regression.log"
+    },
+    {
+      "role": "verification",
+      "path": "D:/scenic-guide/ai/src/test/java/com/ai/guide/adapter/rag/web/KnowledgeScopeHttpContractTest.java"
+    }
+  ]
+}

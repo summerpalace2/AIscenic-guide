@@ -2,10 +2,9 @@ package com.ai.guide.application.user;
 
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
-import com.ai.guide.common.security.JwtRevocationService;
 import com.ai.guide.common.security.JwtUtil;
+import com.ai.guide.domain.user.gateway.JwtSessionTokenPort;
 import com.ai.guide.domain.user.service.UserService;
-import io.jsonwebtoken.Claims;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,15 +21,15 @@ class UserApplicationServiceImplTest {
 
     private UserService userService;
     private JwtUtil jwtUtil;
-    private JwtRevocationService revocationService;
+    private JwtSessionTokenPort sessionTokens;
     private UserApplicationServiceImpl service;
 
     @BeforeEach
     void setUp() {
         userService = Mockito.mock(UserService.class);
         jwtUtil = new JwtUtil(SECRET, 7);
-        revocationService = Mockito.mock(JwtRevocationService.class);
-        service = new UserApplicationServiceImpl(userService, jwtUtil, revocationService);
+        sessionTokens = Mockito.mock(JwtSessionTokenPort.class);
+        service = new UserApplicationServiceImpl(userService, sessionTokens);
     }
 
     @AfterEach
@@ -102,12 +101,13 @@ class UserApplicationServiceImplTest {
 
         // revocation failure -> 503
         String token = jwtUtil.generateToken("user-1", "traveler", "USER");
-        when(revocationService.revoke(eq(token), any(Claims.class))).thenReturn(false);
+        when(sessionTokens.isValid(token)).thenReturn(true);
+        when(sessionTokens.revoke(token)).thenReturn(false);
         Result<Void> r4 = service.logout("Bearer " + token);
         assertEquals(503, r4.getCode());
 
         // success -> 200
-        when(revocationService.revoke(eq(token), any(Claims.class))).thenReturn(true);
+        when(sessionTokens.revoke(token)).thenReturn(true);
         Result<Void> r5 = service.logout("Bearer " + token);
         assertEquals(200, r5.getCode());
         assertEquals("退出成功", r5.getMessage());

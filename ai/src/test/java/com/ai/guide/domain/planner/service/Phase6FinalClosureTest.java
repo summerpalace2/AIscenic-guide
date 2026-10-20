@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 
 
 
@@ -87,12 +89,12 @@ class Phase6FinalClosureTest {
     private PlannerMetricsLogger metricsLogger;
 
     @Autowired
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @AfterEach
     void tearDown() {
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     @Test
@@ -111,7 +113,7 @@ class Phase6FinalClosureTest {
 
         assertTrue(v1Planner.isPlannerV1Enabled());
         PlanRequest req = PlanRequest.builder()
-                .prompt("3天行程，喜欢夜景")
+                .prompt("重庆市3天行程，喜欢夜景")
                 .idempotencyKey("v1-test-" + UUID.randomUUID())
                 .build();
         PlannerService.ServiceResult result = v1Planner.create(req);
@@ -138,7 +140,7 @@ class Phase6FinalClosureTest {
 
         // 1. Create plan delegates to legacy static baseline
         PlanRequest req = PlanRequest.builder()
-                .prompt("3天行程，喜欢夜景")
+                .prompt("重庆市3天行程，喜欢夜景")
                 .idempotencyKey("legacy-test-" + UUID.randomUUID())
                 .build();
         PlannerService.ServiceResult result = legacyPlanner.create(req);
@@ -174,7 +176,7 @@ class Phase6FinalClosureTest {
     void test04_versionMetadataPresentAcrossCreateShadowPreviewAndApply() {
         // 1. Create durable plan
         PlanRequest createReq = PlanRequest.builder()
-                .prompt("2天行程，喜欢夜景和美食")
+                .prompt("重庆市2天行程，喜欢夜景和美食")
                 .idempotencyKey("v6-meta-" + UUID.randomUUID())
                 .build();
         PlannerService.ServiceResult created = plannerService.create(createReq);
@@ -189,7 +191,7 @@ class Phase6FinalClosureTest {
 
         // 2. Shadow plan
         ShadowPlanRequest shadowReq = ShadowPlanRequest.builder()
-                .prompt("2天行程，喜欢夜景")
+                .prompt("重庆市2天行程，喜欢夜景")
                 .build();
         PlannerService.ServiceResult shadowRes = plannerService.shadow(shadowReq);
         assertEquals(200, shadowRes.status());
@@ -266,7 +268,7 @@ class Phase6FinalClosureTest {
         long initialConflict = metricsLogger.getRevisionConflictCount();
 
         PlanRequest request = PlanRequest.builder()
-                .prompt("2天行程，喜欢夜景")
+                .prompt("重庆市2天行程，喜欢夜景")
                 .idempotencyKey("v6-metrics-" + UUID.randomUUID())
                 .build();
         PlannerService.ServiceResult created = plannerService.create(request);
@@ -315,6 +317,7 @@ class Phase6FinalClosureTest {
                 .sessionId(sessionId)
                 .baseRevision(1)
                 .proposedTrip(Map.of("days", List.of()))
+                .createdAt(System.currentTimeMillis())
                 .expiresAt(System.currentTimeMillis() + 60000)
                 .build();
         proposalStore.put(staleProp);
@@ -336,7 +339,7 @@ class Phase6FinalClosureTest {
     }
 
     private String firstScenicStopId(List<Map<String, Object>> stops) {
-        PoiCategoryPolicyRegistry policies = new PoiCategoryPolicyRegistry();
+        PoiCategoryPolicyRegistry policies = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         return stops.stream().filter(stop -> !policies.isDiningStop(stop))
                 .map(stop -> String.valueOf(stop.get("id"))).findFirst().orElseThrow();
     }
@@ -437,7 +440,7 @@ class Phase6FinalClosureTest {
         assertEquals(2, ((List<?>) trip8.get("days")).size());
 
         // GS-09: Suggest replacement preview before apply
-        PlannerService.ServiceResult s9 = plannerService.create(PlanRequest.builder().prompt("2天行程").idempotencyKey("gs9-" + UUID.randomUUID()).build());
+        PlannerService.ServiceResult s9 = plannerService.create(PlanRequest.builder().prompt("重庆市2天行程").idempotencyKey("gs9-" + UUID.randomUUID()).build());
         String token9 = String.valueOf(s9.body().get("sessionAccessToken"));
         String session9 = String.valueOf(s9.body().get("sessionId"));
         PlanConversationRequestDto prev9 = PlanConversationRequestDto.builder()

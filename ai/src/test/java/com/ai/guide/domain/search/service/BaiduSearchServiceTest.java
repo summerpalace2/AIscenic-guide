@@ -1,9 +1,10 @@
 package com.ai.guide.domain.search.service;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
-import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
+import com.ai.guide.domain.search.gateway.LocalKnowledgeSearchPort;
 import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
+import com.ai.guide.domain.search.gateway.WebSearchLinkPort;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -18,8 +19,16 @@ import static org.mockito.Mockito.*;
 class BaiduSearchServiceTest {
 
     private final PoiSearchGatewayPort poiSearchGatewayPort = mock(PoiSearchGatewayPort.class);
-    private final KnowledgeDocumentService knowledgeDocumentService = mock(KnowledgeDocumentService.class);
-    private final BaiduSearchService service = new BaiduSearchService(poiSearchGatewayPort, knowledgeDocumentService);
+    private final LocalKnowledgeSearchPort localKnowledgeSearch = mock(LocalKnowledgeSearchPort.class);
+    private final WebSearchLinkPort webSearchLink = mock(WebSearchLinkPort.class);
+    private final BaiduSearchService service = new BaiduSearchService(poiSearchGatewayPort, localKnowledgeSearch,
+            new JsonTaxonomyAdapter(), webSearchLink);
+
+    BaiduSearchServiceTest() {
+        when(webSearchLink.searchUrl(anyString())).thenAnswer(invocation ->
+                "https://www.baidu.com/s?wd=" + java.net.URLEncoder.encode(invocation.getArgument(0), java.nio.charset.StandardCharsets.UTF_8));
+        when(webSearchLink.faviconUrl()).thenReturn("https://www.baidu.com/favicon.ico");
+    }
 
     @Test
     @DisplayName("search - 空查询直接返回空列表")
@@ -33,16 +42,13 @@ class BaiduSearchServiceTest {
     @DisplayName("search - 融合本地知识、高德POI与百度直达卡片")
     void testSearchFusion() {
         // 1. 本地知识命中
-        Map<String, Object> localHit = Map.of(
-                "title", "重庆老火锅",
-                "content", "重庆传统火锅以九宫格和牛油为特色，历史悠久。"
-        );
-        when(knowledgeDocumentService.searchLocalKnowledge(eq("火锅"), eq(3)))
-                .thenReturn(List.of(localHit));
+        var localHit = new com.ai.guide.domain.search.model.LocalKnowledgeHit(
+                "重庆老火锅", "重庆传统火锅以九宫格和牛油为特色，历史悠久。");
+        when(localKnowledgeSearch.search(eq("火锅"), eq(3))).thenReturn(List.of(localHit));
 
         // 2. 高德 POI 命中
-        AmapResponseNormalizer.PoiCandidate poi = new AmapResponseNormalizer.PoiCandidate(
-                "poi-1", "佩姐老火锅(洪崖洞店)", new AmapResponseNormalizer.Coordinate(106.5, 29.5),
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = new com.ai.guide.domain.geo.model.GeoPoiCandidate(
+                "poi-1", "佩姐老火锅(洪崖洞店)", new com.ai.guide.domain.geo.model.GeoCoordinate(106.5, 29.5),
                 "渝中区", "餐饮服务;火锅店", null, null, "poi-1", "http://img.jpg", null
         );
         when(poiSearchGatewayPort.searchPoiCandidates(eq("火锅"), eq("重庆市")))
@@ -63,7 +69,7 @@ class BaiduSearchServiceTest {
     @Test
     @DisplayName("search - 当依赖服务异常时平滑降级，仅返回百度全网卡片")
     void testSearchGracefulDegradation() {
-        when(knowledgeDocumentService.searchLocalKnowledge(anyString(), anyInt()))
+        when(localKnowledgeSearch.search(anyString(), anyInt()))
                 .thenThrow(new RuntimeException("DB down"));
         when(poiSearchGatewayPort.searchPoiCandidates(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Amap network timeout"));

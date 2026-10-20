@@ -1,0 +1,12 @@
+{
+  "family": "Noto Sans SC",
+  "weight": 400,
+  "license": "SIL OFL 1.1",
+  "upstreamCommit": "1d0e46c7933245c8180fe83e47917961c913bbdb",
+  "sourceUrl": "https://raw.githubusercontent.com/google/fonts/1d0e46c7933245c8180fe83e47917961c913bbdb/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+  "sourceSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+  "build": "fonttools 4.62.1; instantiateVariableFont(wght=400); recalcTimestamp=False; no glyph subsetting; updateFontNames=True",
+  "file": "NotoSansSC-Regular.ttf",
+  "sha256": "eeb06b8a64fd04a2744d95579db1571b51027cda61ed78c62e4b730791525461",
+  "glyphCount": 31036
+}

@@ -5,167 +5,161 @@ import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
 import com.ai.guide.domain.planner.model.topography.BarrierCrossingType;
 import com.ai.guide.domain.planner.model.topography.ElevationFlow;
 import com.ai.guide.domain.planner.model.topography.ElevationTier;
-import lombok.extern.slf4j.Slf4j;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Locale;
 
-@Slf4j
 @Component
 public class ChongqingTopographyStrategy implements TopographyStrategyPort {
+    private final PlannerTaxonomyPort taxonomy;
 
-    @Override
-    public String supportedCity() {
-        return "CHONGQING";
+    @Autowired
+    public ChongqingTopographyStrategy(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
     }
 
-    @Override
-    public ElevationTier resolveElevationTier(Attraction attraction) {
+    /** Compatibility constructor for isolated fixtures. Production uses the configured taxonomy port. */
+    public ChongqingTopographyStrategy() { this(TaxonomyPort.empty()); }
+
+    @Override public String supportedCity() { return "CHONGQING"; }
+
+    @Override public ElevationTier resolveElevationTier(Attraction attraction) {
         if (attraction == null) return ElevationTier.STANDARD_PLAIN;
         return resolveElevationTier(attraction.getId(), attraction.getName(), attraction.getDistrict(), attraction.getLocation());
     }
 
-    @Override
-    public ElevationTier resolveElevationTier(String id, String name, String district, String location) {
-        String cleanId = id != null ? id.toLowerCase(Locale.ROOT) : "";
-        String cleanName = name != null ? name : "";
-        String cleanDist = district != null ? district : "";
-
-        // 1. 高山制高点（南山、歌乐山、照母山、仙女山）
-        if (cleanName.contains("南山") || cleanName.contains("一棵树") || cleanName.contains("黄桷垭")
-                || cleanName.contains("歌乐山") || cleanName.contains("白公馆") || cleanName.contains("渣滓洞")
-                || cleanName.contains("仙女山") || cleanName.contains("天生三桥")
-                || cleanId.contains("nanshan") || cleanId.contains("huangjueya")) {
+    @Override public ElevationTier resolveElevationTier(String id, String name, String district, String location) {
+        String normalizedId = id == null ? "" : id.toLowerCase(Locale.ROOT);
+        String placeName = name == null ? "" : name;
+        String placeDistrict = district == null ? "" : district;
+        if (matches(placeName, "chongqingTopoHighNameTokens") || matches(normalizedId, "chongqingTopoHighIdTokens"))
             return ElevationTier.HIGH_ALTITUDE;
-        }
-
-        // 2. 滨江沿线低洼带（江面 180~210 米标高）
-        if (cleanName.contains("洪崖洞") || cleanName.contains("李子坝") || cleanName.contains("朝天门")
-                || cleanName.contains("白象街") || cleanName.contains("南滨路") || cleanName.contains("大剧院")
-                || cleanName.contains("磁器口") || cleanName.contains("码头") || cleanName.contains("江滩")
-                || cleanId.contains("hongyadong") || cleanId.contains("liziba") || cleanId.contains("chaotianmen")) {
+        if (matches(placeName, "chongqingTopoLowlandNameTokens") || matches(normalizedId, "chongqingTopoLowlandIdTokens"))
             return ElevationTier.LOWLAND_VALLEY;
-        }
-
-        // 3. 上半城/山脊台地（解放碑、鹅岭、大坪）
-        if ("渝中区".equals(cleanDist)) {
+        if (matches(placeName, "chongqingTopoUpperRidgeNameTokens") || matches(normalizedId, "chongqingTopoUpperIdTokens"))
             return ElevationTier.UPPER_PLATEAU;
-        }
-        if (cleanName.contains("观音桥") || cleanName.contains("九街")) {
+        if (matches(placeDistrict, "chongqingTopoUpperDistricts") || matches(placeName, "chongqingTopoUpperNameTokens"))
             return ElevationTier.UPPER_PLATEAU;
-        }
-
         return ElevationTier.STANDARD_PLAIN;
     }
 
-    @Override
-    public BarrierCrossingType detectBarrierCrossing(Attraction from, Attraction to) {
+    @Override public BarrierCrossingType detectBarrierCrossing(Attraction from, Attraction to) {
         if (from == null || to == null) return BarrierCrossingType.NONE;
-        String d1 = from.getDistrict() != null ? from.getDistrict().trim() : "";
-        String d2 = to.getDistrict() != null ? to.getDistrict().trim() : "";
-        if (d1.isBlank() || d2.isBlank() || d1.equals(d2)) return BarrierCrossingType.NONE;
+        return detectBarrierCrossing(from.getDistrict(), to.getDistrict());
+    }
 
-        boolean fromJialingSouth = "渝中区".equals(d1) || "沙坪坝区".equals(d1);
-        boolean toJialingNorth = "江北区".equals(d2) || "渝北区".equals(d2);
-        boolean fromJialingNorth = "江北区".equals(d1) || "渝北区".equals(d1);
-        boolean toJialingSouth = "渝中区".equals(d2) || "沙坪坝区".equals(d2);
-        if ((fromJialingSouth && toJialingNorth) || (fromJialingNorth && toJialingSouth)) {
-            return BarrierCrossingType.MAJOR_RIVER_PRIMARY; // 嘉陵江
-        }
-
-        boolean fromYangtzeNorth = "渝中区".equals(d1) || "九龙坡区".equals(d1) || "大渡口区".equals(d1);
-        boolean toYangtzeSouth = "南岸区".equals(d2) || "巴南区".equals(d2);
-        boolean fromYangtzeSouth = "南岸区".equals(d1) || "巴南区".equals(d1);
-        boolean toYangtzeNorth = "渝中区".equals(d2) || "九龙坡区".equals(d2) || "大渡口区".equals(d2);
-        if ((fromYangtzeNorth && toYangtzeSouth) || (fromYangtzeSouth && toYangtzeNorth)) {
-            return BarrierCrossingType.MAJOR_RIVER_SECONDARY; // 长江
-        }
-
-        if (("江北区".equals(d1) && "南岸区".equals(d2)) || ("南岸区".equals(d1) && "江北区".equals(d2))) {
-            return BarrierCrossingType.CONFLUENCE_BOTH;
-        }
+    private BarrierCrossingType detectBarrierCrossing(String from, String to) {
+        String source = from == null ? "" : from.trim();
+        String target = to == null ? "" : to.trim();
+        if (source.isBlank() || target.isBlank() || source.equals(target)) return BarrierCrossingType.NONE;
+        if (matchesPair(source, target, "chongqingTopoConfluenceDistrictPairs")) return BarrierCrossingType.CONFLUENCE_BOTH;
+        if (crosses(source, target, "chongqingTopoJialingSouthDistricts", "chongqingTopoJialingNorthDistricts"))
+            return BarrierCrossingType.MAJOR_RIVER_PRIMARY;
+        if (crosses(source, target, "chongqingTopoYangtzeNorthDistricts", "chongqingTopoYangtzeSouthDistricts"))
+            return BarrierCrossingType.MAJOR_RIVER_SECONDARY;
         return BarrierCrossingType.NONE;
     }
 
-    @Override
-    public ElevationFlow detectElevationFlow(Attraction from, Attraction to) {
+    @Override public ElevationFlow detectElevationFlow(Attraction from, Attraction to) {
         if (from == null || to == null) return ElevationFlow.FLAT;
-        String n1 = from.getName() != null ? from.getName() : "";
-        String n2 = to.getName() != null ? to.getName() : "";
-
-        if ((n1.contains("鹅岭") && n2.contains("李子坝"))
-                || (n1.contains("解放碑") && n2.contains("洪崖洞"))
-                || (n1.contains("解放碑") && n2.contains("十八梯"))
-                || (n1.contains("南山") && n2.contains("南滨路"))) {
-            return ElevationFlow.DOWNHILL;
-        }
-        if ((n1.contains("李子坝") && n2.contains("鹅岭"))
-                || (n1.contains("洪崖洞") && n2.contains("解放碑"))
-                || (n1.contains("十八梯") && n2.contains("解放碑"))
-                || (n2.contains("南山") && n1.contains("南滨路"))) {
-            return ElevationFlow.UPHILL;
-        }
-
-        ElevationTier t1 = resolveElevationTier(from);
-        ElevationTier t2 = resolveElevationTier(to);
-        if (t1.getRank() > t2.getRank()) return ElevationFlow.DOWNHILL;
-        if (t1.getRank() < t2.getRank()) return ElevationFlow.UPHILL;
+        String source = from.getName() == null ? "" : from.getName();
+        String target = to.getName() == null ? "" : to.getName();
+        if (matchesPair(source, target, "chongqingTopoDownhillPairs")) return ElevationFlow.DOWNHILL;
+        if (matchesPair(target, source, "chongqingTopoDownhillPairs")) return ElevationFlow.UPHILL;
+        ElevationTier sourceTier = resolveElevationTier(from);
+        ElevationTier targetTier = resolveElevationTier(to);
+        if (sourceTier.getRank() > targetTier.getRank()) return ElevationFlow.DOWNHILL;
+        if (sourceTier.getRank() < targetTier.getRank()) return ElevationFlow.UPHILL;
         return ElevationFlow.FLAT;
     }
 
-    @Override
-    public double calculateZigZagPenalty(List<Attraction> historyStopsInDay, Attraction candidate) {
-        if (historyStopsInDay == null || historyStopsInDay.size() < 2 || candidate == null) return 0.0;
-        double penalty = 0.0;
-        int size = historyStopsInDay.size();
-        Attraction last = historyStopsInDay.get(size - 1);
-        Attraction secondLast = historyStopsInDay.get(size - 2);
-
-        ElevationTier cTier = resolveElevationTier(candidate);
-        ElevationTier lTier = resolveElevationTier(last);
-        ElevationTier sTier = resolveElevationTier(secondLast);
-
-        // 1. 高度反弹折返
-        boolean isBounce = (sTier == ElevationTier.HIGH_ALTITUDE && lTier == ElevationTier.LOWLAND_VALLEY && cTier == ElevationTier.HIGH_ALTITUDE)
-                || (sTier == ElevationTier.LOWLAND_VALLEY && lTier == ElevationTier.HIGH_ALTITUDE && cTier == ElevationTier.LOWLAND_VALLEY);
-        if (isBounce) {
-            penalty += 60.0;
-        }
-
-        // 2. 跨江反复横跳
-        BarrierCrossingType c1 = detectBarrierCrossing(secondLast, last);
-        BarrierCrossingType c2 = detectBarrierCrossing(last, candidate);
-        if (c1 != BarrierCrossingType.NONE && c1 == c2) {
-            penalty += 45.0;
-        }
+    @Override public double calculateZigZagPenalty(List<Attraction> history, Attraction candidate) {
+        if (history == null || history.size() < 2 || candidate == null) return 0;
+        Attraction previous = history.get(history.size() - 2);
+        Attraction last = history.get(history.size() - 1);
+        ElevationTier candidateTier = resolveElevationTier(candidate);
+        ElevationTier lastTier = resolveElevationTier(last);
+        ElevationTier previousTier = resolveElevationTier(previous);
+        boolean bounce = (previousTier == ElevationTier.HIGH_ALTITUDE && lastTier == ElevationTier.LOWLAND_VALLEY
+                && candidateTier == ElevationTier.HIGH_ALTITUDE)
+                || (previousTier == ElevationTier.LOWLAND_VALLEY && lastTier == ElevationTier.HIGH_ALTITUDE
+                && candidateTier == ElevationTier.LOWLAND_VALLEY);
+        double penalty = bounce ? configuredPenalty("MOUNTAIN_BOUNCE") : 0;
+        BarrierCrossingType first = detectBarrierCrossing(previous, last);
+        BarrierCrossingType next = detectBarrierCrossing(last, candidate);
+        if (first != BarrierCrossingType.NONE && first == next) penalty += configuredPenalty("RIVER_BOUNCE");
         return penalty;
     }
 
-    @Override
-    public String generateTransitCharacteristicHint(Attraction from, Attraction to, String transportPreference) {
+    @Override public String generateTransitCharacteristicHint(Attraction from, Attraction to, String transportPreference) {
         if (from == null || to == null) return "";
-        String n1 = from.getName() != null ? from.getName() : "";
-        String n2 = to.getName() != null ? to.getName() : "";
-
-        if (n1.contains("鹅岭") && n2.contains("李子坝")) {
-            return "顺山势从鹅岭二厂沿三层马路步道惬意下行，直达李子坝单轨观景平台，下坡舒适平缓。";
-        }
-        if (n1.contains("两路口") && n2.contains("菜园坝")) {
-            return "建议体验山城特色【皇冠大扶梯】（落差52.7米），顺势下坡直达菜园坝江畔。";
-        }
-        BarrierCrossingType crossing = detectBarrierCrossing(from, to);
-        if (crossing == BarrierCrossingType.MAJOR_RIVER_PRIMARY) {
-            return "两站跨越嘉陵江，推荐乘坐轨道交通2号线/6号线体验跨江视觉，或打车经千厮门大桥通达。";
-        }
-        if (crossing == BarrierCrossingType.MAJOR_RIVER_SECONDARY) {
-            return "两站横跨长江，推荐体验标志性【长江索道】空中飞渡，或乘坐轨道环线快速过江。";
-        }
-        return "";
+        String source = from.getName() == null ? "" : from.getName();
+        String target = to.getName() == null ? "" : to.getName();
+        String direct = configuredHint(source, target);
+        if (!direct.isBlank()) return direct;
+        direct = configuredHint(target, source);
+        if (!direct.isBlank()) return direct;
+        return switch (detectBarrierCrossing(from, to)) {
+            case MAJOR_RIVER_PRIMARY -> configuredHint("CROSSING_PRIMARY", "*");
+            case MAJOR_RIVER_SECONDARY -> configuredHint("CROSSING_SECONDARY", "*");
+            case CONFLUENCE_BOTH -> configuredHint("CROSSING_BOTH", "*");
+            default -> "";
+        };
     }
 
-    @Override
-    public boolean allowStartPlaceProximity(Attraction previous, Attraction candidate) {
+    @Override public boolean allowStartPlaceProximity(Attraction previous, Attraction candidate) {
         return previous == null || detectBarrierCrossing(previous, candidate) == BarrierCrossingType.NONE;
+    }
+
+    private boolean crosses(String source, String target, String firstBankKey, String secondBankKey) {
+        return (matches(source, firstBankKey) && matches(target, secondBankKey))
+                || (matches(source, secondBankKey) && matches(target, firstBankKey));
+    }
+
+    private boolean matches(String value, String hintKey) {
+        if (value == null || value.isBlank()) return false;
+        return taxonomy.getHints(hintKey).stream().anyMatch(value::contains);
+    }
+
+    private boolean matchesPair(String source, String target, String hintKey) {
+        for (String encoded : taxonomy.getHints(hintKey)) {
+            String[] pair = encoded.split("\\|", 2);
+            if (pair.length == 2 && matchesAny(source, pair[0]) && matchesAny(target, pair[1])) return true;
+        }
+        return false;
+    }
+
+    private boolean matchesAny(String value, String alternatives) {
+        if (value == null || alternatives == null) return false;
+        for (String token : alternatives.split(",")) {
+            String clean = token.trim();
+            if (!clean.isBlank() && value.contains(clean)) return true;
+        }
+        return false;
+    }
+
+    private double configuredPenalty(String key) {
+        for (String value : taxonomy.getHints("chongqingTopoZigzagPenalties")) {
+            String[] fields = value.split("\\|", 2);
+            if (fields.length == 2 && fields[0].equals(key)) {
+                try { return Double.parseDouble(fields[1]); } catch (NumberFormatException ignored) { return 0; }
+            }
+        }
+        return 0;
+    }
+
+    private String configuredHint(String source, String target) {
+        for (String encoded : taxonomy.getHints("chongqingTopoTransitHintRules")) {
+            String[] fields = encoded.split("\\|", 3);
+            if (fields.length != 3) continue;
+            boolean matchesFrom = "*".equals(fields[0]) || matchesAny(source, fields[0]);
+            boolean matchesTo = "*".equals(fields[1]) || matchesAny(target, fields[1]);
+            if (matchesFrom && matchesTo) return fields[2];
+        }
+        return "";
     }
 }

@@ -26,7 +26,9 @@ public class ImportController {
      */
     @PostMapping("/import")
     public Result<String> uploadFile(@RequestParam("file") MultipartFile file) {
-        return ragApplicationService.importFile(file);
+        var upload = file == null ? null : new com.ai.guide.domain.rag.model.KnowledgeDocumentUpload(
+                file.getOriginalFilename(), file.getSize(), file::getBytes);
+        return ragApplicationService.importFile(upload);
     }
 
     /**

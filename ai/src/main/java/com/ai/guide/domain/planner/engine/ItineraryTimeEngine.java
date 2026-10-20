@@ -1,6 +1,10 @@
 package com.ai.guide.domain.planner.engine;
 
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort;
 
 import java.util.List;
 import java.util.Locale;
@@ -13,16 +17,30 @@ import java.util.regex.Pattern;
  */
 @Component
 public class ItineraryTimeEngine {
+    private volatile int unknownTransferEstimateMinutes = -1;
+
+    /** Install the configured conservative estimate used only when an edge has no route evidence. */
+    public void setUnknownTransferEstimateMinutes(int minutes) {
+        unknownTransferEstimateMinutes = minutes > 0 ? minutes : -1;
+    }
+
+    @Autowired(required = false)
+    public void configureUnknownTransferEstimate(DynamicShortTripPolicyPort policyPort) {
+        if (policyPort != null && policyPort.getPolicy() != null) {
+            setUnknownTransferEstimateMinutes(policyPort.getPolicy().unknownTravelDurationMinutes());
+        }
+    }
 
     /**
      * 解析时间字符串为当日分钟数（如 "14:30" -> 870）
      */
     public int parseTimeMinutes(String timeStr) {
         Integer parsed = parseExplicitTimeMinutes(timeStr);
-        return parsed == null ? 720 : parsed;
+        if (parsed == null) throw new IllegalArgumentException("A valid explicit clock time is required");
+        return parsed;
     }
 
-    /** Null means a clock was not supplied; callers must not treat the noon fallback as evidence. */
+    /** Null means a clock was not supplied; callers must not treat an invented hour as evidence. */
     public Integer parseExplicitTimeMinutes(String timeStr) {
         if (timeStr == null || timeStr.isBlank()) return null;
         try {
@@ -43,7 +61,12 @@ public class ItineraryTimeEngine {
      * 解析游玩或就餐停留时长（分钟）
      */
     public int parseDurationMinutes(String durationStr) {
-        if (durationStr == null || durationStr.isBlank()) return 50;
+        return parseKnownDurationMinutes(durationStr);
+    }
+
+    /** Parses only duration evidence; zero means the input did not contain a usable value. */
+    public int parseKnownDurationMinutes(String durationStr) {
+        if (durationStr == null || durationStr.isBlank()) return 0;
         try {
             String normalized = durationStr.toLowerCase(Locale.ROOT)
                     .replace("一个半小时", "1.5小时")
@@ -62,7 +85,7 @@ public class ItineraryTimeEngine {
             if (found && Double.isFinite(total) && total <= Integer.MAX_VALUE) return (int) Math.ceil(total);
             if (normalized.matches("\\d+")) return Integer.parseInt(normalized);
         } catch (Exception ignored) {}
-        return 50;
+        return 0;
     }
 
     /**
@@ -96,17 +119,83 @@ public class ItineraryTimeEngine {
             if (prevTimeStr.isBlank()) {
                 prevTimeStr = String.valueOf(prev.getOrDefault("startTime", ""));
             }
-            int prevStart = parseTimeMinutes(prevTimeStr);
-            int prevDur = parseDurationMinutes(String.valueOf(prev.getOrDefault("duration", "")));
-            if (prevDur <= 0) prevDur = 50;
-            int nextStart = prevStart + prevDur + transferMinutes(prev, curr);
+            Integer prevStart = parseExplicitTimeMinutes(prevTimeStr);
+            int prevDur = parseKnownDurationMinutes(String.valueOf(prev.getOrDefault("duration", "")));
+            if (prevDur <= 0 || prevStart == null) break;
+            int transfer = transferMinutes(prev, curr);
+            if (transfer < 0) break;
+            int nextStart = prevStart + prevDur + transfer;
             String newSlotTime = formatTime(nextStart);
             curr.put("time", newSlotTime);
             curr.put("startTime", newSlotTime);
         }
     }
 
+    /** Recalculates only from explicit schedule facts; unknown time/duration stops the cascade. */
+    public void rippleRecalculateStopTimesFromExplicitFacts(List<Map<String, Object>> stops, int startIndex) {
+        recalculateFromExplicitFacts(stops, startIndex, false);
+    }
+
+    /** Delays only conflicts introduced by an edited edge; existing free gaps and earlier stops remain intact. */
+    public List<String> delayConflictingStopTimesFromExplicitFacts(List<Map<String, Object>> stops, int startIndex) {
+        return recalculateFromExplicitFacts(stops, startIndex, true);
+    }
+
+    private List<String> recalculateFromExplicitFacts(List<Map<String, Object>> stops, int startIndex, boolean onlyDelay) {
+        var changed = new java.util.ArrayList<String>();
+        if (stops == null || startIndex <= 0 || startIndex >= stops.size()) return changed;
+        for (int i = startIndex; i < stops.size(); i++) {
+            Map<String, Object> previous = stops.get(i - 1);
+            Map<String, Object> current = stops.get(i);
+            Integer start = parseExplicitTimeMinutes(explicitClock(previous));
+            int duration = parseKnownDurationMinutes(String.valueOf(previous.getOrDefault("duration", "")));
+            if (start == null || duration <= 0) break;
+            int transfer = transferMinutes(previous, current);
+            if (transfer < 0) break;
+            long minimum = (long) start + duration + transfer;
+            if (minimum > Integer.MAX_VALUE) break;
+            Integer existing = parseExplicitTimeMinutes(explicitClock(current));
+            if (onlyDelay && existing != null && existing >= minimum) continue;
+            String next = formatTime((int) minimum);
+            if (!next.equals(explicitClock(current))) changed.add(String.valueOf(current.getOrDefault("id", "")));
+            current.put("time", next);
+            current.put("startTime", next);
+        }
+        return changed;
+    }
+
+    /** A placeholder in one compatibility field must not hide an explicit clock in the other. */
+    public String explicitClock(Map<String, Object> stop) {
+        Object raw = stop.get("time");
+        String value = raw == null ? "" : String.valueOf(raw);
+        if (parseExplicitTimeMinutes(value) != null) return value;
+        Object alternate = stop.get("startTime");
+        String fallback = alternate == null ? "" : String.valueOf(alternate);
+        if (parseExplicitTimeMinutes(fallback) != null) return fallback;
+        return value.isBlank() ? fallback : value;
+    }
+
     public int transferMinutes(Map<String, Object> previous, Map<String, Object> current) {
+        int known = explicitTransferMinutes(previous, current);
+        return known >= 0 ? known : unknownTransferEstimateMinutes;
+    }
+
+    /** Makes the configured conservative reserve visible; it is never labelled as a verified route. */
+    public void materializeConfiguredTransferEstimates(List<Map<String, Object>> stops, int startIndex) {
+        if (stops == null || unknownTransferEstimateMinutes <= 0) return;
+        for (int i = Math.max(1, startIndex); i < stops.size(); i++) {
+            var previous = stops.get(i - 1);
+            var current = stops.get(i);
+            if (explicitTransferMinutes(previous, current) >= 0) continue;
+            current.put("estimatedRouteCost", Map.of("durationMinutes", unknownTransferEstimateMinutes,
+                    "durationSeconds", unknownTransferEstimateMinutes * 60L,
+                    "routeDataStatus", "ESTIMATED", "status", "ESTIMATED", "source", "CONFIGURED_UNKNOWN_TRANSFER",
+                    "reason", "未取得接驳耗时，采用明确配置的保守预留；不是实时路线证据"));
+            current.put("routeDataStatus", "ESTIMATED");
+        }
+    }
+
+    private int explicitTransferMinutes(Map<String, Object> previous, Map<String, Object> current) {
         String previousVenue = String.valueOf(previous.getOrDefault("venueId", ""));
         if (!previousVenue.isBlank() && !"null".equals(previousVenue) && previousVenue.equals(String.valueOf(current.getOrDefault("venueId", "")))) return 0;
         for (String key : List.of("resolvedRouteCost", "estimatedRouteCost")) {
@@ -121,23 +210,26 @@ public class ItineraryTimeEngine {
             Object seconds = selected.get("durationSeconds") != null ? selected.get("durationSeconds") : selected.get("duration");
             if (seconds instanceof Number n) return (int) Math.ceil(Math.max(0, n.doubleValue()) / 60);
         }
-        // Explicit fallback for unresolved edges; zero-cost verified routes are retained above.
-        return 15;
+        return -1;
     }
 
-    public boolean isEveningSlot(String time) {
-        if (time == null) return false;
-        Integer minute = parseExplicitTimeMinutes(time);
-        if (minute != null) return Math.floorMod(minute, 1440) >= 18 * 60;
-        return time.contains("18:") || time.contains("19:") || time.contains("20:")
-                || time.contains("21:") || time.contains("晚上") || time.contains("夜间");
+    public boolean isEveningSlot(String time, PlannerTaxonomyPort taxonomy) {
+        return matchesConfiguredWindow(time, taxonomy, List.of("EVENING", "NIGHT"));
     }
 
-    public boolean isMorningSlot(String time) {
-        if (time == null) return false;
+    public boolean isMorningSlot(String time, PlannerTaxonomyPort taxonomy) {
+        return matchesConfiguredWindow(time, taxonomy, List.of("MORNING"));
+    }
+
+    private boolean matchesConfiguredWindow(String time, PlannerTaxonomyPort taxonomy, List<String> windowKeys) {
+        if (time == null || time.isBlank() || taxonomy == null) return false;
         Integer minute = parseExplicitTimeMinutes(time);
-        if (minute != null) return Math.floorMod(minute, 1440) < 12 * 60;
-        return time.contains("07:") || time.contains("08:") || time.contains("09:")
-                || time.contains("早上") || time.contains("早晨") || time.contains("晨间");
+        for (TaxonomyPort.AdjustmentWindow window : taxonomy.getAdjustmentWindows()) {
+            if (!windowKeys.contains(window.key())) continue;
+            if (minute != null && Math.floorMod(minute, 1440) >= window.startMinute()
+                    && Math.floorMod(minute, 1440) < window.endMinute()) return true;
+            if (minute == null && window.aliases().stream().anyMatch(time::contains)) return true;
+        }
+        return false;
     }
 }

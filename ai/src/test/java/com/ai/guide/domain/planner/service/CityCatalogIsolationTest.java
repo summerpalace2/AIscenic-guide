@@ -6,6 +6,10 @@ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.ShadowPlanRequest;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.planner.engine.PlanVerifier;
+import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
+import com.ai.guide.domain.planner.engine.RouteCostProvider;
+import com.ai.guide.domain.planner.narrative.PlanNarrativeService;
 import com.ai.guide.domain.trip.service.TripService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -53,25 +57,26 @@ class CityCatalogIsolationTest {
         Attraction beijing = Attraction.builder().id("bj-museum").name("北京测试博物馆").displayName("北京测试博物馆")
                 .district("测试区").category("人文").duration("约 60 分钟").location("116.4,39.9")
                 .summary("测试展陈").intro("测试展陈").tags(List.of("人文")).amapQuery(Map.of("city", "北京市")).build();
-        var result = planner(mock(RouteGatewayPort.class), List.of(chongqingVenue(), beijing), true)
-                .shadow(ShadowPlanRequest.builder().prompt("1天人文路线")
-                        .constraints(Map.of("destination", "北京", "durationDays", 1)).build());
-        Map<?, ?> trip = (Map<?, ?>) result.body().get("trip");
+        AttractionService attractions = mock(AttractionService.class);
+        when(attractions.list(any(), any())).thenReturn(List.of(chongqingVenue(), beijing));
+        Map<?, ?> trip = itineraryBuilder(attractions).build(1, TravelConstraints.builder()
+                .destination("北京").durationDays(1).arrivalAt("09:00").departureAt("18:00")
+                .timeBudgetMinutes(540).interests(List.of("人文")).mustVisit(List.of("bj-museum")).build());
         List<?> days = (List<?>) trip.get("days");
         List<?> stops = (List<?>) ((Map<?, ?>) days.get(0)).get("stops");
-        assertFalse(stops.isEmpty());
+        assertFalse(stops.isEmpty(), String.valueOf(trip));
         assertTrue(stops.stream().allMatch(stop -> "bj-museum".equals(((Map<?, ?>) stop).get("venueId"))));
         assertTrue(String.valueOf(trip.get("title")).contains("北京"));
-        assertFalse(String.valueOf(trip).contains("山城") || String.valueOf(trip).contains("巴渝"));
+        assertFalse(String.valueOf(trip).contains("山城") || String.valueOf(trip).contains("巴渝"), String.valueOf(trip));
     }
 
     @Test
     void missingDestinationNeverSelectsAnUnclassifiedCatalog() {
         AttractionService attractions = mock(AttractionService.class);
         when(attractions.list(any(), any())).thenReturn(List.of(chongqingVenue()));
-        ItineraryBuilder builder = new ItineraryBuilder(attractions);
+        ItineraryBuilder builder = itineraryBuilder(attractions);
         for (String destination : new String[]{null, "", "未知城市", "芒市"}) {
-            var trip = builder.build(1, TravelConstraints.builder().destination(destination).build());
+            var trip = builder.build(1, TravelConstraints.builder().destination(destination).durationDays(1).build());
             assertTrue(((List<?>) trip.get("days")).stream().allMatch(day -> ((List<?>) ((Map<?, ?>) day).get("stops")).isEmpty()));
             assertEquals(List.of("CITY_CATALOG_UNAVAILABLE"), trip.get("degradationReasons"));
             if ("芒市".equals(destination)) assertTrue(String.valueOf(trip.get("title")).startsWith("芒市"));
@@ -81,10 +86,19 @@ class CityCatalogIsolationTest {
     private PlannerService planner(RouteGatewayPort gateway, List<Attraction> catalog, boolean v1) {
         AttractionService attractions = mock(AttractionService.class);
         when(attractions.list(any(), any())).thenReturn(catalog);
-        return new PlannerService(new TravelConstraintParser(), new ItineraryBuilder(attractions),
+        return new PlannerService(new TravelConstraintParser(), itineraryBuilder(attractions),
                 mock(PlannerSessionRepositoryPort.class), mock(TripService.class), new ObjectMapper(), gateway,
                 new PlannerPreferencesResolver(null, new ObjectMapper()), mock(PlanAdjustmentService.class),
                 new PlannerMetricsLogger(), v1);
+    }
+
+    private ItineraryBuilder itineraryBuilder(AttractionService attractions) {
+        var verifier = new PlanVerifier();
+        var repairer = com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer();
+        return new ItineraryBuilder(attractions, new RouteAwarePlanner(new RouteCostProvider(null), verifier, repairer,
+                new com.ai.guide.domain.planner.service.PlannerMetricsLogger(), null,
+                new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter()),
+                verifier, repairer, new PlanNarrativeService(), mock(com.ai.guide.domain.attraction.service.AttractionAliasMatcher.class));
     }
 
     private Attraction chongqingVenue() {

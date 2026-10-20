@@ -1,18 +1,10 @@
 package com.ai.guide.domain.rag.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.ai.guide.domain.rag.gateway.RerankProviderPort;
+import com.ai.guide.domain.rag.gateway.RerankCacheInvalidationPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.web.client.RestTemplate;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -25,18 +17,9 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Slf4j
 @Service
-public class RerankService {
+public class RerankService implements RerankCacheInvalidationPort {
 
-    // 使用 DashScope API Key（与 Embedding 共享同一个 key）
-    @Setter
-    @Value("${alibabacloud.dashscope.api-key:}")
-    private String apiKey;
-
-    @Setter
-    @Value("${bailian.rerank-url:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}")
-    private String rerankUrl;
-
-    private final RestTemplate restTemplate;
+    private final RerankProviderPort provider;
     private final ObjectMapper objectMapper;
     private final ExecutorService executor;
 
@@ -55,12 +38,11 @@ public class RerankService {
     private final AtomicLong misses = new AtomicLong(0);
     private final AtomicLong apiCalls = new AtomicLong(0);
 
-    public RerankService(@Qualifier("rerankExecutor") ExecutorService executor) {
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(3000);
-        factory.setReadTimeout(3000);
-        this.restTemplate = new RestTemplate(factory);
-        this.objectMapper = new ObjectMapper();
+    public RerankService(@org.springframework.beans.factory.annotation.Qualifier("rerankExecutor") ExecutorService executor,
+                         RerankProviderPort provider,
+                         ObjectMapper objectMapper) {
+        this.provider = provider;
+        this.objectMapper = objectMapper;
         this.executor = executor;
     }
 
@@ -203,53 +185,19 @@ public class RerankService {
     }
 
     private RerankOutcome rerankApi(String query, List<String> documents, int topN) {
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("Authorization", "Bearer " + apiKey);
-
-        Map<String, Object> input = new HashMap<>();
-        input.put("query", query);
-        input.put("documents", documents);
-
-        Map<String, Object> parameters = new HashMap<>();
-        parameters.put("top_n", topN);
-        parameters.put("return_documents", true);
-
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", "gte-rerank-v2");
-        body.put("input", input);
-        body.put("parameters", parameters);
-
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-
         try {
-            String response = restTemplate.postForObject(rerankUrl, request, String.class);
-            if (response == null) {
-                log.error("【Rerank】接口返回为空");
-                return fallback(documents, topN);
-            }
-            JsonNode root = objectMapper.readTree(response);
-            if (root == null || root.get("output") == null) {
-                log.error("【Rerank】接口返回格式异常");
-                return fallback(documents, topN);
-            }
-            JsonNode results = root.get("output").get("results");
-            if (results == null || !results.isArray() || results.isEmpty()) return fallback(documents, topN);
-            Set<String> reranked = new LinkedHashSet<>();
-            for (int i = 0; i < results.size(); i++) {
-                JsonNode indexValue = results.get(i).get("index");
-                if (indexValue == null || !indexValue.isIntegralNumber()) return fallback(documents, topN);
-                int index = indexValue.asInt();
-                if (index < 0 || index >= documents.size()) return fallback(documents, topN);
+            List<Integer> indices = provider.rerank(query, documents, topN);
+            if (indices == null || indices.isEmpty()) return fallback(documents, topN);
+            LinkedHashSet<String> reranked = new LinkedHashSet<>();
+            for (Integer index : indices) {
+                if (index == null || index < 0 || index >= documents.size()) return fallback(documents, topN);
                 reranked.add(documents.get(index));
                 if (reranked.size() == topN) break;
             }
-            return new RerankOutcome(new ArrayList<>(reranked), true);
-        } catch (HttpStatusCodeException e) {
-            log.error("【Rerank】HTTP 错误: {} {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return fallback(documents, topN);
+            return reranked.isEmpty() ? fallback(documents, topN)
+                    : new RerankOutcome(new ArrayList<>(reranked), true);
         } catch (Exception e) {
-            log.error("【Rerank】未知异常: {}", e.getMessage());
+            log.error("【Rerank】provider 调用失败: {}", e.getMessage());
             return fallback(documents, topN);
         }
     }
@@ -262,6 +210,11 @@ public class RerankService {
         l2Cache.clear();
         l3Cache.clear();
         log.info("【Rerank 缓存】手动清空 -> L1:{}, L2:{}, L3:{}", l1, l2, l3);
+    }
+
+    @Override
+    public void invalidateAll() {
+        clearCache();
     }
 
     public Map<String, Object> getCacheStats() {

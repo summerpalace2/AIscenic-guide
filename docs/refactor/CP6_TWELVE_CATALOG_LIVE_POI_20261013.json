@@ -1,0 +1,1002 @@
+[
+  {
+    "city": "北京",
+    "query": "故宫博物院",
+    "venueId": "bj-palace-museum",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "故宫博物院",
+        "cityname": "北京市",
+        "id": "B000A8UIN8",
+        "location": "116.397029,39.917839"
+      },
+      {
+        "name": "故宫博物院检票处",
+        "cityname": "北京市",
+        "id": "B0FFKL520U",
+        "location": "116.396952,39.913619"
+      },
+      {
+        "name": "故宫博物院-午门",
+        "cityname": "北京市",
+        "id": "B000A84GDN",
+        "location": "116.397228,39.913582"
+      },
+      {
+        "name": "故宫博物院-神武门",
+        "cityname": "北京市",
+        "id": "B000A9PISW",
+        "location": "116.396786,39.922305"
+      },
+      {
+        "name": "故宫博物院-东北角楼",
+        "cityname": "北京市",
+        "id": "B0H65CPLW1",
+        "location": "116.401021,39.922473"
+      },
+      {
+        "name": "故宫博物院-端门",
+        "cityname": "北京市",
+        "id": "B000A7VMK9",
+        "location": "116.397413,39.910396"
+      },
+      {
+        "name": "故宫博物院-西南角楼",
+        "cityname": "北京市",
+        "id": "B000A9PIOU",
+        "location": "116.392983,39.913741"
+      },
+      {
+        "name": "故宫博物院观众服务中心",
+        "cityname": "北京市",
+        "id": "B0FFFCUX2K",
+        "location": "116.396651,39.912362"
+      },
+      {
+        "name": "故宫博物院-长春宫",
+        "cityname": "北京市",
+        "id": "B0L2V58LW7",
+        "location": "116.395136,39.920619"
+      },
+      {
+        "name": "故宫博物院-储秀宫",
+        "cityname": "北京市",
+        "id": "B000A9PIZY",
+        "location": "116.395782,39.921192"
+      },
+      {
+        "name": "故宫博物院-慈宁宫花园",
+        "cityname": "北京市",
+        "id": "B0FFKP9Q91",
+        "location": "116.393990,39.917825"
+      },
+      {
+        "name": "故宫博物院-咸福宫",
+        "cityname": "北京市",
+        "id": "B000A9PIYM",
+        "location": "116.395214,39.921142"
+      },
+      {
+        "name": "故宫博物院-断虹桥",
+        "cityname": "北京市",
+        "id": "B0FFKP9QJF",
+        "location": "116.395324,39.915134"
+      },
+      {
+        "name": "故宫博物院-重华宫",
+        "cityname": "北京市",
+        "id": "B000A9PJ74",
+        "location": "116.395050,39.921737"
+      },
+      {
+        "name": "故宫博物院-文华殿",
+        "cityname": "北京市",
+        "id": "B0FFFT7UKC",
+        "location": "116.399345,39.915573"
+      },
+      {
+        "name": "故宫博物院-石鼓馆",
+        "cityname": "北京市",
+        "id": "B0FFFTBPQC",
+        "location": "116.40035,39.920294"
+      },
+      {
+        "name": "故宫博物院-景仁宫",
+        "cityname": "北京市",
+        "id": "B000A9PIPO",
+        "location": "116.398000,39.920315"
+      },
+      {
+        "name": "故宫博物院-永寿宫",
+        "cityname": "北京市",
+        "id": "B000A9PJ6B",
+        "location": "116.395813,39.920227"
+      },
+      {
+        "name": "故宫博物院-钟粹宫",
+        "cityname": "北京市",
+        "id": "B000A9PIVJ",
+        "location": "116.397987,39.921253"
+      },
+      {
+        "name": "故宫博物院-宁寿宫",
+        "cityname": "北京市",
+        "id": "B000A9PIRI",
+        "location": "116.400375,39.920330"
+      }
+    ]
+  },
+  {
+    "city": "北京",
+    "query": "中国国家博物馆",
+    "venueId": "bj-national-museum",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "中国国家博物馆",
+        "cityname": "北京市",
+        "id": "B000A83U0P",
+        "location": "116.401304,39.905374"
+      },
+      {
+        "name": "国家自然博物馆",
+        "cityname": "北京市",
+        "id": "B000A7CRPA",
+        "location": "116.399833,39.883183"
+      },
+      {
+        "name": "中国人民革命军事博物馆",
+        "cityname": "北京市",
+        "id": "B000A7S1GC",
+        "location": "116.323871,39.909108"
+      },
+      {
+        "name": "国家自然博物馆售票处(天桥南大街)",
+        "cityname": "北京市",
+        "id": "B0FFFLJD1M",
+        "location": "116.399242,39.882877"
+      },
+      {
+        "name": "国家动物博物馆(暂停开放)",
+        "cityname": "北京市",
+        "id": "B000A805Q1",
+        "location": "116.381429,40.002551"
+      },
+      {
+        "name": "中国科学家博物馆",
+        "cityname": "北京市",
+        "id": "B0JUDRHL8D",
+        "location": "116.398916,40.007626"
+      },
+      {
+        "name": "中国国家博物馆文物科技保护中心",
+        "cityname": "北京市",
+        "id": "B000A9S3QY",
+        "location": "116.420826,39.837156"
+      },
+      {
+        "name": "中国钱币博物馆",
+        "cityname": "北京市",
+        "id": "B000A8UMB4",
+        "location": "116.394930,39.902127"
+      },
+      {
+        "name": "国家典籍博物馆",
+        "cityname": "北京市",
+        "id": "B0FFF9XUHU",
+        "location": "116.323946,39.943110"
+      },
+      {
+        "name": "中国国家博物馆亦庄办公楼",
+        "cityname": "北京市",
+        "id": "B0FFKNXERG",
+        "location": "116.551705,39.801525"
+      },
+      {
+        "name": "国家自然博物馆新馆(建设中)",
+        "cityname": "北京市",
+        "id": "B0L6M7QEYW",
+        "location": "116.405450,39.840487"
+      },
+      {
+        "name": "书香国博",
+        "cityname": "北京市",
+        "id": "B0J3ZZUVYC",
+        "location": "116.400544,39.905629"
+      },
+      {
+        "name": "国家自然博物馆-化石林",
+        "cityname": "北京市",
+        "id": "B0FFH13P57",
+        "location": "116.399243,39.882619"
+      },
+      {
+        "name": "中国国家图书馆",
+        "cityname": "北京市",
+        "id": "B000A8347V",
+        "location": "116.323321,39.943940"
+      },
+      {
+        "name": "中国人民革命军事博物馆-票务处",
+        "cityname": "北京市",
+        "id": "B0I1RC6XHG",
+        "location": "116.323406,39.908160"
+      },
+      {
+        "name": "文创商店(中国国家博物馆店)",
+        "cityname": "北京市",
+        "id": "B0LAT568LO",
+        "location": "116.400649,39.904631"
+      },
+      {
+        "name": "国家自然博物馆-探索角",
+        "cityname": "北京市",
+        "id": "B0FFFDO3NB",
+        "location": "116.400048,39.883193"
+      },
+      {
+        "name": "中国航天博物馆",
+        "cityname": "北京市",
+        "id": "B0I0ZH8CVB",
+        "location": "116.423459,39.804846"
+      },
+      {
+        "name": "中国地质博物馆",
+        "cityname": "北京市",
+        "id": "B000A88E4C",
+        "location": "116.371739,39.923387"
+      },
+      {
+        "name": "国家自然博物馆-综合服务窗口",
+        "cityname": "北京市",
+        "id": "B0FFFDVLD7",
+        "location": "116.399317,39.882968"
+      }
+    ]
+  },
+  {
+    "city": "北京",
+    "query": "颐和园",
+    "venueId": "bj-summer-palace",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "颐和园",
+        "cityname": "北京市",
+        "id": "B000A7O1CU",
+        "location": "116.275179,39.999617"
+      },
+      {
+        "name": "颐和园博物馆",
+        "cityname": "北京市",
+        "id": "B000A7J3H1",
+        "location": "116.280855,39.997047"
+      },
+      {
+        "name": "颐和园-佛香阁",
+        "cityname": "北京市",
+        "id": "B000A9PJ20",
+        "location": "116.273946,39.999089"
+      },
+      {
+        "name": "德和园",
+        "cityname": "北京市",
+        "id": "B000A96EN1",
+        "location": "116.279751,39.998627"
+      },
+      {
+        "name": "颐和园(公交站)",
+        "cityname": "北京市",
+        "id": "BV10000288",
+        "location": "116.285573,39.998299"
+      },
+      {
+        "name": "颐和园-东门检票处",
+        "cityname": "北京市",
+        "id": "B0FFF3EOGB",
+        "location": "116.281197,39.998063"
+      },
+      {
+        "name": "颐和园-画中游",
+        "cityname": "北京市",
+        "id": "B000A9LFKZ",
+        "location": "116.270926,39.998659"
+      },
+      {
+        "name": "颐和园-赅春园遗址",
+        "cityname": "北京市",
+        "id": "B000A9LFT7",
+        "location": "116.272493,40.000427"
+      },
+      {
+        "name": "颐和园-云会寺",
+        "cityname": "北京市",
+        "id": "B000A9PIJY",
+        "location": "116.273232,39.999794"
+      },
+      {
+        "name": "颐和园-智慧海",
+        "cityname": "北京市",
+        "id": "B000A9PJ79",
+        "location": "116.273933,39.999631"
+      },
+      {
+        "name": "颐和园路",
+        "cityname": "北京市",
+        "id": "BZDCPV01SR",
+        "location": "116.305555,39.986577"
+      },
+      {
+        "name": "颐和园-清晏舫(石舫)",
+        "cityname": "北京市",
+        "id": "B000AA21D1",
+        "location": "116.269655,39.998024"
+      },
+      {
+        "name": "颐和园-检票处",
+        "cityname": "北京市",
+        "id": "B0FFGXYCNL",
+        "location": "116.268872,40.001739"
+      },
+      {
+        "name": "海淀区颐和园后湖",
+        "cityname": "北京市",
+        "id": "B0H0K9QECQ",
+        "location": "116.271002,40.001256"
+      },
+      {
+        "name": "颐和园-西堤",
+        "cityname": "北京市",
+        "id": "B000AAF41Y",
+        "location": "116.274104,39.982764"
+      },
+      {
+        "name": "颐和园-凤凰墩",
+        "cityname": "北京市",
+        "id": "B000A9JUZG",
+        "location": "116.276765,39.983320"
+      },
+      {
+        "name": "颐和园-团城湖",
+        "cityname": "北京市",
+        "id": "B0FFG18CH0",
+        "location": "116.263678,39.994917"
+      },
+      {
+        "name": "颐和园-镜桥",
+        "cityname": "北京市",
+        "id": "B000AACAUO",
+        "location": "116.269412,39.991277"
+      },
+      {
+        "name": "颐和园-月波楼",
+        "cityname": "北京市",
+        "id": "B0FFFCJN0Q",
+        "location": "116.275831,39.991213"
+      },
+      {
+        "name": "颐和园长廊",
+        "cityname": "北京市",
+        "id": "B000AA848H",
+        "location": "116.271991,39.997871"
+      }
+    ]
+  },
+  {
+    "city": "杭州",
+    "query": "西湖风景名胜区",
+    "venueId": "hz-west-lake",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "杭州西湖风景名胜区",
+        "cityname": "杭州市",
+        "id": "B023B13L9M",
+        "location": "120.121358,30.222692"
+      },
+      {
+        "name": "杭州西湖风景名胜区-断桥残雪",
+        "cityname": "杭州市",
+        "id": "B023B01EE6",
+        "location": "120.151347,30.258151"
+      },
+      {
+        "name": "杭州西湖风景名胜区-湖滨公园",
+        "cityname": "杭州市",
+        "id": "B023B05MLT",
+        "location": "120.158818,30.256583"
+      },
+      {
+        "name": "杭州西湖风景名胜区宝石山",
+        "cityname": "杭州市",
+        "id": "B023B0224D",
+        "location": "120.140608,30.259804"
+      },
+      {
+        "name": "杭州西湖风景名胜区-六公园",
+        "cityname": "杭州市",
+        "id": "B023B13YJB",
+        "location": "120.157770,30.258607"
+      },
+      {
+        "name": "杭州西湖风景名胜区-长桥公园",
+        "cityname": "杭州市",
+        "id": "B023B01EAA",
+        "location": "120.155111,30.232963"
+      },
+      {
+        "name": "杭州西湖风景名胜区-西泠桥",
+        "cityname": "杭州市",
+        "id": "B023B0A6IY",
+        "location": "120.138493,30.251888"
+      },
+      {
+        "name": "杭州西湖风景名胜区-杨公堤",
+        "cityname": "杭州市",
+        "id": "B0FFJXZGIH",
+        "location": "120.136580,30.232456"
+      },
+      {
+        "name": "杭州西湖风景名胜区-神舟基地",
+        "cityname": "杭州市",
+        "id": "B0FFKDBH2K",
+        "location": "120.133221,30.240751"
+      },
+      {
+        "name": "杭州西湖风景名胜区-海月水景公园",
+        "cityname": "杭州市",
+        "id": "B0FFF33WR4",
+        "location": "120.147567,30.203394"
+      },
+      {
+        "name": "杭州西湖风景名胜区-紫云胜境",
+        "cityname": "杭州市",
+        "id": "B023B17X4X",
+        "location": "120.137792,30.257927"
+      },
+      {
+        "name": "复兴西湖风景名胜区",
+        "cityname": "杭州市",
+        "id": "B0MULRWD6P",
+        "location": "120.147875,30.201675"
+      },
+      {
+        "name": "杭州西湖风景名胜区-苏堤春晓",
+        "cityname": "杭州市",
+        "id": "B023B02070",
+        "location": "120.137960,30.243880"
+      },
+      {
+        "name": "杭州西湖风景名胜区-太子湾公园",
+        "cityname": "杭州市",
+        "id": "B023B02074",
+        "location": "120.142177,30.225470"
+      },
+      {
+        "name": "杭州西湖风景名胜区-乌龟潭",
+        "cityname": "杭州市",
+        "id": "B023B0A6I1",
+        "location": "120.133400,30.231408"
+      },
+      {
+        "name": "杭州西湖风景名胜区-龙泓涧景区",
+        "cityname": "杭州市",
+        "id": "B023B0A6I5",
+        "location": "120.125772,30.234126"
+      },
+      {
+        "name": "杭州西湖风景名胜区-浴鹄湾",
+        "cityname": "杭州市",
+        "id": "B023B1D5U2",
+        "location": "120.136251,30.226033"
+      },
+      {
+        "name": "杭州西湖风景名胜区-将台山",
+        "cityname": "杭州市",
+        "id": "B023B1D0I3",
+        "location": "120.155092,30.216519"
+      },
+      {
+        "name": "杭州西湖风景名胜区-吉庆山",
+        "cityname": "杭州市",
+        "id": "B023B1D0HL",
+        "location": "120.118180,30.234035"
+      },
+      {
+        "name": "杭州西湖风景名胜区-涌金公园",
+        "cityname": "杭州市",
+        "id": "B023B01D2F",
+        "location": "120.160139,30.245915"
+      }
+    ]
+  },
+  {
+    "city": "杭州",
+    "query": "浙江省博物馆孤山馆区",
+    "venueId": "hz-zhejiang-museum-gushan",
+    "status": "1",
+    "infocode": "10000",
+    "count": "11",
+    "pois": [
+      {
+        "name": "浙江省博物馆(孤山馆区)",
+        "cityname": "杭州市",
+        "id": "B023B06XVX",
+        "location": "120.143778,30.251243"
+      },
+      {
+        "name": "浙江省博物馆(之江馆区)",
+        "cityname": "杭州市",
+        "id": "B0I15SU50Z",
+        "location": "120.101745,30.159662"
+      },
+      {
+        "name": "浙江省博物馆孤山馆区内部地面停车场",
+        "cityname": "杭州市",
+        "id": "B0I0US3EIF",
+        "location": "120.144444,30.251529"
+      },
+      {
+        "name": "浙江省博物馆孤山馆区内部地面停车场(出入口)",
+        "cityname": "杭州市",
+        "id": "B0FFHZR71Z",
+        "location": "120.144444,30.251529"
+      },
+      {
+        "name": "浙江省博物馆-精品馆",
+        "cityname": "杭州市",
+        "id": "B0FFF03WXQ",
+        "location": "120.143743,30.251251"
+      },
+      {
+        "name": "西湖风景区-孤山馆区办公区",
+        "cityname": "杭州市",
+        "id": "B0FFLKIVNU",
+        "location": "120.143874,30.251474"
+      },
+      {
+        "name": "中山公园",
+        "cityname": "杭州市",
+        "id": "B0FFKQNUS4",
+        "location": "120.142481,30.251654"
+      },
+      {
+        "name": "西湖风景区-馆藏珍玩展",
+        "cityname": "杭州市",
+        "id": "B0FFFOG4LR",
+        "location": "120.143159,30.251017"
+      },
+      {
+        "name": "重华绮芳宋元明清漆器艺术陈列",
+        "cityname": "杭州市",
+        "id": "B0FFFXUAV4",
+        "location": "120.144267,30.251091"
+      },
+      {
+        "name": "明代古钟",
+        "cityname": "杭州市",
+        "id": "B0FFFDI3HE",
+        "location": "120.143892,30.251451"
+      },
+      {
+        "name": "孤山路-道路停车位",
+        "cityname": "杭州市",
+        "id": "B0H2G7W5FJ",
+        "location": "120.140822,30.250314"
+      }
+    ]
+  },
+  {
+    "city": "杭州",
+    "query": "中国丝绸博物馆",
+    "venueId": "hz-silk-museum",
+    "status": "1",
+    "infocode": "10000",
+    "count": "19",
+    "pois": [
+      {
+        "name": "中国丝绸博物馆",
+        "cityname": "杭州市",
+        "id": "B023B09JLL",
+        "location": "120.151292,30.222870"
+      },
+      {
+        "name": "中国丝绸博物馆游客中心",
+        "cityname": "杭州市",
+        "id": "B0I21RRGK2",
+        "location": "120.152584,30.223001"
+      },
+      {
+        "name": "中国丝绸博物馆儿童馆",
+        "cityname": "杭州市",
+        "id": "B0M6NHEUFU",
+        "location": "120.152055,30.222857"
+      },
+      {
+        "name": "中国丝绸博物馆停车场(出入口)",
+        "cityname": "杭州市",
+        "id": "B0FFHH5QJV",
+        "location": "120.152787,30.223141"
+      },
+      {
+        "name": "中国丝绸博物馆内部停车场",
+        "cityname": "杭州市",
+        "id": "B0FFLAUVWJ",
+        "location": "120.150436,30.222191"
+      },
+      {
+        "name": "中国丝绸博物馆地下停车场",
+        "cityname": "杭州市",
+        "id": "B023B1FO3N",
+        "location": "120.15236,30.223383"
+      },
+      {
+        "name": "蚕桑馆",
+        "cityname": "杭州市",
+        "id": "B0FFM54GSW",
+        "location": "120.151599,30.222445"
+      },
+      {
+        "name": "时装馆",
+        "cityname": "杭州市",
+        "id": "B0G1GORPB7",
+        "location": "120.150475,30.223075"
+      },
+      {
+        "name": "丝路馆",
+        "cityname": "杭州市",
+        "id": "B0HGKGGL4K",
+        "location": "120.151974,30.222779"
+      },
+      {
+        "name": "藏品楼(不对外开放)",
+        "cityname": "杭州市",
+        "id": "B0FFMB2C40",
+        "location": "120.150061,30.222759"
+      },
+      {
+        "name": "杭州西湖风景名胜区-蚕乡桑庐",
+        "cityname": "杭州市",
+        "id": "B0FFLBYPNU",
+        "location": "120.151830,30.223595"
+      },
+      {
+        "name": "织造馆",
+        "cityname": "杭州市",
+        "id": "B0HGKMHFTZ",
+        "location": "120.151464,30.222567"
+      },
+      {
+        "name": "一带廊",
+        "cityname": "杭州市",
+        "id": "B0FFMA61W5",
+        "location": "120.150784,30.223101"
+      },
+      {
+        "name": "嫘祖像",
+        "cityname": "杭州市",
+        "id": "B0FFM2379R",
+        "location": "120.151308,30.222269"
+      },
+      {
+        "name": "和气晓馆",
+        "cityname": "杭州市",
+        "id": "B0HU1HBP4O",
+        "location": "120.153130,30.223079"
+      },
+      {
+        "name": "杭州西湖风景名胜区-观音洞",
+        "cityname": "杭州市",
+        "id": "B023B05MG7",
+        "location": "120.155129,30.220978"
+      },
+      {
+        "name": "染草园",
+        "cityname": "杭州市",
+        "id": "B0FFMC0L5X",
+        "location": "120.151231,30.222836"
+      },
+      {
+        "name": "九里桥",
+        "cityname": "杭州市",
+        "id": "B0HBXLRYQ3",
+        "location": "120.152036,30.223350"
+      },
+      {
+        "name": "锦绣广场",
+        "cityname": "杭州市",
+        "id": "B0FFL34LEL",
+        "location": "120.150909,30.222610"
+      }
+    ]
+  },
+  {
+    "city": "西安",
+    "query": "陕西历史博物馆",
+    "errorType": "URLError"
+  },
+  {
+    "city": "西安",
+    "query": "秦始皇帝陵博物院",
+    "errorType": "URLError"
+  },
+  {
+    "city": "西安",
+    "query": "西安城墙景区",
+    "venueId": "xa-city-wall",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "西安城墙",
+        "cityname": "西安市",
+        "id": "B001D0WP6V",
+        "location": "108.948183,34.275900"
+      },
+      {
+        "name": "西安城墙永宁门城楼北入口售票处",
+        "cityname": "西安市",
+        "id": "B0FFKG0HLX",
+        "location": "108.946929,34.251944"
+      },
+      {
+        "name": "西安城墙-游客中心",
+        "cityname": "西安市",
+        "id": "B0FFL5NCTQ",
+        "location": "108.970941,34.264165"
+      },
+      {
+        "name": "西安城墙环城公园",
+        "cityname": "西安市",
+        "id": "B0L0O5IV2I",
+        "location": "108.933538,34.251522"
+      },
+      {
+        "name": "西安城墙·碑林历史文化景区",
+        "cityname": "西安市",
+        "id": "B0KROZSZG0",
+        "location": "108.948296,34.263783"
+      },
+      {
+        "name": "西安唐皇城墙含光门遗址博物馆",
+        "cityname": "西安市",
+        "id": "B0FFF65CXL",
+        "location": "108.932300,34.251835"
+      },
+      {
+        "name": "西安城墙(含光门)",
+        "cityname": "西安市",
+        "id": "B001D0VH6G",
+        "location": "108.932269,34.251693"
+      },
+      {
+        "name": "西安城墙西北城角售票处",
+        "cityname": "西安市",
+        "id": "B0JKFC2HU6",
+        "location": "108.926174,34.275459"
+      },
+      {
+        "name": "西安城墙中山门售票处",
+        "cityname": "西安市",
+        "id": "B0FFIACBDZ",
+        "location": "108.970939,34.264413"
+      },
+      {
+        "name": "西安城墙-安定门南洞",
+        "cityname": "西安市",
+        "id": "B0FFFFKAMU",
+        "location": "108.925321,34.258689"
+      },
+      {
+        "name": "西安城墙长乐门售票处",
+        "cityname": "西安市",
+        "id": "B0FFG1DLYV",
+        "location": "108.970940,34.259294"
+      },
+      {
+        "name": "西安城墙安远门",
+        "cityname": "西安市",
+        "id": "B0GD3H1EO6",
+        "location": "108.947345,34.275821"
+      },
+      {
+        "name": "西安城墙环城公园(莲湖路)",
+        "cityname": "西安市",
+        "id": "B0FFL6CCE9",
+        "location": "108.924862,34.257222"
+      },
+      {
+        "name": "西安城墙永宁门游客中心",
+        "cityname": "西安市",
+        "id": "B0FFFSUJ9Y",
+        "location": "108.946911,34.251945"
+      },
+      {
+        "name": "西安城墙东北城角售票处(暂停营业)",
+        "cityname": "西安市",
+        "id": "B0JKFC2HUA",
+        "location": "108.971086,34.276119"
+      },
+      {
+        "name": "西安城墙-东门瓮城",
+        "cityname": "西安市",
+        "id": "B0FFG1PW99",
+        "location": "108.971688,34.259478"
+      },
+      {
+        "name": "西安城墙安定门售票处",
+        "cityname": "西安市",
+        "id": "B0FFFFC7HH",
+        "location": "108.925679,34.259472"
+      },
+      {
+        "name": "西安城墙含光门售票处",
+        "cityname": "西安市",
+        "id": "B0FFFSTDD6",
+        "location": "108.931988,34.251540"
+      },
+      {
+        "name": "西安城墙永宁门城楼",
+        "cityname": "西安市",
+        "id": "B0FFKG0HLU",
+        "location": "108.947010,34.251573"
+      },
+      {
+        "name": "西安城墙-角台",
+        "cityname": "西安市",
+        "id": "B0G25YS1AA",
+        "location": "108.925218,34.251709"
+      }
+    ]
+  },
+  {
+    "city": "武汉",
+    "query": "湖北省博物馆",
+    "venueId": "wh-hubei-museum",
+    "status": "1",
+    "infocode": "10000",
+    "count": "20",
+    "pois": [
+      {
+        "name": "湖北省博物馆",
+        "cityname": "武汉市",
+        "id": "B001B0JYXS",
+        "location": "114.365446,30.561506"
+      },
+      {
+        "name": "湖北省博物馆南馆",
+        "cityname": "武汉市",
+        "id": "B0LRNCL6RS",
+        "location": "114.365937,30.560642"
+      },
+      {
+        "name": "湖北省博物馆停车场",
+        "cityname": "武汉市",
+        "id": "B0IGSZ3SDI",
+        "location": "114.365734,30.559841"
+      },
+      {
+        "name": "湖北省博物馆北馆",
+        "cityname": "武汉市",
+        "id": "B0LDAUL1C1",
+        "location": "114.365541,30.561421"
+      },
+      {
+        "name": "湖北省博物馆-北门安检(入口)",
+        "cityname": "武汉市",
+        "id": "B0FFFPIWL3",
+        "location": "114.364525,30.563120"
+      },
+      {
+        "name": "湖北省博物馆东馆",
+        "cityname": "武汉市",
+        "id": "B0MAGRZAH9",
+        "location": "114.365525,30.561525"
+      },
+      {
+        "name": "湖北省博物馆西馆",
+        "cityname": "武汉市",
+        "id": "B0M1XU6VA0",
+        "location": "114.365425,30.561525"
+      },
+      {
+        "name": "湖北省博物馆文展大楼(南主馆)",
+        "cityname": "武汉市",
+        "id": "B0L6XAYIQE",
+        "location": "114.366003,30.560540"
+      },
+      {
+        "name": "武汉湖北省博物馆东湖路亚朵酒店",
+        "cityname": "武汉市",
+        "id": "B0L39SSC9O",
+        "location": "114.366591,30.566010"
+      },
+      {
+        "name": "湖北省博物馆文创旗舰店",
+        "cityname": "武汉市",
+        "id": "B0L3MOPFVH",
+        "location": "114.365825,30.560875"
+      },
+      {
+        "name": "湖北省博物馆北门安检处",
+        "cityname": "武汉市",
+        "id": "B0FFILLMTL",
+        "location": "114.364987,30.562542"
+      },
+      {
+        "name": "湖北省电力博物馆",
+        "cityname": "武汉市",
+        "id": "B0FFFLJTW8",
+        "location": "114.298808,30.585176"
+      },
+      {
+        "name": "湖北省博物馆湖博食堂",
+        "cityname": "武汉市",
+        "id": "B0M67HXRFO",
+        "location": "114.365825,30.560825"
+      },
+      {
+        "name": "湖北省博物馆-盘龙城展厅",
+        "cityname": "武汉市",
+        "id": "B0FFL0EV3P",
+        "location": "114.365530,30.561463"
+      },
+      {
+        "name": "湖北省博物馆内部停车场(装修中)",
+        "cityname": "武汉市",
+        "id": "B0FFILWBI0",
+        "location": "114.365283,30.562961"
+      },
+      {
+        "name": "湖北省博物馆地面停车场",
+        "cityname": "武汉市",
+        "id": "B0K6VHTZ7N",
+        "location": "114.366253,30.562828"
+      },
+      {
+        "name": "全季酒店(武汉东湖湖北省博物馆店)",
+        "cityname": "武汉市",
+        "id": "B0K2SA9GGV",
+        "location": "114.360576,30.558969"
+      },
+      {
+        "name": "湖北省博物馆-天籁展厅",
+        "cityname": "武汉市",
+        "id": "B0MDNNEUPK",
+        "location": "114.366225,30.560775"
+      },
+      {
+        "name": "湖北地质博物馆",
+        "cityname": "武汉市",
+        "id": "B001B08VKZ",
+        "location": "114.267554,30.579250"
+      },
+      {
+        "name": "湖北省博物馆出口(二环线东北向)",
+        "cityname": "武汉市",
+        "id": "B0FFGQ7STE",
+        "location": "114.361723,30.560322"
+      }
+    ]
+  },
+  {
+    "city": "武汉",
+    "query": "黄鹤楼公园",
+    "errorType": "URLError"
+  },
+  {
+    "city": "武汉",
+    "query": "武汉博物馆",
+    "errorType": "URLError"
+  }
+]

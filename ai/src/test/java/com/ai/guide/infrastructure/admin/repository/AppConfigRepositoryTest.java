@@ -40,7 +40,7 @@ class AppConfigRepositoryTest {
     }
 
     @Test
-    void testWriteConfig_UpdateThenInsert() {
+    void testWriteConfig_AtomicUpsert() {
         var source = new org.springframework.jdbc.datasource.SingleConnectionDataSource("jdbc:sqlite::memory:", true);
         try {
             var jdbc = new JdbcTemplate(source);
@@ -52,6 +52,42 @@ class AppConfigRepositoryTest {
             assertEquals("val2", real.readConfig("settings_").get("key1"));
             assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_config", Integer.class));
         } finally { source.destroy(); }
+    }
+
+    @Test
+    void concurrentFirstWritesDoNotRaceOnUniqueConfigKey() throws Exception {
+        var directory = java.nio.file.Files.createTempDirectory("app-config-upsert-");
+        var config = new com.zaxxer.hikari.HikariConfig();
+        config.setJdbcUrl("jdbc:sqlite:" + directory.resolve("config.db"));
+        config.setMaximumPoolSize(8);
+        config.addDataSourceProperty("busy_timeout", "5000");
+        try (var dataSource = new com.zaxxer.hikari.HikariDataSource(config)) {
+            var jdbc = new JdbcTemplate(dataSource);
+            jdbc.execute("CREATE TABLE app_config(key TEXT PRIMARY KEY,value TEXT,updated_at TEXT)");
+            var repository = new AppConfigRepository(jdbc);
+            var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+            var start = new java.util.concurrent.CountDownLatch(1);
+            var writes = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int i = 0; i < 24; i++) {
+                final int value = i;
+                writes.add(pool.submit(() -> {
+                    start.await();
+                    repository.writeConfig("settings_", Map.of("shared", "v" + value));
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (var write : writes) write.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            pool.shutdown();
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM app_config WHERE key='settings_shared'", Integer.class));
+            assertTrue(repository.readConfig("settings_").get("shared").matches("v\\d+"));
+        } finally {
+            try (var files = java.nio.file.Files.walk(directory)) {
+                files.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+                    try { java.nio.file.Files.deleteIfExists(path); } catch (java.io.IOException ignored) {}
+                });
+            }
+        }
     }
 
     @Test

@@ -1,12 +1,13 @@
 package com.ai.guide.application.search;
 
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import com.ai.guide.domain.search.service.BaiduSearchService;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.taxonomy.gateway.SearchTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,11 +23,20 @@ public class SearchApplicationServiceImpl implements SearchApplicationService {
 
     private final BaiduSearchService baiduSearchService;
     private final GeoRouteGatewayPort amapRouteService;
+    private final SearchTaxonomyPort taxonomy;
+
+    @Autowired
+    public SearchApplicationServiceImpl(BaiduSearchService baiduSearchService,
+                                        GeoRouteGatewayPort amapRouteService,
+                                        SearchTaxonomyPort taxonomy) {
+        this.baiduSearchService = baiduSearchService;
+        this.amapRouteService = amapRouteService;
+        this.taxonomy = taxonomy;
+    }
 
     public SearchApplicationServiceImpl(BaiduSearchService baiduSearchService,
                                         GeoRouteGatewayPort amapRouteService) {
-        this.baiduSearchService = baiduSearchService;
-        this.amapRouteService = amapRouteService;
+        this(baiduSearchService, amapRouteService, com.ai.guide.domain.taxonomy.gateway.TaxonomyPort.empty());
     }
 
     @Override
@@ -36,14 +46,17 @@ public class SearchApplicationServiceImpl implements SearchApplicationService {
     }
 
     @Override
-    public Result<List<AmapResponseNormalizer.PoiCandidate>> searchAmap(String q, String city, String types) {
+    public Result<List<com.ai.guide.domain.geo.model.GeoPoiCandidate>> searchAmap(String q, String city, String types) {
         if (q == null || q.isBlank()) {
             return Result.success("请输入搜索关键词", List.of());
         }
-        PoiOutcome outcome = amapRouteService.searchPoi(q.trim(), city, types);
-        if (outcome.status() == OutcomeStatus.SUCCESS) {
+        String effectiveCity = city == null || city.isBlank() ? taxonomy.getDefaultCity() : city.trim();
+        if (effectiveCity != null && !effectiveCity.isBlank() && !effectiveCity.endsWith("市")) effectiveCity += "市";
+        GeoPoiOutcome outcome = amapRouteService.searchPoi(q.trim(), effectiveCity, types);
+        if (outcome == null) return Result.error(503, "高德检索暂不可用: provider returned no outcome");
+        if (outcome.status() == GeoOutcomeStatus.SUCCESS) {
             return Result.success("高德POI检索成功", outcome.candidates());
-        } else if (outcome.status() == OutcomeStatus.INVALID) {
+        } else if (outcome.status() == GeoOutcomeStatus.INVALID) {
             return Result.success("请输入有效搜索关键词", List.of());
         } else {
             return Result.error(503, "高德检索暂不可用: " + outcome.reason());

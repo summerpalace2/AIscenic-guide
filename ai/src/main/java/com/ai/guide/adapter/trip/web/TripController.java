@@ -139,11 +139,11 @@ public class TripController {
     }
 
     private String pdfFilename(String title) {
-        String safeTitle = (title == null ? "重庆旅行行程" : title)
+        String safeTitle = (title == null ? "旅行行程" : title)
                 .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-        if (safeTitle.isBlank()) safeTitle = "重庆旅行行程";
+        if (safeTitle.isBlank()) safeTitle = "旅行行程";
         return safeTitle.substring(0, Math.min(safeTitle.length(), 80)) + "-行程手册.pdf";
     }
 

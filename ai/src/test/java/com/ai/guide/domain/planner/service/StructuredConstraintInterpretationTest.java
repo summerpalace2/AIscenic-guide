@@ -9,6 +9,7 @@ import com.ai.guide.domain.planner.model.StructuredPreferences;
 import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class StructuredConstraintInterpretationTest {
 
     private final ConstraintConflictDetector conflictDetector = new ConstraintConflictDetector();
-    private final LlmShadowPreferenceExtractor shadowExtractor = new LlmShadowPreferenceExtractor();
+    private final LlmShadowPreferenceExtractor shadowExtractor = new LlmShadowPreferenceExtractor(new JsonTaxonomyAdapter());
     private final TravelConstraintParser parser = new TravelConstraintParser(conflictDetector, shadowExtractor);
 
     @Test
@@ -98,7 +99,7 @@ class StructuredConstraintInterpretationTest {
     @Test
     void shadowExtractorCapturesOpenNuancesWithoutAlteringFormalConstraints() {
         LlmShadowPreferenceExtractor.ShadowExtractionResult result =
-                shadowExtractor.extractShadowPreferences("带父母，不想太赶，避开网红景点，更想体验地道老重庆和拍照");
+                shadowExtractor.extractShadowPreferences("带父母，不想太赶，避开网红景点，更想体验市井文化和拍照");
 
         assertTrue(result.isShadowOnly());
         assertEquals(ConstraintOrigin.USER_TEXT, result.origin());
@@ -108,7 +109,7 @@ class StructuredConstraintInterpretationTest {
         assertEquals(true, result.openPreferences().get("photographyFocus"));
         assertTrue(result.inferredTags().contains("慢节奏游览"));
         assertTrue(result.inferredTags().contains("小众清幽"));
-        assertTrue(result.inferredTags().contains("地道老重庆"));
+        assertTrue(result.inferredTags().contains("在地文化体验"));
         assertTrue(result.inferredTags().contains("摄影取景"));
     }
 

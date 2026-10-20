@@ -1,0 +1,69 @@
+{
+  "checkpoint": "CP4.3-final-candidate",
+  "capturedAt": "2026-10-09",
+  "repository": "D:\\scenic-guide",
+  "head": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+  "startingCandidate": "docs/refactor/CP4_3_STARTING_CANDIDATE.json",
+  "startingCandidateSha256": "c01fab8959d0d5a3f80520ac75f1cbc3ea7acb0e25e291d20f25e80860d87abe",
+  "startingFullTrackedDirtyPatchSha256": "0e68a1151f720fed04421b733daa8b3dfadffe18c4164a01150dcca6bd5698e6",
+  "finalFullTrackedDirtyPatchSha256": "9b55fb55dff29d86dc371c9bee66a1353b74572424fe352d229c150bd57bf0ac",
+  "acceptedCP4_2CandidateSha256": "cc12654db2d49efea316efcf485acec3924796a6dc561be4504ba51a798c8553",
+  "acceptedCP4_2AcceptanceReportSha256": "43e8efbb0b74bc330ee2e156d4df80efae096d73d71a18aabfd345bdce3f61b2",
+  "implementationReport": "docs/refactor/CP4_3_IMPLEMENTATION_REPORT.md",
+  "implementationReportSha256": "8aec794d1ea0d4e4118087c5bfadfb241e3227a59d519fdd23a3192276eb5084",
+  "trackedPatch": {
+    "path": "docs/refactor/CP4_3_TRACKED_PATCH.patch",
+    "sha256": "04da05079482732a9442494ea9af910d95ebab4a4810640a0c3ff475e2e156d2",
+    "generationCommand": "git diff --binary HEAD -- <listed trackedPaths>",
+    "trackedPaths": [
+      "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java",
+      "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java",
+      "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java",
+      "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java",
+      "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java",
+      "ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java"
+    ]
+  },
+  "untrackedScopePaths": [
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerRestoreApplicationService.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerRestoreUseCasePort.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreActor.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreResult.java",
+    "ai/src/test/java/com/ai/guide/application/planner/PlannerRestoreApplicationServiceTest.java",
+    "ai/src/test/java/com/ai/guide/domain/planner/service/PlannerDraftRestoreTest.java"
+  ],
+  "fileSha256": {
+    "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java": "622580896fc8487a2de64f798939511bde498b66b90625f2d6cecc3da8600777",
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java": "16afe2298077475656f4471bb381efaff9bd44f711d77e1aaaef1a59eda91288",
+    "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java": "1576d681c14d63859ad8c33b4a9217edd3933233f28af225df357b1f0bf72219",
+    "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java": "fbcc9cac7a8fa415e3388e499bc6908b8a1a4810b93fba27365c45b2f9e736d6",
+    "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java": "e42d0d8ae772198e4f97451903a6a315d80878d7a8a7f1cde488af7d4bc68971",
+    "ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java": "6ad26ce16bb591b796351163e1ab3ddcec2c76123cc60aa81a8d9bf9b33c142f",
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerRestoreApplicationService.java": "65fbd8cd81fae5db87cd0bf32c1dc97a8d7ebd6130c4efcb2e299d3ffb51c2a1",
+    "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerRestoreUseCasePort.java": "a8cfbea1e95a2cba48c7bd3331b5e352312c4e8f60a301c213a1ba4c5e697fd4",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreActor.java": "58c6aeb1d54a6908e04a800502654b24b67222d48bf4acb056b182b26e6d57fd",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreResult.java": "5d5039bb270643232592290f128ff458bbe87db47cb1e9fefcb7e146a1d6968f",
+    "ai/src/test/java/com/ai/guide/application/planner/PlannerRestoreApplicationServiceTest.java": "3b95117a57a8ce90a68a20c9261e92aaaa713369d557fb8bb3f36a4cdfd855e3",
+    "ai/src/test/java/com/ai/guide/domain/planner/service/PlannerDraftRestoreTest.java": "f1929503da2e266b508297c760c34f7799491668e335cb63bf5b78339d86745a"
+  },
+  "test": {
+    "command": ".\\mvnw.cmd -B '-Dtest=PlannerRestoreApplicationServiceTest,PlannerOpenApplicationServiceTest,PlannerSaveApplicationServiceTest,PlannerDraftRestoreTest,PlannerSaveConsistencyTest,TripSaveCapacityRegressionTest,PlannerControllerTest,PlannerServiceTest,ColaArchitectureGuardTest' clean test",
+    "workingDirectory": "fresh isolated temp copy: scenic-cp4_3-verified-7c268e7ed44e46c8a41a11332771e2e3/ai",
+    "result": "71 tests, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS",
+    "rawLogs": {
+      "final": {
+        "path": "docs/refactor/CP4_3_TEST.log",
+        "sha256": "bb311f8b3b8cd5594664cb5293b1232f0d258a7a5a87c5d34166a86dd65c731f"
+      },
+      "compileDiagnostic": {
+        "path": "docs/refactor/CP4_3_TEST_COMPILE_DIAGNOSTIC.log",
+        "sha256": "755b3d32815189107e0394ffccbe51cc0c620277de415f40a324639ea759eeda"
+      },
+      "fixtureDiagnostic": {
+        "path": "docs/refactor/CP4_3_TEST_FIXTURE_DIAGNOSTIC.log",
+        "sha256": "b083b5ede488550d1ce9cf07dca056a2e160e063abddaeb54a3aabbbd00e304e"
+      }
+    }
+  },
+  "note": "Shared worktree contains accepted CP0-CP4.2 changes. Tracked patch is raw git diff bytes for trackedPaths and includes prior hunks in overlapping files. untrackedScopePaths are SHA-recorded because git diff does not include untracked content; PlannerDraftRestoreTest was already untracked at CP4.3 start and is modified here. No files were staged or committed."
+}

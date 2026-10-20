@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  *
  * 所属领域：domain.planner.service（规划引擎服务层）
  * 架构职责：统一解析 Prompt / 约束中的具体日期（ISO格式）、中文月日、相对日期（今天/明天/后天）及星期；
- * 对于未明确指定日期的短途规划（如“我在重庆交通大学 为我规划一个3小时旅游方案”）或缺省需求，
+ * 对于未明确指定日期的短途规划或缺省需求，
  * 默认以当天 (LocalDate.now()) 作为第1天，以保证高德实时与预报天气查询能够安全匹配。
  */
 public final class TravelDateResolver {

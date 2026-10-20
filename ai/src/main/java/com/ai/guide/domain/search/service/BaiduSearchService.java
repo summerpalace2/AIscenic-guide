@@ -1,16 +1,15 @@
 package com.ai.guide.domain.search.service;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
-import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
+import com.ai.guide.domain.search.gateway.LocalKnowledgeSearchPort;
 import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
+import com.ai.guide.domain.search.gateway.WebSearchLinkPort;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.ai.guide.domain.taxonomy.gateway.SearchTaxonomyPort;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,26 +17,27 @@ import java.util.Map;
 /**
  * 百度文旅搜索引擎服务
  *
- * 接入百度搜索直通能力与高德/本地知识多源融合检索，支持海量重庆文旅景点、地道美食、小众打卡与出行攻略查询。
+ * 接入百度搜索直通能力与高德/本地知识多源融合检索，支持多城市文旅地点与出行攻略查询。
  */
 @Service
 public class BaiduSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(BaiduSearchService.class);
 
-    @Value("${baidu.api-key:}")
-    private String apiKey;
-
-    @Value("${baidu.secret-key:}")
-    private String secretKey;
-
     private final PoiSearchGatewayPort poiSearchGatewayPort;
-    private final KnowledgeDocumentService knowledgeDocumentService;
+    private final LocalKnowledgeSearchPort localKnowledgeSearch;
+    private final SearchTaxonomyPort taxonomy;
+    private final WebSearchLinkPort webSearchLink;
 
+    @Autowired
     public BaiduSearchService(PoiSearchGatewayPort poiSearchGatewayPort,
-                              KnowledgeDocumentService knowledgeDocumentService) {
+                              LocalKnowledgeSearchPort localKnowledgeSearch,
+                              SearchTaxonomyPort taxonomy,
+                              WebSearchLinkPort webSearchLink) {
         this.poiSearchGatewayPort = poiSearchGatewayPort;
-        this.knowledgeDocumentService = knowledgeDocumentService;
+        this.localKnowledgeSearch = localKnowledgeSearch;
+        this.taxonomy = taxonomy;
+        this.webSearchLink = webSearchLink;
     }
 
     public List<BaiduSearchResult> search(String query, int limit) {
@@ -45,25 +45,28 @@ public class BaiduSearchService {
             return List.of();
         }
         String cleanQ = query.trim();
+        String city = resolveCity(cleanQ);
         List<BaiduSearchResult> results = new ArrayList<>();
         int maxItems = Math.max(3, Math.min(limit, 15));
 
         // 1. 本地高可信知识文档检索
         try {
-            if (knowledgeDocumentService != null) {
-                List<Map<String, Object>> localHits = knowledgeDocumentService.searchLocalKnowledge(cleanQ, 3);
+            if (localKnowledgeSearch != null) {
+                List<com.ai.guide.domain.search.model.LocalKnowledgeHit> localHits = localKnowledgeSearch.search(cleanQ, 3);
                 if (localHits != null) {
-                    for (Map<String, Object> hit : localHits) {
-                        String title = String.valueOf(hit.getOrDefault("title", ""));
-                        String content = String.valueOf(hit.getOrDefault("content", ""));
+                    for (var hit : localHits) {
+                        String title = String.valueOf(hit.title());
+                        String content = String.valueOf(hit.content());
                         String snippet = content.length() > 120 ? content.substring(0, 120) + "..." : content;
-                        String baiduUrl = "https://www.baidu.com/s?wd=" + URLEncoder.encode("重庆 " + title, StandardCharsets.UTF_8);
+                        String baiduUrl = webSearchLink.searchUrl(city + " " + title);
                         results.add(BaiduSearchResult.builder()
                                 .title(title)
                                 .snippet(snippet)
                                 .url(baiduUrl)
                                 .source("本地文旅权威库")
-                                .category(title.contains("鱼") || title.contains("火锅") || title.contains("菜") ? "特色美食" : "核心地标")
+                                .category(taxonomy.getHints("dining").stream().anyMatch(title::contains)
+                                        ? taxonomy.getHints("defaultDiningDisplayLabel").stream().findFirst().orElse("")
+                                        : taxonomy.getHints("searchCategoryCoreLandmark").stream().findFirst().orElse(""))
                                 .thumbnail(null)
                                 .build());
                     }
@@ -76,14 +79,15 @@ public class BaiduSearchService {
         // 2. 高德实时 POI 与实景影像检索（为搜索结果提供权威地理与真实照片）
         try {
             if (poiSearchGatewayPort != null) {
-                List<AmapResponseNormalizer.PoiCandidate> candidates = poiSearchGatewayPort.searchPoiCandidates(cleanQ, "重庆市");
+                String providerCity = city.endsWith("市") ? city : city + "市";
+                List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates = poiSearchGatewayPort.searchPoiCandidates(cleanQ, providerCity);
                 if (candidates != null) {
-                    for (AmapResponseNormalizer.PoiCandidate poi : candidates) {
+                    for (com.ai.guide.domain.geo.model.GeoPoiCandidate poi : candidates) {
                         if (results.size() >= maxItems) break;
                         boolean duplicate = results.stream().anyMatch(r -> r.getTitle().contains(poi.name()));
                         if (duplicate) continue;
 
-                        String baiduUrl = "https://www.baidu.com/s?wd=" + URLEncoder.encode("重庆 " + poi.name(), StandardCharsets.UTF_8);
+                        String baiduUrl = webSearchLink.searchUrl(city + " " + poi.name());
                         String snippet = (poi.address() != null && !poi.address().isBlank() ? "地址：" + poi.address() + "。" : "")
                                 + (poi.type() != null && !poi.type().isBlank() ? "类型：" + poi.type() + "。" : "")
                                 + "可通过百度搜索查看详细评分、游玩攻略与大众口碑。";
@@ -93,7 +97,9 @@ public class BaiduSearchService {
                                 .snippet(snippet)
                                 .url(baiduUrl)
                                 .source("高德地图实景POI")
-                                .category(poi.type() != null && poi.type().contains("餐饮") ? "特色美食" : "景区地标")
+                                .category(poi.type() != null && poi.type().contains("餐饮")
+                                        ? taxonomy.getHints("defaultDiningDisplayLabel").stream().findFirst().orElse("")
+                                        : taxonomy.getHints("searchCategoryScenicLandmark").stream().findFirst().orElse(""))
                                 .thumbnail(poi.photoUrl())
                                 .build());
                     }
@@ -104,17 +110,24 @@ public class BaiduSearchService {
         }
 
         // 3. 百度全网搜索直通条目（确保任何搜索词都有百度官方最新权威结果卡片）
-        String encodedQuery = URLEncoder.encode("重庆 " + cleanQ, StandardCharsets.UTF_8);
-        String directBaiduUrl = "https://www.baidu.com/s?wd=" + encodedQuery;
+        String directBaiduUrl = webSearchLink.searchUrl(city + " " + cleanQ);
         results.add(BaiduSearchResult.builder()
                 .title("在百度中探索更多“" + cleanQ + "”相关文旅与美食资讯")
                 .snippet("点击前往百度搜索，实时获取关于【" + cleanQ + "】的最新游记攻略、特色美食排行、营业实况与市民点评。")
                 .url(directBaiduUrl)
                 .source("百度搜索官方全网直达")
-                .category("全网资讯")
-                .thumbnail("https://www.baidu.com/favicon.ico")
+                .category(taxonomy.getHints("searchCategoryWebNews").stream().findFirst().orElse(""))
+                .thumbnail(webSearchLink.faviconUrl())
                 .build());
 
         return results.subList(0, Math.min(results.size(), maxItems));
+    }
+
+    private String resolveCity(String query) {
+        return taxonomy.getCityAliases().entrySet().stream()
+                .filter(entry -> query.contains(entry.getKey()))
+                .sorted(java.util.Comparator.<java.util.Map.Entry<String, String>>comparingInt(entry -> entry.getKey().length()).reversed())
+                .map(java.util.Map.Entry::getValue)
+                .findFirst().orElseGet(taxonomy::getDefaultCity);
     }
 }

@@ -27,7 +27,9 @@ class AdminApplicationServiceImplTest {
     void setUp() {
         userService = Mockito.mock(UserService.class);
         appConfigRepository = Mockito.mock(AppConfigRepositoryPort.class);
-        applicationService = new AdminApplicationServiceImpl(userService, appConfigRepository);
+        var settingsPolicy = new com.ai.guide.domain.admin.service.RuntimeSettingsPolicy(
+                appConfigRepository, "测试站点", "zh", true, true, 50);
+        applicationService = new AdminApplicationServiceImpl(userService, appConfigRepository, settingsPolicy);
     }
 
     @Test

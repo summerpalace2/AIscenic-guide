@@ -1,6 +1,7 @@
 package com.ai.guide.domain.preferences.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +37,12 @@ public record UserPreferencesPatch(
 
     public static UserPreferencesPatch empty() {
         return new UserPreferencesPatch(null, null, null, null, null, null, null, null, null);
+    }
+
+    /** Fail at this write boundary even when the application's general JSON mapper tolerates unknown fields. */
+    @JsonAnySetter
+    public void rejectUnknownField(String name, Object value) {
+        throw new IllegalArgumentException("不支持的偏好字段：" + name);
     }
 
     public UserPreferences mergeOnto(UserPreferences current) {

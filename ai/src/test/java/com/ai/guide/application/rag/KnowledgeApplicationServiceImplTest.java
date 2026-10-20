@@ -93,7 +93,7 @@ class KnowledgeApplicationServiceImplTest {
 
         // Not found -> 404
         when(knowledgeService.updateDocument(eq("missing"), any(), any(), any(), any()))
-                .thenThrow(new IllegalArgumentException("文档不存在: missing"));
+                .thenThrow(new com.ai.guide.domain.rag.model.KnowledgeDocumentNotFoundException("missing"));
         Result<Map<String, Object>> notFound = service.updateDocument("missing", "t", "c", null, null);
         assertEquals(404, notFound.getCode());
 

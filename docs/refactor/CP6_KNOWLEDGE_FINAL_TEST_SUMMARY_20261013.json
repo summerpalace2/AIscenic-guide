@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-13",
+  "board": "CP6 knowledge city isolation",
+  "java": {
+    "run": 1215,
+    "passed": 1201,
+    "skipped": 14,
+    "failures": 0,
+    "errors": 0,
+    "log": "D:/scenic-guide/knowledge-city-full-final.log"
+  },
+  "node": {
+    "passed": 65,
+    "failed": 0,
+    "skipped": 0
+  },
+  "final_management_browser": {
+    "passed": 2,
+    "failed": 0,
+    "provider_mode": "controlled HTTP fixtures"
+  },
+  "independent_regressions": 12,
+  "java_http_contract_tests": 3,
+  "counts_overlap": true,
+  "package": {
+    "sha256": "96907B1BA0AB59FAFD36D73ACDBB4BA2000F2EA31C3641958747317B48ECE131",
+    "bytes": 143649446,
+    "log": "D:/scenic-guide/knowledge-city-final-package.log"
+  },
+  "actual_infrastructure_unverified": [
+    "PostgreSQL",
+    "Qdrant remote filtering and reindex",
+    "dedicated Redis",
+    "multi-instance/crash recovery"
+  ],
+  "seed_rows": 218,
+  "seed_city": "重庆市",
+  "user_services_restarted": false,
+  "deployment": false,
+  "review_output": "C:/Users/summer/Documents/Codex Deliveries/CP6-20261013-knowledge-city-review-final"
+}

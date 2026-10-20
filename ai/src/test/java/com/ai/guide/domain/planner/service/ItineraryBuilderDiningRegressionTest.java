@@ -5,7 +5,7 @@ import com.ai.guide.domain.attraction.service.AttractionAliasMatcher;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.engine.*;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.narrative.PlanNarrativeService;
 import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
@@ -84,11 +84,18 @@ class ItineraryBuilderDiningRegressionTest {
         var day = PlanAdjustmentHelper.findDay(trip, 1);
         assertEquals(1, PlanAdjustmentHelper.dayStops(day).size());
         assertTrue(((List<?>) day.get("diningDiagnostics")).contains("LUNCH:NO_FEASIBLE_MEAL_GAP"));
-        when(dining.resolveNearbyDining(any(), eq("LUNCH"), any(), any())).thenReturn(new AttractionDiningKnowledge.DiningOption(
+        when(dining.resolveNearbyDining(any(), eq("LUNCH"), any(), any())).thenReturn(new com.ai.guide.domain.dining.model.DiningOption(
                 "dining-fallback-default", "附近用餐（待确认）", "待确认", "LUNCH", "待确认", "60分钟", "待确认", "未核验", "待确认", "gold", null));
         var unresolved = builder(List.of(stop("morning", "10:30", "60分钟")), dining)
                 .build(1, TravelConstraints.builder().durationDays(1).build());
         assertEquals(1, PlanAdjustmentHelper.dayStops(PlanAdjustmentHelper.findDay(unresolved, 1)).size());
+
+        when(dining.resolveNearbyDining(any(), eq("LUNCH"), any(), any())).thenReturn(null);
+        var unavailable = builder(List.of(stop("morning", "10:30", "60分钟")), dining)
+                .build(1, TravelConstraints.builder().durationDays(1).build());
+        var unavailableDay = PlanAdjustmentHelper.findDay(unavailable, 1);
+        assertEquals(1, PlanAdjustmentHelper.dayStops(unavailableDay).size());
+        assertTrue(((List<?>) unavailableDay.get("diningDiagnostics")).contains("LUNCH:DINING_POI_UNRESOLVED"));
     }
 
     @Test
@@ -119,11 +126,11 @@ class ItineraryBuilderDiningRegressionTest {
         var routes = mock(RouteAwarePlanner.class);
         Map<String, Object> day = new LinkedHashMap<>(Map.of("day", 1, "stops", new ArrayList<>(stops)));
         when(routes.planDays(anyInt(), any(), anyMap(), anyList(), any())).thenReturn(new ArrayList<>(List.of(day)));
-        var builder = new ItineraryBuilder(service, routes, new PlanVerifier(), new LocalPlanRepairer(),
+        var builder = new ItineraryBuilder(service, routes, new PlanVerifier(), com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer(),
                 mock(PlanNarrativeService.class), mock(AttractionAliasMatcher.class));
         var taxonomy = mock(TaxonomyPort.class);
-        when(taxonomy.getMealWindow("LUNCH")).thenReturn(new TaxonomyPort.MealWindow(690, 810, 720, "12:00"));
-        when(taxonomy.getMealWindow("DINNER")).thenReturn(new TaxonomyPort.MealWindow(1050, 1170, 1080, "18:00"));
+        when(taxonomy.getMealWindow("LUNCH")).thenReturn(new com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow(690, 810, 720, "12:00"));
+        when(taxonomy.getMealWindow("DINNER")).thenReturn(new com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow(1050, 1170, 1080, "18:00"));
         var costs = mock(RouteCostProvider.class);
         when(costs.calculate(any(), any(), any())).thenReturn(RouteCost.estimated(500, 10, 500, "WALKING", "test"));
         builder.setDiningScheduling(dining, taxonomy, new MealGapSolver(costs, new ItineraryTimeEngine()));
@@ -134,7 +141,7 @@ class ItineraryBuilderDiningRegressionTest {
         return new LinkedHashMap<>(Map.of("id", id, "venueId", id, "name", id, "time", time, "duration", duration, "location", "116.3,39.9"));
     }
 
-    private AttractionDiningKnowledge.DiningOption option() {
-        return new AttractionDiningKnowledge.DiningOption("real-poi", "【午餐推荐】食肆", "待确认", "LUNCH", "待确认", "60分钟", "待确认", "餐厅", "测试", "gold", "116.31,39.91");
+    private com.ai.guide.domain.dining.model.DiningOption option() {
+        return new com.ai.guide.domain.dining.model.DiningOption("real-poi", "【午餐推荐】食肆", "待确认", "LUNCH", "待确认", "60分钟", "待确认", "餐厅", "测试", "gold", "116.31,39.91");
     }
 }

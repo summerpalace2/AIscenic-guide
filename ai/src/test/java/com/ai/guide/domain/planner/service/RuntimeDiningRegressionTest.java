@@ -1,10 +1,14 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.dining.service.DiningVenueService;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRouteOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
 import com.ai.guide.domain.planner.model.*;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import java.time.Instant;
@@ -52,24 +56,24 @@ class RuntimeDiningRegressionTest {
         when(routes.isConfigured()).thenReturn(true);
         var start = poi("start", "出发点", "141201", 116.40);
         var museum = poi("museum", "地方博物馆", "140100", 116.41);
-        when(routes.searchPoi(anyString(), eq("北京市"))).thenReturn(new PoiOutcome(OutcomeStatus.SUCCESS,List.of(start),"",Instant.now()));
+        when(routes.searchPoi(anyString(), eq("北京市"))).thenReturn(new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS,List.of(start),"",Instant.now()));
         when(routes.searchAround(anyString(), anyInt(), anyString(), anyString(), eq("北京市"), anyInt()))
-                .thenReturn(new PoiOutcome(OutcomeStatus.SUCCESS,List.of(museum),"",Instant.now()));
-        RouteOutcome segment = routeSeconds == null ? new RouteOutcome(OutcomeStatus.TIMEOUT,null,"测试超时","test",Instant.now())
-                : new RouteOutcome(OutcomeStatus.SUCCESS,new AmapResponseNormalizer.RouteResult("WALKING",900,routeSeconds,900,1,List.of(),"",true),"","test",Instant.now());
+                .thenReturn(new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS,List.of(museum),"",Instant.now()));
+        GeoRouteOutcome segment = routeSeconds == null ? new GeoRouteOutcome(GeoOutcomeStatus.TIMEOUT,null,"测试超时","test",Instant.now())
+                : new GeoRouteOutcome(GeoOutcomeStatus.SUCCESS,new com.ai.guide.domain.geo.model.GeoRouteSegment("WALKING",900,routeSeconds,900,1,List.of(),"",true),"","test",Instant.now());
         when(routes.routePair(anyString(),anyString(),eq("北京市"),anyString(),anyString(),anyString()))
-                .thenReturn(new RoutePairOutcome(segment,segment,segment,"walking",false));
+                .thenReturn(new GeoRoutePairOutcome(segment,segment,segment,"walking",false));
         DiningVenueService dining = mock(DiningVenueService.class);
-        when(dining.resolveNearbyDining(any(),anyString(),any())).thenReturn(new AttractionDiningKnowledge.DiningOption(
+        when(dining.resolveNearbyDining(any(),anyString(),any())).thenReturn(new com.ai.guide.domain.dining.model.DiningOption(
                 "amap-dining-restaurant","本地餐厅","特色菜","地方菜","待核验","约 50 分钟","待核验","本地餐饮","邻近出发点","gold","116.405,39.9"));
         var constraints = TravelConstraints.builder().destination("北京").startPlace("出发点").timeBudgetMinutes(budget)
                 .dietPreference("地方菜").rawPrompt(departure).build();
         constraints.markOrigin("startPlace", ConstraintOrigin.PROMPT);
-        return new RuntimeLocationPlanner(routes,new ObjectMapper(),6000,40,dining,new TaxonomyProvider()).plan(constraints,1);
+        return new RuntimeLocationPlanner(routes,new ObjectMapper(),6000,40,dining,new JsonTaxonomyAdapter()).plan(constraints,1);
     }
 
-    private AmapResponseNormalizer.PoiCandidate poi(String id,String name,String code,double longitude) {
-        return new AmapResponseNormalizer.PoiCandidate(id,name,new AmapResponseNormalizer.Coordinate(longitude,39.9),"北京市测试区",
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate poi(String id,String name,String code,double longitude) {
+        return new com.ai.guide.domain.geo.model.GeoPoiCandidate(id,name,new com.ai.guide.domain.geo.model.GeoCoordinate(longitude,39.9),"北京市测试区",
                 "140100".equals(code)?"科教文化服务;博物馆":"科教文化服务;学校",null,null,id,null,null,null,null,code,null);
     }
 

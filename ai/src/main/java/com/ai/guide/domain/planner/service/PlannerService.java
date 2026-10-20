@@ -1,12 +1,16 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.common.context.OperationDeadline;
+
 import com.ai.guide.domain.planner.model.ConstraintConflict;
+import com.ai.guide.domain.planner.engine.PlannerScoringPolicy;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
 import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
 import com.ai.guide.domain.planner.model.PlanRequest;
+import com.ai.guide.domain.planner.model.RestoreDraftRequest;
 import com.ai.guide.domain.planner.model.PlannerMutationRequest;
 import com.ai.guide.domain.planner.model.ShadowMutationRequest;
 import com.ai.guide.domain.planner.model.ShadowPlanRequest;
@@ -14,17 +18,27 @@ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.CreateResult;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.MutationResult;
+import com.ai.guide.domain.planner.gateway.PlannerSaveUseCasePort;
+import com.ai.guide.domain.planner.gateway.PlannerOpenUseCasePort;
+import com.ai.guide.domain.planner.gateway.PlannerRestoreUseCasePort;
 import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
 import com.ai.guide.domain.planner.model.HydrationResult;
 import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
+import com.ai.guide.domain.planner.model.PlannerSaveActor;
+import com.ai.guide.domain.planner.model.PlannerSaveResult;
+import com.ai.guide.domain.planner.model.PlannerOpenActor;
+import com.ai.guide.domain.planner.model.PlannerOpenResult;
+import com.ai.guide.domain.planner.model.PlannerRestoreActor;
+import com.ai.guide.domain.planner.model.PlannerRestoreResult;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.planner.narrative.GroundedNarrativeService;
 import com.ai.guide.domain.trip.service.TripService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -56,6 +70,8 @@ import java.util.UUID;
  */
 @Service
 public class PlannerService {
+    @org.springframework.beans.factory.annotation.Value("${planner.request-timeout-ms:45000}")
+    private long requestTimeoutMs = 45000L;
 
     private static final Logger log = LoggerFactory.getLogger(PlannerService.class);
     private static final Object[] CREATE_LOCKS = new Object[128];
@@ -72,6 +88,52 @@ public class PlannerService {
     private final PlannerMetricsLogger metricsLogger;
     private final GroundedNarrativeService groundedNarrativeService;
     private final boolean plannerV1Enabled;
+    private final PlannerSaveUseCasePort plannerSaveUseCase;
+    private final PlannerOpenUseCasePort plannerOpenUseCase;
+    private final PlannerRestoreUseCasePort plannerRestoreUseCase;
+    private final PlannerTaxonomyPort taxonomy;
+    private final PlannerMutationPolicy mutationPolicy;
+    private final com.ai.guide.domain.planner.engine.ItineraryTimeEngine mutationTimeEngine = new com.ai.guide.domain.planner.engine.ItineraryTimeEngine();
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void configureMutationTiming(com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort policy) {
+        mutationTimeEngine.configureUnknownTransferEstimate(policy);
+    }
+
+    public PlannerService(TravelConstraintParserPort constraintParser,
+                          ItineraryBuilderPort itineraryBuilder,
+                          PlannerSessionRepositoryPort repository,
+                          TripService tripService,
+                          ObjectMapper objectMapper,
+                          RouteGatewayPort amapPlannerGateway,
+                          PlannerPreferencesResolver preferencesResolver,
+                          PlanAdjustmentService planAdjustmentService,
+                          PlannerMetricsLogger metricsLogger,
+                          GroundedNarrativeService groundedNarrativeService,
+                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled) {
+        this(constraintParser, itineraryBuilder, repository, tripService, objectMapper, amapPlannerGateway,
+                preferencesResolver, planAdjustmentService, metricsLogger, groundedNarrativeService,
+                plannerV1Enabled, null, null, null);
+    }
+
+    public PlannerService(TravelConstraintParserPort constraintParser,
+                          ItineraryBuilderPort itineraryBuilder,
+                          PlannerSessionRepositoryPort repository,
+                          TripService tripService,
+                          ObjectMapper objectMapper,
+                          RouteGatewayPort amapPlannerGateway,
+                          PlannerPreferencesResolver preferencesResolver,
+                          PlanAdjustmentService planAdjustmentService,
+                          PlannerMetricsLogger metricsLogger,
+                          @org.springframework.beans.factory.annotation.Autowired(required = false) GroundedNarrativeService groundedNarrativeService,
+                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled,
+                          PlannerSaveUseCasePort plannerSaveUseCase,
+                          PlannerOpenUseCasePort plannerOpenUseCase,
+                          PlannerRestoreUseCasePort plannerRestoreUseCase) {
+        this(constraintParser, itineraryBuilder, repository, tripService, objectMapper, amapPlannerGateway,
+                preferencesResolver, planAdjustmentService, metricsLogger, groundedNarrativeService,
+                plannerV1Enabled, plannerSaveUseCase, plannerOpenUseCase, plannerRestoreUseCase, TaxonomyPort.empty());
+    }
 
     @org.springframework.beans.factory.annotation.Autowired
     public PlannerService(TravelConstraintParserPort constraintParser,
@@ -84,7 +146,11 @@ public class PlannerService {
                           PlanAdjustmentService planAdjustmentService,
                           PlannerMetricsLogger metricsLogger,
                           @org.springframework.beans.factory.annotation.Autowired(required = false) GroundedNarrativeService groundedNarrativeService,
-                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled) {
+                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled,
+                          PlannerSaveUseCasePort plannerSaveUseCase,
+                          PlannerOpenUseCasePort plannerOpenUseCase,
+                          PlannerRestoreUseCasePort plannerRestoreUseCase,
+                          PlannerTaxonomyPort taxonomy) {
         this.constraintParser = constraintParser;
         this.itineraryBuilder = itineraryBuilder;
         this.repository = repository;
@@ -96,6 +162,50 @@ public class PlannerService {
         this.metricsLogger = metricsLogger;
         this.groundedNarrativeService = groundedNarrativeService;
         this.plannerV1Enabled = plannerV1Enabled;
+        this.plannerSaveUseCase = plannerSaveUseCase;
+        this.plannerOpenUseCase = plannerOpenUseCase;
+        this.plannerRestoreUseCase = plannerRestoreUseCase;
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+        this.mutationPolicy = planAdjustmentService == null
+                ? new PlannerMutationPolicy(itineraryBuilder, new com.ai.guide.domain.planner.engine.PlanVerifier(this.taxonomy))
+                : planAdjustmentService.mutationPolicy();
+    }
+
+    /** Compatibility constructor for CP4.2's explicit save/open gateway dependencies. */
+    public PlannerService(TravelConstraintParserPort constraintParser,
+                          ItineraryBuilderPort itineraryBuilder,
+                          PlannerSessionRepositoryPort repository,
+                          TripService tripService,
+                          ObjectMapper objectMapper,
+                          RouteGatewayPort amapPlannerGateway,
+                          PlannerPreferencesResolver preferencesResolver,
+                          PlanAdjustmentService planAdjustmentService,
+                          PlannerMetricsLogger metricsLogger,
+                          GroundedNarrativeService groundedNarrativeService,
+                          boolean plannerV1Enabled,
+                          PlannerSaveUseCasePort plannerSaveUseCase,
+                          PlannerOpenUseCasePort plannerOpenUseCase) {
+        this(constraintParser, itineraryBuilder, repository, tripService, objectMapper, amapPlannerGateway,
+                preferencesResolver, planAdjustmentService, metricsLogger, groundedNarrativeService,
+                plannerV1Enabled, plannerSaveUseCase, plannerOpenUseCase, null);
+    }
+
+    /** Compatibility constructor for existing direct domain-service fixtures. */
+    public PlannerService(TravelConstraintParserPort constraintParser,
+                          ItineraryBuilderPort itineraryBuilder,
+                          PlannerSessionRepositoryPort repository,
+                          TripService tripService,
+                          ObjectMapper objectMapper,
+                          RouteGatewayPort amapPlannerGateway,
+                          PlannerPreferencesResolver preferencesResolver,
+                          PlanAdjustmentService planAdjustmentService,
+                          PlannerMetricsLogger metricsLogger,
+                          GroundedNarrativeService groundedNarrativeService,
+                          boolean plannerV1Enabled,
+                          PlannerSaveUseCasePort plannerSaveUseCase) {
+        this(constraintParser, itineraryBuilder, repository, tripService, objectMapper, amapPlannerGateway,
+                preferencesResolver, planAdjustmentService, metricsLogger, groundedNarrativeService,
+                plannerV1Enabled, plannerSaveUseCase, null, null);
     }
 
     public PlannerService(TravelConstraintParserPort constraintParser,
@@ -140,6 +250,12 @@ public class PlannerService {
     }
 
     private ServiceResult createInternal(PlanRequest request) {
+        try (var ignored = OperationDeadline.open(requestTimeoutMs)) {
+            return createWithinDeadline(request);
+        }
+    }
+
+    private ServiceResult createWithinDeadline(PlanRequest request) {
         long startNanos = System.nanoTime();
         String prompt = request == null ? "" : safe(request.effectivePrompt());
         Map<String, Object> overrides = request == null ? Map.of() : request.effectiveConstraints();
@@ -184,8 +300,38 @@ public class PlannerService {
             response.putAll(constraintDiagnostics(constraints));
             return new ServiceResult(200, response);
         }
+        if (constraints.getDestination() == null || constraints.getDestination().isBlank()) {
+            return error(400, "请先提供旅行目的地，再生成行程。", null);
+        }
+        if (constraints.getDurationDays() <= 0) {
+            return error(400, "请提供行程天数，或先配置有效的默认规划天数，再生成行程。", null);
+        }
         PlanningComputation computation = compute(prepared);
         Map<String, Object> trip = computation.trip();
+        if (OperationDeadline.expired() && isTripEmpty(trip)) {
+            return error(504, "规划请求超时，尚未取得可用行程，请稍后重试。", null);
+        }
+        if (OperationDeadline.expired()) {
+            trip.put("degraded", true);
+            Set<String> reasons = new java.util.LinkedHashSet<>();
+            if (trip.get("degradationReasons") instanceof List<?> existing)
+                existing.forEach(reason -> reasons.add(String.valueOf(reason)));
+            reasons.add("PLANNING_DEADLINE_EXCEEDED");
+            trip.put("degradationReasons", new ArrayList<>(reasons));
+            trip.put("summary", "本次规划达到时间预算，已保留已完成的行程；部分安排或动态信息尚未完成，可继续局部调整。");
+            Map<String, Object> source = new LinkedHashMap<>();
+            if (trip.get("sourceStatus") instanceof Map<?, ?> currentSource)
+                currentSource.forEach((key, value) -> source.put(String.valueOf(key), value));
+            source.put("planning", "部分完成：请求超时");
+            source.put("fallback", true);
+            trip.put("sourceStatus", source);
+            if (trip.get("spatialPlan") instanceof Map<?, ?> spatial) {
+                Map<String, Object> partialSpatial = new LinkedHashMap<>();
+                spatial.forEach((key, value) -> partialSpatial.put(String.valueOf(key), value));
+                partialSpatial.put("status", "PARTIAL_TIMEOUT");
+                trip.put("spatialPlan", partialSpatial);
+            }
+        }
         CreateResult created = repository.create(ownerType, ownerId, prompt,
                 constraints.asMap(), appliedPreferences, trip, idempotencyKey, fingerprint);
         if ("CONFLICT".equals(created.status())) {
@@ -216,8 +362,14 @@ public class PlannerService {
      */
     public ServiceResult shadow(ShadowPlanRequest request) {
         ShadowPlanRequest effective = request == null ? new ShadowPlanRequest() : request;
-        PlanningComputation computation = compute(safe(effective.effectivePrompt()),
+        RequestPreparation shadowPreparation = prepare(safe(effective.effectivePrompt()),
                 effective.effectiveConstraints(), Boolean.TRUE.equals(effective.getUsePreferences()));
+        TravelConstraints requested = shadowPreparation.constraints();
+        if (requested.getDestination() == null || requested.getDestination().isBlank())
+            return shadowError("请先提供旅行目的地，再进行规划对照。");
+        if (requested.getDurationDays() <= 0)
+            return shadowError("请提供行程天数后再进行规划对照。");
+        PlanningComputation computation = compute(shadowPreparation);
         Map<String, Object> body = shadowTripResponse(computation.trip());
         body.put("constraints", computation.constraints().asMap());
         body.put("appliedPreferences", computation.appliedPreferences().asMap());
@@ -245,11 +397,11 @@ public class PlannerService {
             if (replacement == null) return shadowError("候选景点不存在。");
             if (used.contains(replacement.getId())) return shadowError("候选景点已存在于当前行程，不能造成重复。");
         } else {
-            replacement = rankReplacement(reason, oldAttraction, used);
+            replacement = rankReplacement(reason, oldAttraction, used, trip, extractMutationConstraints(trip));
             if (replacement == null) return shadowError("当前没有可用的替换景点。");
         }
         Map<String, Object> newStop = itineraryBuilder.createStop(replacement, targetId,
-                safeValue(target.stop().get("time"), "待安排"),
+                safeValue(mutationTimeEngine.explicitClock(target.stop()), "待安排"),
                 safeValue(target.stop().get("duration"), replacement.getDuration()),
                 "因为“" + reason + "”，换成更合适的" + replacement.getName() + "（" + replacement.getSummary() + "）。",
                 "这是局部替换，仅改变目标站点；" + replacement.getIntro());
@@ -275,6 +427,7 @@ public class PlannerService {
         if (trip.isEmpty()) return shadowError("缺少用于 Shadow 对照的行程草稿。");
         String operation = safe(effective.getOperation());
         if (operation.isBlank()) operation = "add";
+        if (!Set.of("add", "replace", "delete", "remove").contains(operation)) return shadowError("不支持的站点操作。");
         String changedId;
         String label;
         if ("delete".equals(operation) || "remove".equals(operation)) {
@@ -300,7 +453,7 @@ public class PlannerService {
                 used.remove(safe(target.stop().get("venueId")));
                 if (used.contains(attractionId)) return shadowError("候选景点已存在于当前行程，不能造成重复。");
                 Map<String, Object> stop = itineraryBuilder.createStop(attraction, targetId,
-                        safeValue(target.stop().get("time"), "待安排"),
+                        safeValue(mutationTimeEngine.explicitClock(target.stop()), "待安排"),
                         safeValue(target.stop().get("duration"), attraction.getDuration()),
                         "根据偏好替换为" + attraction.getName() + "，保留原时间段与其余站点。",
                         attraction.getIntro());
@@ -329,6 +482,16 @@ public class PlannerService {
     public ServiceResult get(String sessionId, String accessToken) {
         StoredSession session = findAuthorized(sessionId, accessToken);
         return session == null ? error(404, "规划会话不存在或无权访问。", null) : new ServiceResult(200, planResponse(session, ""));
+    }
+
+    /** Restore an offline edit into the currently authorized planner session. */
+    public ServiceResult restoreDraft(String sessionId, RestoreDraftRequest request) {
+        if (plannerRestoreUseCase == null) {
+            throw new IllegalStateException("PlannerRestoreUseCasePort 未配置；请通过应用层草稿恢复用例执行。");
+        }
+        PlannerRestoreResult result = plannerRestoreUseCase.restoreDraft(
+                new PlannerRestoreActor(UserContext.getUserId(), UserContext.isAnonymous()), sessionId, request);
+        return new ServiceResult(result.serviceStatus(), result.body());
     }
 
     /**
@@ -372,86 +535,107 @@ public class PlannerService {
         return new ServiceResult(200, Map.of("ok", true, "sessions", sessions));
     }
 
+    /** Compatibility entry; the HTTP application use case owns authorization and persistence. */
     public ServiceResult replan(String sessionId, PlannerMutationRequest request) {
         StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
-        if (session == null) return error(404, "规划会话不存在或无权访问。", null);
+        return commitLegacyStopMutation(prepareReplanAuthorized(session, request));
+    }
+
+    /** Computes and verifies a candidate against an application-authorized snapshot, without session writes. */
+    public StopMutationPreparation prepareReplanAuthorized(StoredSession session, PlannerMutationRequest request) {
+        if (session == null) return StopMutationPreparation.rejected(error(404, "规划会话不存在或无权访问。", null));
+        if (expectedVersion(request, session.currentVersion()) != session.currentVersion()) return StopMutationPreparation.rejected(conflict(session));
         Map<String, Object> trip = mutableMap(session.trip());
         String targetId = request == null ? "" : safe(request.getTargetStopId());
         String reason = request == null ? "" : safe(request.getReason());
         StopLocation target = locateStop(trip, targetId);
-        if (target == null) return error(400, "未在当前行程中找到要替换的站点。", session);
+        if (target == null) return StopMutationPreparation.rejected(error(400, "未在当前行程中找到要替换的站点。", session));
         Attraction oldAttraction = itineraryBuilder.attraction(String.valueOf(target.stop().get("venueId")));
-        if (oldAttraction == null) return error(400, "当前站点缺少有效景点实体。", session);
+        if (oldAttraction == null) return StopMutationPreparation.rejected(error(400, "当前站点缺少有效景点实体。", session));
         Set<String> used = usedVenues(trip);
         used.remove(oldAttraction.getId());
         String requestedCandidate = request == null ? "" : safe(request.getCandidateVenueId());
         Attraction replacement;
         if (!requestedCandidate.isBlank()) {
             replacement = itineraryBuilder.attraction(requestedCandidate);
-            if (replacement == null) return error(400, "候选景点不存在。", session);
-            if (used.contains(replacement.getId())) return error(400, "候选景点已存在于当前行程，不能造成重复。", session);
+            if (replacement == null) return StopMutationPreparation.rejected(error(400, "候选景点不存在。", session));
+            if (used.contains(replacement.getId())) return StopMutationPreparation.rejected(error(400, "候选景点已存在于当前行程，不能造成重复。", session));
         } else {
-            replacement = rankReplacement(reason, oldAttraction, used);
-            if (replacement == null) return error(400, "当前没有可用的替换景点。", session);
+            replacement = rankReplacement(reason, oldAttraction, used, trip, extractMutationConstraints(session.constraints()));
+            if (replacement == null) return StopMutationPreparation.rejected(error(400, "当前没有可用的替换景点。", session));
         }
+        ServiceResult candidateRejected = rejectCandidate(session, trip, replacement);
+        if (candidateRejected != null) return StopMutationPreparation.rejected(candidateRejected);
         Map<String, Object> newStop = itineraryBuilder.createStop(replacement, targetId,
-                safeValue(target.stop().get("time"), "待安排"), safeValue(target.stop().get("duration"), replacement.getDuration()),
+                safeValue(mutationTimeEngine.explicitClock(target.stop()), "待安排"), safeValue(target.stop().get("duration"), replacement.getDuration()),
                 "因为“" + reason + "”，换成更合适的" + replacement.getName() + "（" + replacement.getSummary() + "）。",
-                "这是局部替换，仅改变目标站点；" + replacement.getIntro());
+                "这是局部替换，保留其他站点，仅依据新接驳耗时推迟冲突时段；" + replacement.getIntro());
         copyConstraintAnnotations(target.stop(), newStop);
+        invalidateEditedEdges(target);
         target.stops().set(target.index(), newStop);
-        finalizeTrip(trip, session.currentVersion() + 1, "局部重规划", reason, List.of(targetId));
         amapPlannerGateway.hydrate(trip);
-        int expected = expectedVersion(request, session.currentVersion());
-        MutationResult result = repository.update(session, trip, expected,
-                "REPLAN", "局部重规划", reason, List.of(targetId));
-        if ("CONFLICT".equals(result.status())) return conflict(result.session());
-        List<String> unchanged = unchangedStopIds(trip, targetId);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("ok", true);
-        body.put("trip", trip);
-        body.put("changedSegments", List.of(targetId));
-        body.put("unchangedStops", unchanged);
-        body.put("replacementReason", reason);
-        body.put("replacementVenueId", replacement.getId());
-        body.put("appliedPreferences", result.session().appliedPreferences().asMap());
-        if ("少走路".equals(reason)) body.put("memoryProposal", Map.of("type", "preference", "value", "少走路", "copy", "要记住“少走路”偏好吗？"));
-        return new ServiceResult(200, body);
+        List<String> changed = delayAffectedStopTimes(trip, targetId);
+        ServiceResult rejected = rejectInvalidMutation(session, trip);
+        if (rejected != null) return StopMutationPreparation.rejected(rejected);
+        finalizeTrip(trip, session.currentVersion() + 1, "局部重规划", reason, changed);
+        Map<String, Object> receipt = new LinkedHashMap<>();
+        receipt.put("unchangedStops", allStopIds(trip).stream().filter(id -> !changed.contains(id)).toList());
+        receipt.put("replacementReason", reason);
+        receipt.put("replacementVenueId", replacement.getId());
+        if ("少走路".equals(reason)) receipt.put("memoryProposal", Map.of("type", "preference", "value", "少走路", "copy", "要记住“少走路”偏好吗？"));
+        return new StopMutationPreparation(null, session, trip, expectedVersion(request, session.currentVersion()),
+                "REPLAN", "局部重规划", reason, changed, receipt);
     }
 
+    /** Compatibility entry; production HTTP mutations use the explicit-actor application use case. */
     public ServiceResult mutateStops(String sessionId, PlannerMutationRequest request) {
         StoredSession session = findAuthorized(sessionId, request == null ? "" : request.getSessionAccessToken());
-        if (session == null) return error(404, "规划会话不存在或无权访问。", null);
+        return commitLegacyStopMutation(prepareStopsAuthorized(session, request));
+    }
+
+    public StopMutationPreparation prepareStopsAuthorized(StoredSession session, PlannerMutationRequest request) {
+        if (session == null) return StopMutationPreparation.rejected(error(404, "规划会话不存在或无权访问。", null));
+        if (expectedVersion(request, session.currentVersion()) != session.currentVersion()) return StopMutationPreparation.rejected(conflict(session));
         String operation = request == null ? "add" : safe(request.getOperation());
         if (operation.isBlank()) operation = "add";
+        if (!Set.of("add", "replace", "delete", "remove").contains(operation)) return StopMutationPreparation.rejected(error(400, "不支持的站点操作。", session));
         Map<String, Object> trip = mutableMap(session.trip());
         String changedId;
         String label;
+        StopLocation removedLocation = null;
         if ("delete".equals(operation) || "remove".equals(operation)) {
             String stopId = request == null ? "" : safe(request.getStopId());
             if (stopId.isBlank()) stopId = request == null ? "" : safe(request.getTargetStopId());
             StopLocation target = locateStop(trip, stopId);
-            if (target == null) return error(400, "未在当前行程中找到要移除的站点。", session);
+            if (target == null) return StopMutationPreparation.rejected(error(400, "未在当前行程中找到要移除的站点。", session));
+            invalidateEditedEdges(target);
             target.stops().remove(target.index());
+            removedLocation = target;
             changedId = stopId;
             label = "移除站点";
         } else {
             String attractionId = request == null ? "" : safe(request.getAttractionId());
             Attraction attraction = itineraryBuilder.attraction(attractionId);
-            if (attraction == null) return error(400, "景点不存在。", session);
+            if (attraction == null) return StopMutationPreparation.rejected(error(400, "景点不存在。", session));
+            ServiceResult candidateRejected = rejectCandidate(session, trip, attraction);
+            if (candidateRejected != null) return StopMutationPreparation.rejected(candidateRejected);
             int dayNumber = request == null || request.getDay() == null ? 1 : request.getDay();
             Map<String, Object> day = day(trip, dayNumber);
-            if (day == null) return error(400, "目标日期不存在。", session);
+            if (day == null) return StopMutationPreparation.rejected(error(400, "目标日期不存在。", session));
             if (usedVenues(trip).contains(attractionId) && !"replace".equals(operation)
-                    && (request == null || !request.isAllowRepeat())) return error(400, "该景点已在当前行程中；如需再次访问，请明确允许重复访问。", session);
+                    && (request == null || !request.isAllowRepeat())) return StopMutationPreparation.rejected(error(400, "该景点已在当前行程中；如需再次访问，请明确允许重复访问。", session));
             if ("replace".equals(operation)) {
                 String targetId = request == null ? "" : safe(request.getTargetStopId());
                 StopLocation target = locateStop(trip, targetId);
-                if (target == null) return error(400, "未找到要替换的站点。", session);
+                if (target == null) return StopMutationPreparation.rejected(error(400, "未找到要替换的站点。", session));
+                Set<String> used = usedVenues(trip);
+                used.remove(safe(target.stop().get("venueId")));
+                if (used.contains(attractionId)) return StopMutationPreparation.rejected(error(400, "候选景点已存在于当前行程，不能造成重复。", session));
                 Map<String, Object> stop = itineraryBuilder.createStop(attraction, targetId,
-                        safeValue(target.stop().get("time"), "待安排"), safeValue(target.stop().get("duration"), attraction.getDuration()),
-                        "根据偏好替换为" + attraction.getName() + "，保留原时间段与其余站点。", attraction.getIntro());
+                        safeValue(mutationTimeEngine.explicitClock(target.stop()), "待安排"), safeValue(target.stop().get("duration"), attraction.getDuration()),
+                        "根据偏好替换为" + attraction.getName() + "，保留其余站点，仅依据新接驳耗时推迟冲突时段。", attraction.getIntro());
                 copyConstraintAnnotations(target.stop(), stop);
+                invalidateEditedEdges(target);
                 target.stops().set(target.index(), stop);
                 changedId = targetId;
                 label = "替换站点";
@@ -463,123 +647,77 @@ public class PlannerService {
                 label = "添加站点";
             }
         }
-        finalizeTrip(trip, session.currentVersion() + 1, label, safe(request == null ? null : request.getReason()), List.of(changedId));
         amapPlannerGateway.hydrate(trip);
-        int expected = expectedVersion(request, session.currentVersion());
-        MutationResult result = repository.update(session, trip, expected,
-                "STOP_MUTATION", label, safe(request == null ? null : request.getReason()), List.of(changedId));
+        if ("add".equals(operation)) {
+            for (var item : days(trip)) {
+                var stops = dayStops(item);
+                if (!stops.isEmpty() && changedId.equals(stops.get(stops.size() - 1).get("id"))) {
+                    mutationTimeEngine.materializeConfiguredTransferEstimates(stops, stops.size() - 1);
+                    mutationTimeEngine.rippleRecalculateStopTimesFromExplicitFacts(stops, stops.size() - 1);
+                }
+            }
+        }
+        List<String> changed = "replace".equals(operation) ? delayAffectedStopTimes(trip, changedId)
+                : removedLocation != null ? delayDeletedStopSuccessor(removedLocation, changedId) : List.of(changedId);
+        ServiceResult rejected = rejectInvalidMutation(session, trip);
+        if (rejected != null) return StopMutationPreparation.rejected(rejected);
+        finalizeTrip(trip, session.currentVersion() + 1, label, safe(request == null ? null : request.getReason()), changed);
+        return new StopMutationPreparation(null, session, trip, expectedVersion(request, session.currentVersion()),
+                "STOP_MUTATION", label, safe(request == null ? null : request.getReason()), changed,
+                Map.of("operation", operation, "message", "站点已更新，路线与版本信息已刷新。"));
+    }
+
+    private ServiceResult commitLegacyStopMutation(StopMutationPreparation preparation) {
+        if (preparation.rejected()) return preparation.rejection();
+        MutationResult result = repository.update(preparation.session(), preparation.trip(), preparation.expectedVersion(),
+                preparation.mutationType(), preparation.label(), preparation.reason(), preparation.changedSegments());
+        return completeStopMutation(preparation, result);
+    }
+
+    /** Assembles the same receipt for the application use case and compatibility callers; never writes sessions. */
+    public ServiceResult completeStopMutation(StopMutationPreparation preparation, MutationResult result) {
         if ("CONFLICT".equals(result.status())) return conflict(result.session());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("ok", true);
-        body.put("operation", operation);
-        body.put("trip", trip);
-        body.put("changedSegments", List.of(changedId));
+        body.put("trip", preparation.trip());
+        body.put("changedSegments", preparation.changedSegments());
         body.put("appliedPreferences", result.session().appliedPreferences().asMap());
-        body.put("message", "站点已更新，路线与版本信息已刷新。");
+        body.putAll(preparation.receiptFields());
         return new ServiceResult(200, body);
     }
 
-    public ServiceResult save(String sessionId, String accessToken) {
-        try {
-            return saveOnce(sessionId, accessToken);
-        } catch (DataAccessResourceFailureException exception) {
-            // 保存键按“会话 + 版本”幂等。首次请求若恰好拿到被云端回收的连接，
-            // Hikari 会剔除坏连接，随后完整重试一次不会写出重复行程。
-            log.warn("[Planner] 保存行程遇到瞬时数据库断连，正在使用新连接重试一次: {}", exception.getMostSpecificCause().getMessage());
-            return saveOnce(sessionId, accessToken);
+    public record StopMutationPreparation(ServiceResult rejection, StoredSession session, Map<String, Object> trip,
+                                          int expectedVersion, String mutationType, String label, String reason,
+                                          List<String> changedSegments, Map<String, Object> receiptFields) {
+        static StopMutationPreparation rejected(ServiceResult result) {
+            return new StopMutationPreparation(result, null, Map.of(), 0, "", "", "", List.of(), Map.of());
         }
+        public boolean rejected() { return rejection != null; }
     }
 
-    private ServiceResult saveOnce(String sessionId, String accessToken) {
-        if (UserContext.isAnonymous()) return error(401, "请先登录后保存行程。", null);
-        StoredSession session = findAuthorized(sessionId, accessToken);
-        if (session == null) return error(404, "规划会话不存在或无权访问。", null);
-        Map<String, Object> plan = mutableMap(session.trip());
-        plan.put("plannerSessionId", session.sessionId());
-        plan.put("plannerVersion", session.currentVersion());
-        plan.put("appliedPreferences", session.appliedPreferences().asMap());
-        String saveKey = "planner-save-" + session.sessionId() + "-" + session.currentVersion();
-        TripService.OperationResult saved = tripService.savePlannerSnapshot(
-                UserContext.getUserId(), plan, saveKey);
-        if (saved.status() >= 400 || saved.trip() == null) {
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("ok", false);
-            body.put("message", saved.message());
-            body.put("appliedPreferences", session.appliedPreferences().asMap());
-            if (saved.tripId() != null) body.put("tripId", saved.tripId());
-            if (saved.expectedVersion() != null) body.put("expectedVersion", saved.expectedVersion());
-            if (saved.currentVersion() != null) body.put("currentVersion", saved.currentVersion());
-            return new ServiceResult(saved.status(), body);
+    public ServiceResult save(String sessionId, String accessToken) {
+        if (plannerSaveUseCase == null) {
+            throw new IllegalStateException("PlannerSaveUseCasePort 未配置；请通过应用层保存用例执行 V1 保存。");
         }
-        plan.put("formalTripId", saved.trip().id());
-        plan.put("sourceTripId", saved.trip().id());
-        plan.put("sourceTripVersion", saved.trip().currentVersion());
-        boolean linked = repository.linkFormalTrip(session, plan);
-        // A concurrent adjustment owns the newer business snapshot. Retry only the
-        // saved identity metadata rather than replacing its stops with the old plan.
-        for (int attempt = 0; !linked && attempt < 3; attempt++) {
-            StoredSession latest = findAuthorized(sessionId, accessToken);
-            if (latest == null) break;
-            Map<String, Object> latestPlan = mutableMap(latest.trip());
-            String existingId = safe(latestPlan.get("formalTripId"));
-            if (!existingId.isBlank() && !existingId.equals(saved.trip().id())) break;
-            // Do not move a concurrently saved baseline backwards.
-            int baseline = 0;
-            try { baseline = Integer.parseInt(safe(latestPlan.get("sourceTripVersion"))); }
-            catch (NumberFormatException ignored) { /* Legacy snapshots can omit the baseline. */ }
-            latestPlan.put("formalTripId", saved.trip().id());
-            latestPlan.put("sourceTripId", saved.trip().id());
-            latestPlan.put("sourceTripVersion", Math.max(baseline, saved.trip().currentVersion()));
-            linked = repository.linkFormalTrip(latest, latestPlan);
-        }
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("ok", true);
-        body.put("trip", saved.trip());
-        body.put("tripId", saved.trip().id());
-        body.put("currentVersion", saved.trip().currentVersion());
-        body.put("appliedPreferences", session.appliedPreferences().asMap());
-        body.put("draftLinked", linked);
-        if (!linked) body.put("message", "正式行程已保存，草稿仍在更新；再次保存将继续更新同一正式行程。");
-        return new ServiceResult(saved.status(), body);
+        PlannerSaveResult result = plannerSaveUseCase.save(
+                new PlannerSaveActor(UserContext.getUserId(), UserContext.isAnonymous()), sessionId, accessToken);
+        return new ServiceResult(result.serviceStatus(), result.body());
     }
 
     public ServiceResult openFormalTrip(String tripId) {
-        if (UserContext.isAnonymous()) return error(401, "请先登录后打开正式行程。", null);
-        String formalTripId = safe(tripId);
-        if (formalTripId.isBlank()) return error(400, "缺少正式行程 ID。", null);
-
-        Trip formal = tripService.get(UserContext.getUserId(), formalTripId);
-        if (formal == null) return error(404, "正式行程不存在或无权访问。", null);
-
-        Map<String, Object> restoredPlan = copyTripSnapshot(formal.plan());
-        if (restoredPlan.isEmpty()) return error(400, "正式行程缺少可恢复的规划快照。", null);
-        restoredPlan.put("title", formal.title());
-        restoredPlan.put("formalTripId", formal.id());
-        restoredPlan.put("sourceTripId", formal.id());
-        restoredPlan.put("sourceTripVersion", formal.currentVersion());
-        restoredPlan.put("sourcePlannerRevision", restoredPlan.getOrDefault("version", 1));
-        restoredPlan.put("plannerSessionRestoreSource", "RESTORED_FROM_TRIP");
-        restoredPlan.put("version", 1);
-
-        TravelConstraints constraints = restoreConstraints(restoredPlan);
-        AppliedPreferencesSnapshot appliedPreferences = restoreAppliedPreferences(restoredPlan);
-        if (appliedPreferences.isEmpty()) {
-            restoredPlan.put("plannerSessionRestoreDegradation", "APPLIED_PREFERENCES_UNAVAILABLE");
+        if (plannerOpenUseCase == null) {
+            throw new IllegalStateException("PlannerOpenUseCasePort 未配置；请通过应用层正式行程打开用例执行 V1 打开。");
         }
-        String prompt = safe(restoredPlan.get("prompt"));
-        if (prompt.isBlank()) prompt = safe(restoredPlan.get("input"));
-        String restoreKey = "trip-open-" + formal.id() + "-" + formal.currentVersion() + "-" + UUID.randomUUID();
-        String restoreFingerprint = fingerprint(prompt, constraints.asMap(), false, appliedPreferences,
-                "RESTORED_FROM_TRIP:" + formal.id() + ":" + formal.currentVersion());
-        CreateResult created = repository.create("USER", UserContext.getUserId(), prompt,
-                constraints.asMap(), appliedPreferences, restoredPlan, restoreKey, restoreFingerprint);
-        Map<String, Object> response = planResponse(created.session(), "");
-        response.put("formalTripId", formal.id());
-        response.put("formalTripVersion", formal.currentVersion());
-        response.put("restoredFromTrip", true);
-        response.put("adjustmentCapability", "V1_PROPOSAL");
-        response.put("legacyMode", false);
-        return new ServiceResult(200, response);
+        PlannerOpenResult result = plannerOpenUseCase.openFormalTrip(
+                new PlannerOpenActor(UserContext.getUserId(), UserContext.isAnonymous()), tripId);
+        return new ServiceResult(result.serviceStatus(), result.body());
+    }
+
+    public PlannerOpenResult discardUncommittedOpen(PlannerOpenActor actor, String tripId, String sessionId) {
+        if (plannerOpenUseCase == null) {
+            throw new IllegalStateException("PlannerOpenUseCasePort 未配置；无法清理未完成的正式行程打开会话。");
+        }
+        return plannerOpenUseCase.discardUncommittedOpen(actor, tripId, sessionId);
     }
 
     public ServiceResult converse(String sessionId, PlanConversationRequestDto request) {
@@ -621,11 +759,12 @@ public class PlannerService {
     }
 
     private PlanningComputation compute(RequestPreparation prepared) {
+        long phaseStarted = System.nanoTime();
         TravelConstraints constraints = prepared.constraints();
         Map<String, Object> trip = null;
         if (plannerV1Enabled && constraints.hasExplicitSpatialRequest()) {
             trip = amapPlannerGateway.planFromLocation(constraints, 1);
-            if (trip != null && isTripEmpty(trip)) {
+            if (trip != null && isTripEmpty(trip) && !OperationDeadline.expired()) {
                 log.warn("基于起点的周边动态规划未生成有效站点 (startPlace={})，自动降级为全城路线规划以确保行程可用",
                         constraints.getStartPlace());
                 trip = null;
@@ -635,15 +774,20 @@ public class PlannerService {
             trip = plannerV1Enabled
                     ? itineraryBuilder.build(1, constraints)
                     : itineraryBuilder.buildLegacy(1, constraints);
+            log.info("[PLANNER_PHASE] phase=build latencyMs={}", (System.nanoTime() - phaseStarted) / 1_000_000L);
+            phaseStarted = System.nanoTime();
             // Provider calls mutate only this in-memory result; they never write a
             // planner session or formal Trip.
             amapPlannerGateway.hydrate(trip);
         }
+        log.info("[PLANNER_PHASE] phase=dynamic latencyMs={}", (System.nanoTime() - phaseStarted) / 1_000_000L);
+        phaseStarted = System.nanoTime();
 
         if (plannerV1Enabled && groundedNarrativeService != null
                 && !constraints.hasExplicitSpatialRequest()) {
             groundedNarrativeService.enhanceTrip(trip, constraints, prepared.snapshot());
         }
+        log.info("[PLANNER_PHASE] phase=narrative latencyMs={}", (System.nanoTime() - phaseStarted) / 1_000_000L);
 
         return new PlanningComputation(constraints, prepared.snapshot(), trip);
     }
@@ -673,25 +817,7 @@ public class PlannerService {
         body.put("source", sourceStatus(trip));
         body.put("retrieval", trip.get("retrieval"));
 
-        // V1 Metadata
-        String routeStatus = String.valueOf(trip.getOrDefault("routeDataStatus", "ESTIMATED"));
-        boolean isDegraded = !plannerV1Enabled || Boolean.TRUE.equals(trip.get("degraded")) || !"高德实时接口".equals(trip.get("sourceMode"));
-        String plannerVer = !plannerV1Enabled ? "legacy-v0" : PlannerVersionMetadata.CURRENT_PLANNER_VERSION;
-        String policyVer = !plannerV1Enabled ? "legacy-2026.07" : PlannerVersionMetadata.CURRENT_POLICY_VERSION;
-        String expSource = !plannerV1Enabled ? "LEGACY_STATIC"
-                : (trip != null && trip.get("explanationSource") != null
-                    ? String.valueOf(trip.get("explanationSource"))
-                    : PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
-        List<String> degradationReasons = !plannerV1Enabled
-                ? List.of("LEGACY_PLANNER_ACTIVE")
-                : degradationReasons(trip, isDegraded);
-
-        body.put("plannerVersion", plannerVer);
-        body.put("policyVersion", policyVer);
-        body.put("explanationSource", expSource);
-        body.put("routeDataStatus", routeStatus);
-        body.put("degraded", isDegraded);
-        body.put("degradationReasons", degradationReasons);
+        body.putAll(PlannerVersionMetadata.fromTrip(trip, plannerV1Enabled).asMap());
         return body;
     }
 
@@ -733,8 +859,73 @@ public class PlannerService {
         return owned != null ? owned : repository.claimAnonymous(sessionId, token, UserContext.getUserId());
     }
 
-    private Attraction rankReplacement(String reason, Attraction old, Set<String> used) {
-        return itineraryBuilder.attractionServiceList().stream().filter(item -> !used.contains(item.getId()) && !item.getId().equals(old.getId()))
+    private TravelConstraints extractMutationConstraints(Map<String, Object> source) {
+        Object value = source.get("constraints");
+        if (value == null && source.containsKey("days"))
+            return TravelConstraints.builder().destination(safe(source.get("city"))).build();
+        @SuppressWarnings("unchecked") var snapshot = value instanceof Map<?, ?> ? (Map<String, Object>) value : source;
+        return TravelConstraints.fromSnapshot(objectMapper, snapshot);
+    }
+
+    private void invalidateEditedEdges(StopLocation target) {
+        // The successor's incoming edge also changed; its previous route belongs to the removed venue.
+        if (target.index() + 1 < target.stops().size())
+            com.ai.guide.domain.planner.engine.RouteAwarePlanner.invalidateIncomingRoute(target.stops().get(target.index() + 1));
+    }
+
+    private List<String> delayDeletedStopSuccessor(StopLocation removed, String removedId) {
+        var changed = new java.util.LinkedHashSet<String>();
+        changed.add(removedId);
+        int index = removed.index();
+        // A new first stop has no incoming edge. Do not reinterpret unrelated unassigned blocks as scheduled visits.
+        if (index <= 0 || index >= removed.stops().size()) return List.copyOf(changed);
+        mutationTimeEngine.materializeConfiguredTransferEstimates(removed.stops(), index);
+        if (mutationTimeEngine.parseExplicitTimeMinutes(mutationTimeEngine.explicitClock(removed.stops().get(index))) != null)
+            changed.addAll(mutationTimeEngine.delayConflictingStopTimesFromExplicitFacts(removed.stops(), index));
+        return List.copyOf(changed);
+    }
+
+    private List<String> delayAffectedStopTimes(Map<String, Object> trip, String targetId) {
+        var changed = new java.util.LinkedHashSet<String>();
+        changed.add(targetId);
+        for (var day : days(trip)) {
+            var stops = dayStops(day);
+            for (int i = 0; i < stops.size(); i++) if (targetId.equals(stops.get(i).get("id"))) {
+                mutationTimeEngine.materializeConfiguredTransferEstimates(stops, Math.max(1, i));
+                changed.addAll(mutationTimeEngine.delayConflictingStopTimesFromExplicitFacts(stops, Math.max(1, i)));
+                return List.copyOf(changed);
+            }
+        }
+        return List.copyOf(changed);
+    }
+
+    private List<String> allStopIds(Map<String, Object> trip) {
+        return days(trip).stream().flatMap(day -> dayStops(day).stream()).map(stop -> safe(stop.get("id"))).toList();
+    }
+
+    private ServiceResult rejectCandidate(StoredSession session, Map<String, Object> trip, Attraction candidate) {
+        String reason = mutationPolicy.candidateRejection(candidate, trip, extractMutationConstraints(session.constraints()));
+        if (reason.isBlank()) return null;
+        var body = new LinkedHashMap<>(error(400, "候选地点不符合当前目的地范围或明确避开条件。", session).body());
+        body.put("reasonCodes", List.of(reason));
+        return new ServiceResult(400, body);
+    }
+
+    private ServiceResult rejectInvalidMutation(StoredSession session, Map<String, Object> trip) {
+        if (!PlannerPins.retained(session.trip(), trip))
+            return error(400, "该站点已固定，请先明确取消固定后再移除或替换。", session);
+        PlannerPins.preserve(session.trip(), trip);
+        var violations = mutationPolicy.introducedHardViolations(session.trip(), trip, extractMutationConstraints(session.constraints()));
+        if (violations.isEmpty()) return null;
+        var response = new LinkedHashMap<>(error(400, "这次修改违反目的地范围或行程约束，原行程未改变。", session).body());
+        response.put("reasonCodes", violations.stream().map(com.ai.guide.domain.planner.engine.PlanVerifier.PlanViolation::type).distinct().toList());
+        response.put("violations", violations.stream().map(com.ai.guide.domain.planner.engine.PlanVerifier.PlanViolation::asMap).toList());
+        return new ServiceResult(400, response);
+    }
+
+    private Attraction rankReplacement(String reason, Attraction old, Set<String> used, Map<String, Object> trip, TravelConstraints constraints) {
+        return itineraryBuilder.attractionServiceList().stream().filter(item -> mutationPolicy.candidateAllowed(item, trip, constraints))
+                .filter(item -> !used.contains(item.getId()) && !item.getId().equals(old.getId()))
                 .map(item -> new Ranked(item, replacementScore(item, old, reason)))
                 .max(Comparator.comparingInt(Ranked::score)
                         .thenComparingInt(ranked -> -itineraryBuilder.catalogRank(ranked.attraction().getId())))
@@ -744,21 +935,49 @@ public class PlannerService {
     private int replacementScore(Attraction candidate, Attraction old, String reason) {
         int score = 0;
         List<String> tags = candidate.getTags() == null ? List.of() : candidate.getTags();
-        if (reason.matches(".*(室内|雨|避暑).*")) { if (Boolean.TRUE.equals(candidate.getIndoor())) score += 20; if (tags.contains("室内")) score += 10; }
-        if (reason.matches(".*(少走路|不想走|轻松|老人|长辈).*")) { if ("低".equals(candidate.getWalkDifficulty())) score += 20; if (safe(candidate.getWalk()).matches(".*(少走路|直达|扶梯).*")) score += 10; if (tags.contains("少走路") || tags.contains("长辈友好")) score += 10; }
-        if (reason.matches(".*(时间变少|赶时间|快|短停留).*")) { if (safe(candidate.getDuration()).matches(".*(45|60).*")) score += 20; if (tags.contains("短停留")) score += 10; }
-        if (reason.matches(".*(夜景|晚上|灯光).*")) if ("夜景".equals(candidate.getCategory()) || tags.contains("夜景")) score += 25;
-        if (reason.matches(".*(美食|吃|火锅|小吃).*")) if ("美食".equals(candidate.getCategory()) || tags.contains("美食")) score += 25;
-        if (reason.matches(".*(文创|艺术|拍照).*")) if ("文创".equals(candidate.getCategory()) || tags.contains("文创") || tags.contains("拍照")) score += 20;
-        if (reason.matches(".*(少走路|不想走|轻松|老人|长辈).*")
-                && ("夜景".equals(old.getCategory()) || old.matchesAnyTagOrFeature("夜景"))
-                && ("夜景".equals(candidate.getCategory()) || candidate.matchesAnyTagOrFeature("夜景"))
-                && ("低".equals(candidate.getWalkDifficulty()) || "SUPPORTED".equals(candidate.getEffectiveAccessibility()))
-                && (safe(candidate.getWalk()).matches(".*(少走路|直达|短步行|平街|扶梯).*") || candidate.matchesAnyTagOrFeature("少走路", "视野开阔"))) {
-            score += 30;
+        if (matchesAnyHint(reason, "replanIndoorAliases")) {
+            if (Boolean.TRUE.equals(candidate.getIndoor())) score += PlannerScoringPolicy.weight(taxonomy, "replacementIndoor");
+            if (matchesAnyHint(tags, "replacementIndoorFeatures")) score += PlannerScoringPolicy.weight(taxonomy, "replacementIndoorFeature");
         }
-        if (safe(candidate.getDistrict()).equals(old.getDistrict())) score += 5;
+        if (matchesAnyHint(reason, "replanLowWalkingAliases")) {
+            if ("低".equals(candidate.getWalkDifficulty())) score += PlannerScoringPolicy.weight(taxonomy, "replacementLowWalking");
+            if (matchesAnyHint(safe(candidate.getWalk()), "candidateLowWalkingFeatures")) score += PlannerScoringPolicy.weight(taxonomy, "replacementLowWalkingEvidence");
+            if (matchesAnyHint(tags, "candidateLowWalkingFeatures")) score += PlannerScoringPolicy.weight(taxonomy, "replacementLowWalkingTag");
+        }
+        if (matchesAnyHint(reason, "replanUrgencyAliases")) {
+            if (matchesAnyHint(safe(candidate.getDuration()), "shortVisitDurationTokens")) score += PlannerScoringPolicy.weight(taxonomy, "replacementUrgencyDuration");
+            if (matchesAnyHint(tags, "shortVisitTags")) score += PlannerScoringPolicy.weight(taxonomy, "replacementShortVisitTag");
+        }
+        if (matchesAnyHint(reason, "replanNightAliases")
+                && (taxonomy.getHints("plannerNightCategories").contains(candidate.getCategory()) || matchesAnyHint(tags, "plannerNightTags"))) {
+            score += PlannerScoringPolicy.weight(taxonomy, "replacementNight");
+        }
+        if (matchesAnyHint(reason, "foodTags") || matchesAnyHint(reason, "dining")) {
+            if (taxonomy.getHints("plannerFoodCategories").contains(candidate.getCategory()) || matchesAnyHint(tags, "foodTags")) {
+                score += PlannerScoringPolicy.weight(taxonomy, "replacementFood");
+            }
+        }
+        if (matchesAnyHint(reason, "replanCultureAliases")
+                && (taxonomy.getHints("plannerCreativeCategories").contains(candidate.getCategory()) || matchesAnyHint(tags, "plannerCreativeTags"))) {
+            score += PlannerScoringPolicy.weight(taxonomy, "replacementCulture");
+        }
+        if (matchesAnyHint(reason, "replanLowWalkingAliases")
+                && (taxonomy.getHints("plannerNightCategories").contains(old.getCategory()) || old.matchesAnyTagOrFeature(taxonomy.getHints("plannerNightTags").toArray(String[]::new)))
+                && (taxonomy.getHints("plannerNightCategories").contains(candidate.getCategory()) || candidate.matchesAnyTagOrFeature(taxonomy.getHints("plannerNightTags").toArray(String[]::new)))
+                && ("低".equals(candidate.getWalkDifficulty()) || "SUPPORTED".equals(candidate.getEffectiveAccessibility()))
+                && (matchesAnyHint(safe(candidate.getWalk()), "candidateLowWalkingFeatures") || candidate.matchesAnyTagOrFeature(taxonomy.getHints("plannerNightLowWalkingFeatures").toArray(String[]::new)))) {
+            score += PlannerScoringPolicy.weight(taxonomy, "replacementNightLowWalking");
+        }
+        if (safe(candidate.getDistrict()).equals(old.getDistrict())) score += PlannerScoringPolicy.weight(taxonomy, "replacementSameDistrict");
         return score;
+    }
+
+    private boolean matchesAnyHint(String value, String key) {
+        return value != null && taxonomy.getHints(key).stream().anyMatch(value::contains);
+    }
+
+    private boolean matchesAnyHint(List<String> values, String key) {
+        return values != null && values.stream().anyMatch(value -> matchesAnyHint(value, key));
     }
 
     private Map<String, Object> planResponse(StoredSession session, String token) {
@@ -770,35 +989,8 @@ public class PlannerService {
         if (token != null && !token.isBlank()) response.put("sessionAccessToken", token);
         response.put("syncRevision", session.syncRevision());
 
-        // V1 Metadata
-        String routeStatus = session.trip() == null ? "ESTIMATED" : String.valueOf(session.trip().getOrDefault("routeDataStatus", "ESTIMATED"));
-        boolean isDegraded = !plannerV1Enabled || session.trip() == null || Boolean.TRUE.equals(session.trip().get("degraded")) || !"高德实时接口".equals(session.trip().get("sourceMode"));
-        String plannerVer = !plannerV1Enabled ? "legacy-v0" : PlannerVersionMetadata.CURRENT_PLANNER_VERSION;
-        String policyVer = !plannerV1Enabled ? "legacy-2026.07" : PlannerVersionMetadata.CURRENT_POLICY_VERSION;
-        String expSource = !plannerV1Enabled ? "LEGACY_STATIC"
-                : (session.trip() != null && session.trip().containsKey("explanationSource")
-                    ? String.valueOf(session.trip().get("explanationSource"))
-                    : PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
-        List<String> degradationReasons = !plannerV1Enabled
-                ? List.of("LEGACY_PLANNER_ACTIVE")
-                : degradationReasons(session.trip(), isDegraded);
-
-        response.put("plannerVersion", plannerVer);
-        response.put("policyVersion", policyVer);
-        response.put("explanationSource", expSource);
-        response.put("routeDataStatus", routeStatus);
-        response.put("degraded", isDegraded);
-        response.put("degradationReasons", degradationReasons);
+        response.putAll(PlannerVersionMetadata.fromTrip(session.trip(), plannerV1Enabled).asMap());
         return response;
-    }
-
-    private List<String> degradationReasons(Map<String, Object> trip, boolean degraded) {
-        List<String> reasons = new ArrayList<>();
-        if (trip != null && trip.get("degradationReasons") instanceof List<?> values) {
-            for (Object value : values) if (value != null && !String.valueOf(value).isBlank()) reasons.add(String.valueOf(value));
-        }
-        if (degraded && reasons.isEmpty()) reasons.add("DEMO_OR_ESTIMATED_ROUTE_FALLBACK");
-        return reasons;
     }
 
     private Map<String, Object> constraintDiagnostics(TravelConstraints constraints) {
@@ -811,7 +1003,12 @@ public class PlannerService {
             diagnostics.put("conflicts", constraints.getConflicts().stream().map(com.ai.guide.domain.planner.model.ConstraintConflict::asMap).toList());
             diagnostics.put("constraintWarning", "检测到输入偏好存在冲突：" + constraints.getConflicts().get(0).message());
         } else if (constraints != null && constraints.isNeedsClarification()) {
-            diagnostics.put("constraintWarning", "部分关键出行时间未提供，当前为可调整草案；确认前请补充行程时间。");
+            boolean durationMissing = constraints.getCriticalMissingFields() != null
+                    && constraints.getCriticalMissingFields().contains("durationDays");
+            String warning = durationMissing
+                    ? "行程天数尚未明确，当前按规划策略暂定为" + constraints.getDurationDays() + "日可调整草案；确认前请补充行程天数与时间。"
+                    : "部分关键出行时间未提供，当前为可调整草案；确认前请补充行程时间。";
+            diagnostics.put("constraintWarning", warning);
         }
         if (constraints != null && constraints.getShadowSemanticPreferences() != null && !constraints.getShadowSemanticPreferences().isEmpty()) {
             diagnostics.put("shadowSemanticPreferences", constraints.getShadowSemanticPreferences());
@@ -849,40 +1046,12 @@ public class PlannerService {
     }
     private int expectedVersion(PlannerMutationRequest request, int current) { return request != null && request.getExpectedVersion() != null ? request.getExpectedVersion() : current; }
 
-    private TravelConstraints restoreConstraints(Map<String, Object> restoredPlan) {
-        Object rawConstraints = restoredPlan.get("constraints");
-        if (rawConstraints instanceof Map<?, ?> values) {
-            try {
-                return objectMapper.convertValue(values, TravelConstraints.class);
-            } catch (IllegalArgumentException ignored) {
-                restoredPlan.put("plannerSessionRestoreDegradation", "CONSTRAINTS_UNAVAILABLE");
-            }
-        }
-        return new TravelConstraints();
-    }
-
-    private AppliedPreferencesSnapshot restoreAppliedPreferences(Map<String, Object> restoredPlan) {
-        Object rawSnapshot = restoredPlan.get("appliedPreferences");
-        if (!(rawSnapshot instanceof Map<?, ?> values)) return AppliedPreferencesSnapshot.empty();
-        try {
-            return AppliedPreferencesSnapshot.fromJson(objectMapper.writeValueAsString(values), objectMapper);
-        } catch (Exception ignored) {
-            return AppliedPreferencesSnapshot.empty();
-        }
-    }
-
     @SuppressWarnings("unchecked")
-    private Map<String, Object> copyTripSnapshot(Map<String, Object> value) {
-        if (value == null || value.isEmpty()) return new LinkedHashMap<>();
-        try {
-            return objectMapper.readValue(objectMapper.writeValueAsBytes(value), LinkedHashMap.class);
-        } catch (Exception ignored) {
-            return new LinkedHashMap<>(value);
-        }
+    private Map<String, Object> mutableMap(Map<String, Object> value) {
+        // A rejected edit must not mutate nested days/stops held by the repository's authoritative snapshot.
+        return objectMapper.convertValue(value == null ? Map.of() : value,
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
     }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> mutableMap(Map<String, Object> value) { return new LinkedHashMap<>(value == null ? Map.of() : value); }
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> dayStops(Map<String, Object> day) { return (List<Map<String, Object>>) day.computeIfAbsent("stops", ignored -> new ArrayList<>()); }
     @SuppressWarnings("unchecked")
@@ -919,7 +1088,8 @@ public class PlannerService {
             // The decision is retained for request identity only; it is never an
             // authority and never mutates formal Java Preferences.
             semantic.put("preferenceDecision", decision == null ? "" : decision);
-            String source = objectMapper.writeValueAsString(semantic);
+            String source = objectMapper.writer().with(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+                    .writeValueAsString(semantic);
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(source.getBytes(StandardCharsets.UTF_8));
             StringBuilder out = new StringBuilder();

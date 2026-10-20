@@ -5,12 +5,24 @@ import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
 import com.ai.guide.domain.planner.model.topography.BarrierCrossingType;
 import com.ai.guide.domain.planner.model.topography.ElevationFlow;
 import com.ai.guide.domain.planner.model.topography.ElevationTier;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
 public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
+
+    private final PlannerTaxonomyPort taxonomy;
+
+    @Autowired
+    public ChengduPlainTopographyStrategy(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+    }
+
+    public ChengduPlainTopographyStrategy() { this(TaxonomyPort.empty()); }
 
     @Override
     public String supportedCity() {
@@ -21,7 +33,8 @@ public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
     public ElevationTier resolveElevationTier(Attraction attraction) {
         if (attraction == null) return ElevationTier.STANDARD_PLAIN;
         String name = attraction.getName() != null ? attraction.getName() : "";
-        if (name.contains("青城山") || name.contains("西岭雪山") || name.contains("龙泉山") || name.contains("天台山")) {
+        String id = attraction.getId() == null ? "" : attraction.getId();
+        if (matches(name, "chengduTopoHighNameTokens") || matches(id, "chengduTopoHighIdTokens")) {
             return ElevationTier.HIGH_ALTITUDE;
         }
         return ElevationTier.STANDARD_PLAIN;
@@ -29,7 +42,7 @@ public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
 
     @Override
     public ElevationTier resolveElevationTier(String id, String name, String district, String location) {
-        if (name != null && (name.contains("青城山") || name.contains("西岭雪山") || name.contains("龙泉山") || name.contains("天台山"))) {
+        if (matches(name, "chengduTopoHighNameTokens") || matches(id, "chengduTopoHighIdTokens")) {
             return ElevationTier.HIGH_ALTITUDE;
         }
         return ElevationTier.STANDARD_PLAIN;
@@ -37,7 +50,7 @@ public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
 
     @Override
     public BarrierCrossingType detectBarrierCrossing(Attraction from, Attraction to) {
-        // 成都无天然大江天堑阻隔，锦江两岸桥梁密布，阻抗极低
+        // This city-specific strategy models plain-city movement without a configured major barrier.
         return BarrierCrossingType.NONE;
     }
 
@@ -63,7 +76,7 @@ public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
         boolean cDistant = isDistantSuburban(candidate);
 
         if ((sDistant && !lDistant && cDistant) || (!sDistant && lDistant && !cDistant)) {
-            return 70.0; // 严禁同一天内进出远郊往返折腾
+            return penalty("chengduTopoZigzagPenalty");
         }
         return 0.0;
     }
@@ -72,21 +85,23 @@ public class ChengduPlainTopographyStrategy implements TopographyStrategyPort {
         if (a == null) return false;
         String dist = a.getDistrict() != null ? a.getDistrict() : "";
         String name = a.getName() != null ? a.getName() : "";
-        return dist.contains("都江堰") || dist.contains("崇州") || dist.contains("大邑") || name.contains("青城山");
+        return matches(dist, "chengduTopoOutskirtDistrictTokens") || matches(name, "chengduTopoOutskirtNameTokens");
     }
 
     @Override
     public String generateTransitCharacteristicHint(Attraction from, Attraction to, String transportPreference) {
         if (from == null || to == null) return "";
-        String n1 = from.getName() != null ? from.getName() : "";
-        String n2 = to.getName() != null ? to.getName() : "";
-        if (n1.contains("春熙路") && n2.contains("宽窄巷子")) {
-            return "两站横贯成都母城东西核心，推荐乘坐地铁2号线直达（约15分钟），亦可骑行共享单车漫游天府市井街巷。";
-        }
-        if (n2.contains("青城山") || n2.contains("都江堰")) {
-            return "前往都江堰/青城山片区，极力推荐在犀浦站换乘城际动车（快铁30分钟直达），快捷且避开成灌高速拥堵。";
-        }
+        // Current timetables and route facts belong to the live route provider.
         return "";
+    }
+
+    private boolean matches(String value, String key) {
+        return value != null && taxonomy.getHints(key).stream().anyMatch(value::contains);
+    }
+
+    private double penalty(String key) {
+        try { return taxonomy.getHints(key).stream().findFirst().map(Double::parseDouble).orElse(0.0); }
+        catch (RuntimeException invalidConfig) { return 0.0; }
     }
 
     @Override

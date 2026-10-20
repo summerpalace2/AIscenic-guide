@@ -37,12 +37,12 @@ class P2PlatformEvolutionTest {
 
     @BeforeEach
     void setUp() {
-        ChongqingTopographyStrategy cq = new ChongqingTopographyStrategy();
-        ChengduPlainTopographyStrategy cd = new ChengduPlainTopographyStrategy();
-        XiAnHeritageTopographyStrategy xa = new XiAnHeritageTopographyStrategy();
+        ChongqingTopographyStrategy cq = new ChongqingTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        ChengduPlainTopographyStrategy cd = new ChengduPlainTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        XiAnHeritageTopographyStrategy xa = new XiAnHeritageTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy gn = new com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy();
-        router = new TopographyStrategyRouter(List.of(cq, cd, xa, gn));
-        categoryRegistry = new PoiCategoryPolicyRegistry();
+        router = new TopographyStrategyRouter(List.of(cq, cd, xa, gn), new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        categoryRegistry = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         mapper = new ItineraryModelMapper();
         repairer = new LocalPlanRepairer(categoryRegistry);
     }
@@ -61,10 +61,14 @@ class P2PlatformEvolutionTest {
         TopographyStrategyPort xaStrategy = router.route("西安");
         assertTrue(xaStrategy instanceof XiAnHeritageTopographyStrategy);
         assertEquals("XIAN", xaStrategy.supportedCity());
+        assertSame(xaStrategy, router.route("Xi'an"));
 
         // 未知城市回退至通用平原策略（防止非重庆城市被套用长江天堑）
         TopographyStrategyPort fallback = router.route("未知城市");
-        assertTrue(fallback instanceof GenericPlainTopographyStrategy || fallback instanceof ChengduPlainTopographyStrategy);
+        assertInstanceOf(GenericPlainTopographyStrategy.class, fallback);
+        assertEquals(com.ai.guide.domain.planner.model.topography.ElevationTier.UNVERIFIED,
+                fallback.resolveElevationTier("poi-1", "岭南博物馆", "测试区", ""),
+                "缺少高程证据时不应从“山/岭/峰”等地名词根推断地形");
     }
 
     @Test
@@ -94,10 +98,10 @@ class P2PlatformEvolutionTest {
 
         // 4. 特色交通指引生成
         String hint = cq.generateTransitCharacteristicHint(eling, liziba, "walking");
-        assertTrue(hint.contains("三层马路步道") && hint.contains("下行"));
+        assertTrue(hint.contains("下行"));
 
         String crossHint = cq.generateTransitCharacteristicHint(hongyadong, dajueryuan, "walking");
-        assertTrue(crossHint.contains("千厮门大桥") && crossHint.contains("嘉陵江"));
+        assertTrue(crossHint.contains("实时交通路线"));
     }
 
     @Test
@@ -114,7 +118,7 @@ class P2PlatformEvolutionTest {
         assertEquals(BarrierCrossingType.NONE, cd.detectBarrierCrossing(chunxi, qingcheng));
 
         String hint = cd.generateTransitCharacteristicHint(chunxi, qingcheng, "transit");
-        assertTrue(hint.contains("城际动车") || hint.contains("快铁"));
+        assertEquals("", hint, "Live transit recommendations should come from the route provider, not a stale city-specific template");
     }
 
     @Test
@@ -131,7 +135,7 @@ class P2PlatformEvolutionTest {
         assertEquals(BarrierCrossingType.HISTORICAL_WALL, xa.detectBarrierCrossing(bellTower, bigWildGoose));
 
         String hint = xa.generateTransitCharacteristicHint(bellTower, bigWildGoose, "subway");
-        assertTrue(hint.contains("地铁2号线") || hint.contains("中轴线") || hint.contains("永宁门"));
+        assertEquals("", hint, "Transit advice must be sourced from the live route provider");
     }
 
     @Test

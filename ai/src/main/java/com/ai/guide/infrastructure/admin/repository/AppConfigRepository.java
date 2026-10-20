@@ -17,7 +17,7 @@ import java.util.Map;
  *
  * <p>所属架构层级：COLA 4.0 Infrastructure Layer (基础设施层)</p>
  * <p>核心职责：实现 {@link AppConfigRepositoryPort} 领域端口，通过 Spring JDBC 直接操作数据库 app_config 键值表，
- * 封装 SQL 前缀查询、CAS 更新及自动新增逻辑，隔离底层关系型数据库技术细节。</p>
+ * 封装 SQL 前缀查询与原子 upsert，隔离底层关系型数据库技术细节。</p>
  */
 @Repository
 public class AppConfigRepository implements AppConfigRepositoryPort {
@@ -71,13 +71,12 @@ public class AppConfigRepository implements AppConfigRepositoryPort {
             String key = k.startsWith(prefix) ? k : prefix + k;
             String now = LocalDateTime.now().format(DATE_TIME_FORMATTER);
             String value = v == null ? "" : String.valueOf(v);
-            int updated = jdbcTemplate.update(
-                    "UPDATE app_config SET value = ?, updated_at = ? WHERE key = ?", value, now, key);
-            if (updated == 0) {
-                jdbcTemplate.update(
-                        "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?)",
-                        key, value, now);
-            }
+            // SQLite (local) and PostgreSQL (production) both support ON CONFLICT.
+            // One statement avoids the check-then-insert unique-key race across instances.
+            jdbcTemplate.update(
+                    "INSERT INTO app_config (key, value, updated_at) VALUES (?, ?, ?) " +
+                            "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                    key, value, now);
         }));
     }
 }

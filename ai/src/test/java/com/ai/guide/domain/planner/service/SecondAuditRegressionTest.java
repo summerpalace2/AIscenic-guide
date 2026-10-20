@@ -1,6 +1,6 @@
 package com.ai.guide.domain.planner.service;
 
-import com.ai.guide.common.config.KnowledgeDbConfig;
+import com.ai.guide.infrastructure.persistence.migration.KnowledgeSchemaInitializer;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.security.JwtAuthFilter;
 import com.ai.guide.domain.attraction.model.Attraction;
@@ -26,17 +26,11 @@ class SecondAuditRegressionTest {
  @AfterEach void clearUser() { UserContext.clear(); }
  private JdbcTemplate database() throws Exception {
   var ds=new SQLiteDataSource();ds.setUrl("jdbc:sqlite:"+temporary.resolve("db.sqlite"));
-  var jdbc=new JdbcTemplate(ds);var config=new KnowledgeDbConfig();
-  for(var entry:Map.of("configuredType","sqlite","configuredUrl","jdbc:sqlite:"+temporary.resolve("db.sqlite")).entrySet()) {
-   var field=KnowledgeDbConfig.class.getDeclaredField(entry.getKey());field.setAccessible(true);field.set(config,entry.getValue());
-  }
-  config.knowledgeDataSource();
-  var method=KnowledgeDbConfig.class.getDeclaredMethod("createSchema",JdbcTemplate.class,boolean.class);
-  method.setAccessible(true);method.invoke(config,jdbc,true);return jdbc;
+  var jdbc=new JdbcTemplate(ds);new KnowledgeSchemaInitializer().initialize(jdbc,true);return jdbc;
  }
  @Test void compoundChoiceUsesOriginalFullOperationAndKeepsRemainingAfterApply() {
-  var context=PlanPageContext.builder().activeDay(2).build();var store=new PendingIntentContinuations();
-  var original=new ConversationIntentClassifier().classify("把解放碑换成三峡博物馆，下午添加茶歇",context);
+  var context=PlanPageContext.builder().activeDay(2).build();var store=new PendingIntentContinuations(com.ai.guide.testing.PlannerTaxonomyFixtures.classifier());
+  var original=com.ai.guide.testing.PlannerTaxonomyFixtures.classifier().classify("把解放碑换成三峡博物馆，下午添加茶歇",context);
   var pending=store.remember("s",1,original);
   assertEquals(List.of("COMPOUND_ACTION_ORDER"),pending.intent().getMissingFields());
   var selected=store.resume("s",1,pending.intentId(),"执行第一个",context);
@@ -45,16 +39,16 @@ class SecondAuditRegressionTest {
   var next=store.resume("s",2,null,"执行下一个",context);assertNotNull(next);assertEquals("ADD_STOP",next.getOperation());
  }
  @Test void ambiguousCompoundReplyKeepsClarificationAndStaleRevisionCannotResume() {
-  var context=new PlanPageContext();var store=new PendingIntentContinuations();
-  var p=store.remember("s",1,new ConversationIntentClassifier().classify("删除解放碑，添加茶歇",context));
+  var context=new PlanPageContext();var store=new PendingIntentContinuations(com.ai.guide.testing.PlannerTaxonomyFixtures.classifier());
+  var p=store.remember("s",1,com.ai.guide.testing.PlannerTaxonomyFixtures.classifier().classify("删除解放碑，添加茶歇",context));
   assertTrue(store.resume("s",1,p.intentId(),"随便",context).isRequiresClarification());
   assertNull(store.resume("s",2,p.intentId(),"执行第一个",context));
  }
  @Test void crossMidnightRoundTripAndRippleRetainDayOffset() {
-  var time=new ItineraryTimeEngine();assertEquals(1485,time.parseTimeMinutes(time.formatTime(1485)));
+  var time=new ItineraryTimeEngine();time.setUnknownTransferEstimateMinutes(30);assertEquals(1485,time.parseTimeMinutes(time.formatTime(1485)));
   List<Map<String,Object>> stops=new ArrayList<>();
   for(String slot:List.of("23:30","待安排","待安排")) stops.add(new LinkedHashMap<>(Map.of("time",slot,"duration","60分钟","id","repeated")));
-  time.rippleRecalculateStopTimes(stops,1);assertEquals("02:00(+1d)",stops.get(2).get("time"));
+  time.rippleRecalculateStopTimes(stops,1);assertEquals("02:30(+1d)",stops.get(2).get("time"));
  }
  @Test void verifiedZeroAndRealRouteDurationAreUsedInsteadOfBuffer() {
   var time=new ItineraryTimeEngine();var a=new LinkedHashMap<String,Object>(Map.of("venueId","same","time","09:00","duration","60分钟"));
@@ -102,8 +96,8 @@ class SecondAuditRegressionTest {
   UserContext.clear();request.setSessionAccessToken("forged");assertEquals(401,service.create(request).status());verify(builder,times(2)).build(anyInt(),any());
  }
  @Test void englishWordsRemainSeparateAndLaterParagraphCanWinExcerpt() throws Exception {
-  var jdbc=database();var service=new KnowledgeDocumentService(jdbc,null);
-  jdbc.update("INSERT INTO kb_document(id,title,content,tags,status,updated_at) VALUES('en','Guide',?,'','active',1)","Hongyadong introduction. "+"preface ".repeat(1000)+"Hongyadong ticket opening information");
+  var jdbc=database();var service=com.ai.guide.testing.KnowledgeTestPorts.service(new com.ai.guide.infrastructure.rag.repository.JdbcKnowledgeDocumentStoreAdapter(jdbc), com.ai.guide.testing.KnowledgeTestPorts.noIndex());
+  jdbc.update("INSERT INTO kb_document(id,title,content,tags,status,updated_at,scope) VALUES('en','Guide',?,'','active',1,'GLOBAL')","Hongyadong introduction. "+"preface ".repeat(1000)+"Hongyadong ticket opening information");
   var rows=service.searchLocalKnowledge("Hongyadong ticket opening",5);assertEquals(1,rows.size());String excerpt=String.valueOf(rows.get(0).get("content"));assertTrue(excerpt.contains("ticket opening"));assertTrue(excerpt.length()<=4096);
  }
 }

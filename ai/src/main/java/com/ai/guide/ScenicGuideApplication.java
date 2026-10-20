@@ -28,17 +28,17 @@ public class ScenicGuideApplication {
     private static final Logger log = LoggerFactory.getLogger(ScenicGuideApplication.class);
 
     private static Path resolveEnvFile() {
-        Path local = Paths.get(".env");
+        return resolveEnvFile(Paths.get(""));
+    }
+
+    static Path resolveEnvFile(Path workingDirectory) {
+        Path local = workingDirectory.resolve(".env");
         if (Files.exists(local)) {
             return local;
         }
-        Path parent = Paths.get("..", ".env");
+        Path parent = workingDirectory.resolve("..").resolve(".env").normalize();
         if (Files.exists(parent)) {
             return parent;
-        }
-        Path fallback = Paths.get("D:\\scenic-guide\\ai\\.env");
-        if (Files.exists(fallback)) {
-            return fallback;
         }
         return local;
     }
@@ -50,7 +50,7 @@ public class ScenicGuideApplication {
 
     /**
      * 读取本地配置源。进程环境和 JVM 参数始终优先。
-     * 优先探测当前运行目录或父目录的 .env，未找到时回退到默认开发路径。
+     * 仅探测当前运行目录或父目录的 .env，不读取其他工作区的配置。
      */
     public static void loadDotEnv() {
         Path envFile = resolveEnvFile();

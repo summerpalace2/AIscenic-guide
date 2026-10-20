@@ -192,4 +192,48 @@ class TripServiceTest {
         result.put("retrieval", new LinkedHashMap<>());
         return result;
     }
+    @Test
+    void formalReplanCannotReplacePinnedStationOrAdvanceVersion() {
+        String owner = "trip-pins-owner-" + UUID.randomUUID();
+        var snapshot = replanPlan();
+        snapshot.put("pinnedStopIds", List.of("day1-hongyadong"));
+        Trip created = tripService.create(owner, Map.of("plan", snapshot)).trip();
+        var result = tripService.replan(owner,created.id(),Map.of("targetStopId","day1-hongyadong",
+                "reason","少走路","expectedVersion",1));
+        assertEquals(400,result.status());
+        var retained = tripService.get(owner,created.id());
+        assertEquals(1,retained.currentVersion());
+        assertEquals(List.of("day1-hongyadong"),retained.plan().get("pinnedStopIds"));
+        assertEquals(1,tripService.versions(owner,created.id()).size());
+    }
+    @Test void fullSnapshotUpdateCannotClearPinsOrSpoofPlannerAuthority() {
+        String owner = "trip-pin-update-" + UUID.randomUUID();
+        var snapshot = replanPlan(); snapshot.put("pinnedStopIds",List.of("day1-hongyadong"));
+        Trip created = tripService.create(owner,Map.of("plan",snapshot)).trip();
+        var incoming = new LinkedHashMap<>(created.plan());
+        incoming.remove("pinnedStopIds"); incoming.put("subtitle","edited");
+        incoming.put("plannerSessionId","spoof"); incoming.put("sourceTripVersion",1);
+        var updated = tripService.update(owner,created.id(),Map.of("plan",incoming,"expectedVersion",1));
+        assertEquals(200,updated.status());
+        assertEquals(List.of("day1-hongyadong"),updated.trip().plan().get("pinnedStopIds"));
+        incoming.put("days",List.of(Map.of("day",1,"stops",List.of(Map.of("id","different","venueId","other")))));
+        incoming.put("pinnedStopIds",List.of());
+        var rejected = tripService.update(owner,created.id(),Map.of("plan",incoming,"expectedVersion",2));
+        assertEquals(400,rejected.status());
+        assertEquals(2,tripService.get(owner,created.id()).currentVersion());
+    }
+    @Test void trustedSessionSnapshotCanSaveExplicitUnpinWithoutRefixingStation() {
+        String owner = "trip-pin-session-" + UUID.randomUUID();
+        var snapshot = replanPlan(); snapshot.put("pinnedStopIds",List.of("day1-hongyadong"));
+        Trip created = tripService.create(owner,Map.of("plan",snapshot)).trip();
+        var serverSessionSnapshot = new LinkedHashMap<>(created.plan());
+        serverSessionSnapshot.put("formalTripId",created.id());
+        serverSessionSnapshot.put("sourceTripVersion",1);
+        serverSessionSnapshot.put("plannerSessionId","authorized-session-"+UUID.randomUUID());
+        serverSessionSnapshot.put("pinnedStopIds",List.of());
+        var saved = tripService.savePlannerSnapshot(owner,serverSessionSnapshot,"explicit-unpin-"+UUID.randomUUID());
+        assertEquals(200,saved.status());
+        assertEquals(List.of(),saved.trip().plan().get("pinnedStopIds"));
+        assertEquals(2,saved.trip().currentVersion());
+    }
 }

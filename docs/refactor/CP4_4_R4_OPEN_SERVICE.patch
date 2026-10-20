@@ -1,0 +1,173 @@
+diff --git a/ai/src/main/java/com/ai/guide/application/planner/PlannerOpenApplicationService.java b/ai/src/main/java/com/ai/guide/application/planner/PlannerOpenApplicationService.java
+new file mode 100644
+index 0000000..17d7004
+--- /dev/null
++++ b/ai/src/main/java/com/ai/guide/application/planner/PlannerOpenApplicationService.java
+@@ -0,0 +1,167 @@
++package com.ai.guide.application.planner;
++
++import com.ai.guide.domain.planner.gateway.PlannerOpenUseCasePort;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.CreateResult;
++import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
++import com.ai.guide.domain.planner.model.PlannerOpenActor;
++import com.ai.guide.domain.planner.model.PlannerOpenResult;
++import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
++import com.ai.guide.domain.planner.model.TravelConstraints;
++import com.ai.guide.domain.trip.model.Trip;
++import com.ai.guide.domain.trip.service.TripService;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.stereotype.Service;
++
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.UUID;
++
++/** Coordinates opening one owner-authorized formal Trip as a new V1 planner session. */
++@Service
++public class PlannerOpenApplicationService implements PlannerOpenUseCasePort {
++    private final PlannerSessionRepositoryPort sessionRepository;
++    private final TripService tripService;
++    private final ObjectMapper objectMapper;
++    private final boolean plannerV1Enabled;
++
++    public PlannerOpenApplicationService(PlannerSessionRepositoryPort sessionRepository,
++                                         TripService tripService,
++                                         ObjectMapper objectMapper,
++                                         @Value("${planner.v1.enabled:true}") boolean plannerV1Enabled) {
++        this.sessionRepository = sessionRepository;
++        this.tripService = tripService;
++        this.objectMapper = objectMapper;
++        this.plannerV1Enabled = plannerV1Enabled;
++    }
++
++    @Override
++    public PlannerOpenResult openFormalTrip(PlannerOpenActor actor, String tripId) {
++        if (actor == null || actor.anonymous() || safe(actor.userId()).isBlank())
++            return error(401, "请先登录后打开正式行程。");
++        String formalTripId = safe(tripId);
++        if (formalTripId.isBlank()) return error(400, "缺少正式行程 ID。");
++
++        Trip formal = tripService.get(actor.userId(), formalTripId);
++        if (formal == null) return error(404, "正式行程不存在或无权访问。");
++
++        Map<String, Object> restoredPlan = copyTripSnapshot(formal.plan());
++        if (restoredPlan.isEmpty()) return error(400, "正式行程缺少可恢复的规划快照。");
++        restoredPlan.put("title", formal.title());
++        restoredPlan.put("formalTripId", formal.id());
++        restoredPlan.put("sourceTripId", formal.id());
++        restoredPlan.put("sourceTripVersion", formal.currentVersion());
++        restoredPlan.put("sourcePlannerRevision", restoredPlan.getOrDefault("version", 1));
++        restoredPlan.put("plannerSessionRestoreSource", "RESTORED_FROM_TRIP");
++        restoredPlan.put("version", 1);
++
++        TravelConstraints constraints = restoreConstraints(restoredPlan);
++        AppliedPreferencesSnapshot appliedPreferences = restoreAppliedPreferences(restoredPlan);
++        if (appliedPreferences.isEmpty()) {
++            restoredPlan.put("plannerSessionRestoreDegradation", "APPLIED_PREFERENCES_UNAVAILABLE");
++        }
++        String prompt = safe(restoredPlan.get("prompt"));
++        if (prompt.isBlank()) prompt = safe(restoredPlan.get("input"));
++        String restoreKey = "trip-open-" + formal.id() + "-" + formal.currentVersion() + "-" + UUID.randomUUID();
++        String restoreFingerprint = fingerprint(prompt, constraints.asMap(), false, appliedPreferences,
++                "RESTORED_FROM_TRIP:" + formal.id() + ":" + formal.currentVersion());
++        CreateResult created = sessionRepository.create("USER", actor.userId(), prompt,
++                constraints.asMap(), appliedPreferences, restoredPlan, restoreKey, restoreFingerprint);
++        Map<String, Object> response = planResponse(created.session());
++        // The BFF needs this one-time capability to authorize later Planner
++        // Session calls; it belongs only to the Open response envelope and is
++        // never copied into the formal Trip snapshot.
++        response.put("sessionAccessToken", created.accessToken());
++        response.put("formalTripId", formal.id());
++        response.put("formalTripVersion", formal.currentVersion());
++        response.put("restoredFromTrip", true);
++        response.put("adjustmentCapability", "V1_PROPOSAL");
++        response.put("legacyMode", false);
++        return new PlannerOpenResult(200, response);
++    }
++
++    private Map<String, Object> planResponse(PlannerSessionRepositoryPort.StoredSession session) {
++        Map<String, Object> response = new LinkedHashMap<>();
++        response.put("ok", true);
++        response.put("sessionId", session.sessionId());
++        response.put("trip", session.trip());
++        response.put("appliedPreferences", session.appliedPreferences().asMap());
++        response.put("syncRevision", session.syncRevision());
++        Map<String, Object> trip = session.trip();
++        String routeStatus = trip == null ? "ESTIMATED" : String.valueOf(trip.getOrDefault("routeDataStatus", "ESTIMATED"));
++        boolean degraded = !plannerV1Enabled || trip == null || Boolean.TRUE.equals(trip.get("degraded"))
++                || !"高德实时接口".equals(trip.get("sourceMode"));
++        response.put("plannerVersion", plannerV1Enabled ? PlannerVersionMetadata.CURRENT_PLANNER_VERSION : "legacy-v0");
++        response.put("policyVersion", plannerV1Enabled ? PlannerVersionMetadata.CURRENT_POLICY_VERSION : "legacy-2026.07");
++        response.put("explanationSource", !plannerV1Enabled ? "LEGACY_STATIC"
++                : trip != null && trip.containsKey("explanationSource")
++                    ? String.valueOf(trip.get("explanationSource"))
++                    : PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
++        response.put("routeDataStatus", routeStatus);
++        response.put("degraded", degraded);
++        response.put("degradationReasons", degradationReasons(trip, degraded));
++        return response;
++    }
++
++    private List<String> degradationReasons(Map<String, Object> trip, boolean degraded) {
++        List<String> reasons = new ArrayList<>();
++        if (trip != null && trip.get("degradationReasons") instanceof List<?> values) {
++            for (Object value : values) if (value != null && !String.valueOf(value).isBlank()) reasons.add(String.valueOf(value));
++        }
++        if (degraded && reasons.isEmpty()) reasons.add("DEMO_OR_ESTIMATED_ROUTE_FALLBACK");
++        return reasons;
++    }
++
++    private TravelConstraints restoreConstraints(Map<String, Object> plan) {
++        Object raw = plan.get("constraints");
++        if (raw instanceof Map<?, ?> values) {
++            try { return objectMapper.convertValue(values, TravelConstraints.class); }
++            catch (IllegalArgumentException ignored) { plan.put("plannerSessionRestoreDegradation", "CONSTRAINTS_UNAVAILABLE"); }
++        }
++        return new TravelConstraints();
++    }
++
++    private AppliedPreferencesSnapshot restoreAppliedPreferences(Map<String, Object> plan) {
++        Object raw = plan.get("appliedPreferences");
++        if (!(raw instanceof Map<?, ?> values)) return AppliedPreferencesSnapshot.empty();
++        try { return AppliedPreferencesSnapshot.fromJson(objectMapper.writeValueAsString(values), objectMapper); }
++        catch (Exception ignored) { return AppliedPreferencesSnapshot.empty(); }
++    }
++
++    @SuppressWarnings("unchecked")
++    private Map<String, Object> copyTripSnapshot(Map<String, Object> value) {
++        if (value == null || value.isEmpty()) return new LinkedHashMap<>();
++        try { return objectMapper.readValue(objectMapper.writeValueAsBytes(value), LinkedHashMap.class); }
++        catch (Exception ignored) { return new LinkedHashMap<>(value); }
++    }
++
++    private String fingerprint(String prompt, Map<String, Object> constraints, boolean usePreferences,
++                               AppliedPreferencesSnapshot preferences, String decision) {
++        try {
++            Map<String, Object> semantic = new LinkedHashMap<>();
++            semantic.put("prompt", prompt);
++            semantic.put("constraints", constraints);
++            semantic.put("usePreferences", usePreferences);
++            semantic.put("appliedPreferencesFingerprint", preferences == null ? "" : preferences.fingerprint());
++            semantic.put("preferenceDecision", decision == null ? "" : decision);
++            byte[] digest = MessageDigest.getInstance("SHA-256").digest(
++                    objectMapper.writeValueAsString(semantic).getBytes(StandardCharsets.UTF_8));
++            StringBuilder out = new StringBuilder();
++            for (byte b : digest) out.append(String.format("%02x", b));
++            return out.toString();
++        } catch (Exception e) {
++            throw new IllegalStateException("无法生成规划请求指纹", e);
++        }
++    }
++
++    private PlannerOpenResult error(int status, String message) {
++        return new PlannerOpenResult(status, Map.of("ok", false, "message", message));
++    }
++
++    private String safe(Object value) { return value == null ? "" : String.valueOf(value).trim(); }
++}

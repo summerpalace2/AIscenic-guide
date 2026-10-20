@@ -1,0 +1,865 @@
+{
+  "schemaVersion": 1,
+  "purpose": "EVALUATOR_CONTRACT_FIXTURES_NOT_MODEL_BENCHMARK",
+  "provenance": "Synthetic examples with explicit agent-authored semantic labels, not independently human-labelled production answers. Real answer evaluation requires imported reviewer judgements.",
+  "cases": [
+    {
+      "id": "s1",
+      "answer": "展馆周一闭馆。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "展馆每周一不开放。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "展馆周一闭馆。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "2c6986487c80399931484c0d360ca9994eab91ef9d74230bb4f8b7ebb8abd43a",
+        "evidenceSha256": "8ea8ae0a97590e30f761d8683768b21724a9a97b2f5d2fb36483d3df072a34d3",
+        "claimsSha256": "f1ac70b79f20bd81eb625098b9405a1f7454ae98ddd6bf70bc4b1c253f1193ee",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "每周一不开放明确支持周一闭馆。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "s2",
+      "answer": "入馆需要预约。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "游客入馆前须完成预约。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "入馆需要预约。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "f115a19f85c6bbe3b0a49013cb4348e6e0f68f7145d54ada89efa3e344bce3a1",
+        "evidenceSha256": "daefb7c47e05936fd935da7283b9774cae263ae09619b49817081d5403cbd136",
+        "claimsSha256": "5ece5fd2fade9fb6ffdf0d48e9afee803fc60dd11dc1a233222afefe1ac74f2f",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "预约是明确前置条件。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "s3",
+      "answer": "末班接驳车在18:00发车。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "接驳车末班发车时间：18:00。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "末班接驳车在18:00发车。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "7168ea7f834d051acd2e5603d57a491afc28560a84ea75e263c42497d210a2ee",
+        "evidenceSha256": "e9deeeab2e4f80b67e8bfd36946b0d85b57d47f3b67edee19262b2e2da329519",
+        "claimsSha256": "42b331d53729670becd062d9ee117d05d33ee33b4582d33bd7af0785d4c3fbbd",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "支持具体发车时间，不延伸运营可靠性。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "s4",
+      "answer": "北门设有电梯。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "无障碍设施：北门电梯。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "北门设有电梯。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "824e8a9d715dee8074f7226cb97a1328a9a9f7b22d18cf268a79931ea8bacd8e",
+        "evidenceSha256": "a9003d9308edf4ef49ec1dd520d98481d8d7d9cce975db36d3d0f68856cd130e",
+        "claimsSha256": "e3f08d866d33e723f43ce186ff72477ffc856d21b6f5ad93d5f6ebdff5cd6a8d",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "只支持存在该设施，不支持全程无台阶。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "s5",
+      "answer": "儿童票为20元。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "票价：成人40元，儿童20元。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "儿童票为20元。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "9c70f6b849e4ecb9e929c1ac7b33440b3cd03ff56a22c0c42ad80a1b4f9e73ec",
+        "evidenceSha256": "373e4ec2b68539d4f37415dfbd2bb41dc1a61855b159133760383625c64fcf58",
+        "claimsSha256": "885f49dd62aa0be65f3f8705b923f3ba3260f221322035c5c874cbd026c9720b",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "明确价格，未加入免费或优惠推断。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i1",
+      "answer": "展馆门票免费。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "展馆位于文化广场东侧。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "展馆门票免费。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "f650553c78fdddcc99f213fb2835f6bb81a62ea879faa895203c3f7e27638718",
+        "evidenceSha256": "443f03ed8dbf145d0f87500f65bd336fc00956d89d9e30e9e808bd253c693b13",
+        "claimsSha256": "92cf017c8a3f1b266e35d93fd0aac388f5ede505544071bebbf55c9003c94d91",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "地理位置没有票价信息。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i2",
+      "answer": "今晚一定有灯光秀。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "广场曾于上个月举办灯光秀。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "今晚一定有灯光秀。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "32d10a34053be555ff546a6d4c340e6baa8867f85ddb72fa32448292815d8004",
+        "evidenceSha256": "c065bd2a77e4d4171f74fcefdef8dbf163a9123bf683835003fe73d26b32aea6",
+        "claimsSha256": "3260280240b481dd7032a2663adc54750f2fdf319e89ed0237b7155709f0621b",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "历史活动不证明今晚安排。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i3",
+      "answer": "全程没有台阶。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "北门设有电梯。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "全程没有台阶。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "234d28b2aa35c61df2448b8e5c20b186e5561a9f33e9dcc8ac45d3bba31f8b8c",
+        "evidenceSha256": "90c155ee08a79efba7e28b59862854bc15a911e0c7a7eb90c154ccae1ef09fc3",
+        "claimsSha256": "e9b3ae513a0e8a3fa13bdd219484aad9b9da383768929d5520ae12475b0b20fe",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "单个入口电梯不覆盖全程路径。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i4",
+      "answer": "这家店不含任何坚果。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "店内提供甜品和茶饮。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "这家店不含任何坚果。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "5bc9ff4962b6a1afd50be8c1a067eae109e0d841173775c19951cbff70557cd4",
+        "evidenceSha256": "ce2b3d68b8495a7c2579d788f7677d62804203da91be42a9ebefe41cbc2780b7",
+        "claimsSha256": "f60aeb1f18651890e8ad854c8c965fe409f70b59a1c97ff1d79e5cd2d73ae8fb",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "品类不证明过敏原安全。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i5",
+      "answer": "步行只需要5分钟。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "两地直线距离300米。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "步行只需要5分钟。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "f4c23ff311ca53c7d47b6c6036a5c12b9e1891f089f35ec8cc3d815f6ea60895",
+        "evidenceSha256": "8e9ff92bacde4c1edbe288f3e63f1626c9a443921c68aca5fcba98847f6d9fd6",
+        "claimsSha256": "a0493ed3c171607fd6d9e0e327da12e112e899c7dc5b43c34230f6ff4368a428",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "直线距离没有证明可走路线或步行时长。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1",
+      "answer": "展馆周一开放。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "展馆每周一闭馆。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "展馆周一开放。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "5d2a471f27e14e4f9d9541013cf97b610c01b6d4bf7d8f2926dea93a12dec7cf",
+        "evidenceSha256": "72474f97f88d69ab32556220e994b2b2b098f1def7c3b497bf6853505e56fbb3",
+        "claimsSha256": "c611bca9afb2fce421f8bf071f5f88c732a58f93e2ca4d81bb3f059362e4ab9d",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "CONTRADICTS",
+            "rationale": "开放日陈述直接相反。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2",
+      "answer": "门票免费。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "普通门票40元，不提供免费入场。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "门票免费。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "5d3fd5683a4d5cf3838454adab2bc7716d4e24dab03bf6cfff47bf7c7f645ee6",
+        "evidenceSha256": "f655029ece54b0a5efff855a4a45f4575853b62d67f73ea251ecfcc1d7bb5b4b",
+        "claimsSha256": "e3e6e2bdb3d56eddeec5fac4e08fa55294d066be20503978b2acae272ea0425b",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "CONTRADICTS",
+            "rationale": "资料明确否定免费。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3",
+      "answer": "末班车为19:00。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "末班车18:00发车，之后不再运营。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "末班车为19:00。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "1d4f671ca9eb2d5e1112a8024dec9f3a3ace44d141739eece41d0b5cea6300a0",
+        "evidenceSha256": "54b893ec270f2954643f3411ec5a49928304e7145d34adee08fe27ceed671ec8",
+        "claimsSha256": "caddbc83ebeada2f7938afe36219aa2f9f351ff993e2584b8eea01ad97902f6f",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "CONTRADICTS",
+            "rationale": "末班时间直接冲突。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4",
+      "answer": "北门没有电梯。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "北门设有一部游客电梯。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "北门没有电梯。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "e46b1dee9bc9a8e2ba61617996cad488829ea0d1a1a2d35914392e09d851ced8",
+        "evidenceSha256": "6606abfbb588a29cd99831543fa9e0665ea754343816beaf1ffb9fccf533743f",
+        "claimsSha256": "df950fd71613a4b11f83eadcb203f839e2d87aec766f997e54e0dca92339cdad",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "CONTRADICTS",
+            "rationale": "否认明确存在设施。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "c5",
+      "answer": "游船允许携带宠物。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "乘船须知：禁止携带宠物登船。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "游船允许携带宠物。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "4c8a6956580258bac0d516318216119537cdce14d3d08248e43e86fc3929398d",
+        "evidenceSha256": "84df856eb5f6b4ac2826784dd8d19e402f2caf1372f66b38956afd518ab82940",
+        "claimsSha256": "f9fa91b8d1cf921baecfc6edcc423053b42bc1752955b76413f0dcf2664106e8",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "CONTRADICTS",
+            "rationale": "宠物规定直接相反。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f1",
+      "answer": "展馆周一闭馆。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "展馆每周一不开放。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "展馆周一闭馆。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "invented"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "2c6986487c80399931484c0d360ca9994eab91ef9d74230bb4f8b7ebb8abd43a",
+        "evidenceSha256": "8ea8ae0a97590e30f761d8683768b21724a9a97b2f5d2fb36483d3df072a34d3",
+        "claimsSha256": "5695dba4dad6b5e4a092cc0d9b59bbc902866181ed97e49e815dcee9b6032ed3",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "内容虽有支持资料，但回答关联不存在的片段，不能计支持成功。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f2",
+      "answer": "入馆需要预约。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "游客入馆前须预约。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "入馆需要预约。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "wrong-doc"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "f115a19f85c6bbe3b0a49013cb4348e6e0f68f7145d54ada89efa3e344bce3a1",
+        "evidenceSha256": "acc737b082fed1ccf4ccdbe04892416d636c744d8ee6170ab4b32ec18bede83c",
+        "claimsSha256": "e666c39b5f4d3b4119a430a9b4f21b22136a428704fa902a68f6196599b5e891",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "不存在的引用不能计有效引用。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "f3",
+      "answer": "儿童票20元。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "儿童票价格20元。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "儿童票20元。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "deleted"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "e49fdc370ee72a7f0d3627cd0057165598d89482f110914e8a3f2a9acd7ed12a",
+        "evidenceSha256": "f10f756a0695a498a713375a7bd1286f2c283adadb975b4f28735e016e485b05",
+        "claimsSha256": "5d4d3d9672d2671413e68dbbe94ac8b493f6d9352abf8c98c7a50cad86330874",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "已删除的片段编号不在本次证据快照。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a1",
+      "answer": "无法根据现有资料确认今晚是否有表演。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "场馆地址：文化路1号。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "无法根据现有资料确认今晚是否有表演。",
+          "kind": "ABSTENTION",
+          "citationIds": []
+        }
+      ],
+      "annotation": {
+        "answerSha256": "108135566930c27811ec5e910537f55159dc2a78e372497a3f553c83dd8666c0",
+        "evidenceSha256": "e7b9bb734bad0dadca5dd081621369698054fcd85b676befe4a93452795d9bee",
+        "claimsSha256": "b5846456d55a340e0edc05666e6a468e11916eb39988d1db903f3b1e4010bb46",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "现有证据只有地址，拒绝推断实时表演合理。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a2",
+      "answer": "现有资料不足以保证餐厅无坚果。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "餐厅提供甜点、茶饮。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "现有资料不足以保证餐厅无坚果。",
+          "kind": "ABSTENTION",
+          "citationIds": []
+        }
+      ],
+      "annotation": {
+        "answerSha256": "56bb7b6544557effc438ce660bb452e92929decc9219b5a1cc456a1732f501b4",
+        "evidenceSha256": "6ac06b5ccd5e9f1fbf3bab8eebcff43d01ae652df9682a2f9b266479072beda9",
+        "claimsSha256": "7e856a923c84e50bbdc5f496029c035db8a1937b0de9c7315968b7570090e8e6",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "没有配料或交叉污染信息，应保留未知。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a3",
+      "answer": "暂无法确认明天的票价。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "本文不包含票价信息。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "暂无法确认明天的票价。",
+          "kind": "ABSTENTION",
+          "citationIds": []
+        }
+      ],
+      "annotation": {
+        "answerSha256": "f8df0a03482a9093346db3257bf52bd40677a5beccb3de5b3710ab0c9bbf9daf",
+        "evidenceSha256": "95cf30a0ce1d28a8299396d1ae74a425541ffb8058de10951e4fcc64d150c13e",
+        "claimsSha256": "9455c24cf60790a322382a203e50ead39c2794af72af5729e9967800ad791e33",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "证据明确缺票价，不能虚构价格。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a4",
+      "answer": "资料未说明全程是否无台阶。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "北门设有电梯。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "资料未说明全程是否无台阶。",
+          "kind": "ABSTENTION",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "bc14ec30bae83180fee6ea70b372b5fbb6f4cef3f1ae6dba752d5fee1cc0a173",
+        "evidenceSha256": "90c155ee08a79efba7e28b59862854bc15a911e0c7a7eb90c154ccae1ef09fc3",
+        "claimsSha256": "d0f1fa8a68516e5809b45ce917ff9826f193d5b102a88254910225ffda91b63b",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "明确局部设施不足以推断全程无障碍。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a5",
+      "answer": "现有资料无法确定末班车时间。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "交通说明：可乘接驳车到达。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "现有资料无法确定末班车时间。",
+          "kind": "ABSTENTION",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "7e61a73048cc907783f4873f4a7853a51a697e0fbb089d86e54d12fc0f7c6d5f",
+        "evidenceSha256": "b3f83ee63cee3005edb2f3c4c15ede079aaab504317e3f84f2b17c390973c007",
+        "claimsSha256": "8d04ad42e884453ac088ed74bc984522a3e29d133086f33dbc6c20a20578d1ff",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "SUPPORTS",
+            "rationale": "接驳车存在不代表末班时间已知。"
+          }
+        ]
+      }
+    },
+    {
+      "id": "i6",
+      "answer": "展馆周一闭馆，门票免费。",
+      "evidence": [
+        {
+          "id": "e1",
+          "text": "展馆每周一闭馆。"
+        }
+      ],
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "展馆周一闭馆，门票免费。",
+          "kind": "FACTUAL",
+          "citationIds": [
+            "e1"
+          ]
+        }
+      ],
+      "annotation": {
+        "answerSha256": "e284bcdae563191242b3765edf0341b816424fc9568b8c51cc5028b9d39b71c7",
+        "evidenceSha256": "72474f97f88d69ab32556220e994b2b2b098f1def7c3b497bf6853505e56fbb3",
+        "claimsSha256": "6a481c501811184f2f3b9ae9556baaa8d2c2bd5f8dcafeacb9b1955933521a65",
+        "reviewer": "agent-authored-explicit-semantic-labels-not-independent-human-review",
+        "reviewedAt": "2026-10-17",
+        "inventoryComplete": true,
+        "inventoryReview": "单句合成样本，全部可验证断言列为一条 claim；只用于评估器契约验证。",
+        "judgements": [
+          {
+            "claimId": "claim-1",
+            "verdict": "INSUFFICIENT",
+            "rationale": "复合断言中免费不受支持，整体不能判支持。"
+          }
+        ]
+      }
+    }
+  ]
+}

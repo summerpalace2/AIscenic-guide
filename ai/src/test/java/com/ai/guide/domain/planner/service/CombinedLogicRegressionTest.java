@@ -1,12 +1,15 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 import com.ai.guide.domain.memory.service.*;
 import com.ai.guide.domain.planner.model.*;
 import com.ai.guide.domain.planner.engine.RouteCostProvider;
 import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.preferences.service.PreferencesService;
+import com.ai.guide.infrastructure.memory.repository.JdbcMemoryRepository;
 import com.ai.guide.infrastructure.preferences.repository.PreferencesRepository;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import com.ai.guide.infrastructure.planner.amap.*;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,7 +32,9 @@ class CombinedLogicRegressionTest {
         assertFalse(restored.asMap().containsKey("requiredStopIdsByOption"));
     }
     @Test void incompleteFullRouteDoesNotDisableItsValidSingleStopAlternative() throws Exception {
-        var service = new PlanAdjustmentService(null,null,null,new RouteCostProvider(null),new com.ai.guide.domain.planner.engine.PlanVerifier(),null,new ProposalStore(),new ConversationIntentClassifier(),mapper);
+        // This fixture isolates required-target option rules; non-catalog stops still need a valid catalog port.
+        var catalog = mock(ItineraryBuilderPort.class);
+        var service = new PlanAdjustmentService(null,catalog,null,new RouteCostProvider(null),new com.ai.guide.domain.planner.engine.PlanVerifier(),null,new CaffeineRedisProposalRepository(),new ConversationIntentClassifier(),mapper);
         var status = PlanAdjustmentService.class.getDeclaredMethod("optionStatus",Map.class,Map.class,PlanAdjustmentIntent.class,TravelConstraints.class,List.class,String.class,List.class);status.setAccessible(true);
         var before = Map.<String,Object>of("days",List.of(Map.of("day",1,"stops",List.of())));
         var after = Map.<String,Object>of("days",List.of(Map.of("day",1,"stops",List.of(Map.of("id","added","name","first","time","18:00","duration","90分钟")))));
@@ -44,7 +49,7 @@ class CombinedLogicRegressionTest {
         assertEquals(false,((Map<?,?>)status.invoke(service,before,overlapping,intent,new TravelConstraints(),List.of(),"option-2",List.of("added"))).get("canApply"));
     }
     @Test void correctedTimeReplacesInvalidClockAndSurvivesTheNextAnswer() {
-        var store = new PendingIntentContinuations(); var context = PlanPageContext.builder().activeDay(1).build();
+        var store = new PendingIntentContinuations(com.ai.guide.testing.PlannerTaxonomyFixtures.classifier()); var context = PlanPageContext.builder().activeDay(1).build();
         var original = PlanAdjustmentIntent.builder().type(ConversationIntentType.CLARIFICATION).operation("REPLAN_DAY")
                 .requiresClarification(true).missingFields(List.of("TIME_RANGE", "REPLAN_PREFERENCE"))
                 .rawMessage("将18:00到17:00的行程优化").preferences(List.of("低步行")).dayNumber(1).build();
@@ -54,7 +59,7 @@ class CombinedLogicRegressionTest {
         assertEquals(List.of("REPLAN_PREFERENCE"),corrected.getMissingFields()); assertTrue(corrected.isTimeScopeResolved());
         store.remember("s",1,corrected);
         var complete = store.resume("s",1,null,"少走路",context);
-        AdjustmentTimeScopeResolver.resolve(complete,new TaxonomyProvider());
+        AdjustmentTimeScopeResolver.resolve(complete,new JsonTaxonomyAdapter());
         assertFalse(complete.isRequiresClarification()); assertEquals(1140,complete.getTargetStartMinute());
         assertTrue(complete.isTimeScopeResolved());
         assertFalse(mapper.convertValue(complete,Map.class).containsKey("timeScopeResolved"));
@@ -68,7 +73,7 @@ class CombinedLogicRegressionTest {
         assertEquals("三峡博物馆",result.getReplacementPlaceName()); assertEquals("replacement-id",result.getReplacementPlaceId());
         assertEquals("解放碑", result.getTargetStopReference());assertFalse(result.isRequiresClarification());
         var missingDay = original.toBuilder().missingFields(List.of("DAY_NUMBER")).build();store.remember("s",1,missingDay);
-        assertSame(missingDay,store.resume("s",1,null,"随便",context));assertNotNull(store.pending("s"));
+        assertEquals(missingDay.asMap(),store.resume("s",1,null,"随便",context).asMap());assertNotNull(store.pending("s"));
     }
     @Test void conflictOnlyRemovesTheSpiceClauseAndLongOriginalKeepsAllergy() throws Exception {
         try (var connection = DriverManager.getConnection("jdbc:sqlite::memory:")) {
@@ -76,7 +81,7 @@ class CombinedLogicRegressionTest {
             jdbc.execute("CREATE TABLE travel_memory(id TEXT PRIMARY KEY,user_id TEXT,category TEXT,content TEXT,source_type TEXT,source_ref TEXT,status TEXT,confidence REAL,created_at INTEGER,updated_at INTEGER)");
             jdbc.execute("CREATE TABLE user_preferences(user_id TEXT PRIMARY KEY,schema_version INTEGER,revision INTEGER,interests_json TEXT,walking_tolerance TEXT,budget_json TEXT,companions TEXT,transport_preference TEXT,diet_preference TEXT,stay_area TEXT,legacy_metadata_json TEXT,created_at INTEGER,updated_at INTEGER)");
             var preferences = new PreferencesService(new PreferencesRepository(jdbc,mapper),(u,b,a,o)->{});
-            var memory = new TravelMemoryService(jdbc,preferences,null,mapper,new MemoryPreferenceProjector(new TaxonomyProvider()));
+            var memory = new TravelMemoryService(new JdbcMemoryRepository(jdbc),preferences,null,mapper,new MemoryPreferenceProjector(new JsonTaxonomyAdapter()));
             var old = memory.confirm("fixture","我对海鲜过敏，平常不吃辣，喜欢甜食","DIET","USER_EDIT");
             memory.confirm("fixture","我现在喜欢吃辣","DIET","USER_EDIT");
             var persisted = jdbc.queryForObject("SELECT content FROM travel_memory WHERE id=?",String.class,old.id());
@@ -99,7 +104,7 @@ class CombinedLogicRegressionTest {
         String origin = "-138.32995546093468,10.148796237429352", destination = "41.670044539065316,-10.148796237429352";
         assertTrue(new RouteCostProvider(null).haversineDistanceKm(origin,destination)>20000);
         assertTrue(Double.isFinite(DiningVenueService.distanceKm(origin,destination)));
-        var runtime = new RuntimeLocationPlanner(null,mapper,6000,40,null,null);
+        var runtime = new RuntimeLocationPlanner(null,mapper,6000,40,null,new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         var estimate = RuntimeLocationPlanner.class.getDeclaredMethod("estimateTravelMinutes",String.class,String.class);estimate.setAccessible(true);
         assertTrue((int)estimate.invoke(runtime,origin,destination)>1000);
         assertEquals(Double.POSITIVE_INFINITY,DiningVenueService.distanceKm("NaN,0",destination));

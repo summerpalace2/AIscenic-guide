@@ -5,9 +5,9 @@ package com.ai.guide.domain.planner.model.topography;
  */
 public enum BarrierCrossingType {
     NONE("无阻隔跨越"),
-    MAJOR_RIVER_PRIMARY("跨越主要江河一（如嘉陵江 / 锦江）"),
-    MAJOR_RIVER_SECONDARY("跨越主要江河二（如长江）"),
-    CONFLUENCE_BOTH("横贯两江交汇枢纽"),
+    MAJOR_RIVER_PRIMARY("跨越已配置的主要江河一"),
+    MAJOR_RIVER_SECONDARY("跨越已配置的主要江河二"),
+    CONFLUENCE_BOTH("水系交汇枢纽"),
     HISTORICAL_WALL("跨越古城墙内/外圈层"),
     MOUNTAIN_PASS("跨越外围山体山口");
 

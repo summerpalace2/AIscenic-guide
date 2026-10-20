@@ -1,0 +1,19 @@
+{
+  "outcome": "benefited",
+  "reason": "采用 structured-planner-followup-contract/FQ9 的模型会话与页面历史分离核验条件；修复依据当前源码、真实响应和官方高德文档。",
+  "effect": "保存重开后的三轮真实聊天保留随机代号与首站指代，四城各有一条真实核验路线；Java全量1293项0失败33跳过。效果只覆盖报告中的受控范围。",
+  "evidence": [
+    {
+      "role": "verification",
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP6_LIVE_SUPPLIER_ACCEPTANCE_20261015.md"
+    },
+    {
+      "role": "verification",
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP6_LIVE_SUPPLIER_BACKEND_TESTS_20261015.json"
+    },
+    {
+      "role": "change",
+      "path": "D:\\loop-p0-functional-inventory-1-home\\frontend\\e2e\\chat-semantic-oracle.mjs"
+    }
+  ]
+}

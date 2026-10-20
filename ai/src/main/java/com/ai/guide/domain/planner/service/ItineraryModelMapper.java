@@ -4,6 +4,9 @@ import com.ai.guide.domain.planner.model.category.PoiDomainType;
 import com.ai.guide.domain.planner.model.itinerary.ItineraryDay;
 import com.ai.guide.domain.planner.model.itinerary.ItineraryStop;
 import com.ai.guide.domain.planner.model.itinerary.ItineraryTrip;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -15,6 +18,13 @@ import java.util.*;
  */
 @Component
 public class ItineraryModelMapper {
+
+    private PlannerTaxonomyPort taxonomy = TaxonomyPort.empty();
+
+    @Autowired(required = false)
+    public void setTaxonomy(PlannerTaxonomyPort taxonomy) {
+        if (taxonomy != null) this.taxonomy = taxonomy;
+    }
 
     /**
      * 将无类型 Map 结构转换为强类型聚合根 ItineraryTrip
@@ -31,7 +41,7 @@ public class ItineraryModelMapper {
         } else if (raw.get("version") instanceof String s) {
             try { version = Integer.parseInt(s.trim()); } catch (Exception ignored) {}
         }
-        String city = safeString(raw.get("city"), "重庆");
+        String city = safeString(raw.get("city"), "");
 
         List<ItineraryDay> days = new ArrayList<>();
         Object daysObj = raw.get("days");
@@ -105,13 +115,13 @@ public class ItineraryModelMapper {
         String stableId = safeString(sMap.get("stableStopId"), id);
         String venueId = safeString(sMap.get("venueId"), id);
         String name = safeString(sMap.get("name"), "未命名点位");
-        String district = safeString(sMap.get("district"), "渝中区");
+        String district = safeString(sMap.get("district"), "");
         String typeCode = safeString(sMap.get("type"), "SCENIC");
         PoiDomainType type = PoiDomainType.fromCode(typeCode);
 
-        String timeStr = safeString(sMap.get("time"), "09:00");
+        String timeStr = safeString(sMap.get("time"), "");
         LocalTime time = parseTime(timeStr);
-        String durStr = safeString(sMap.get("duration"), "约 90 分钟");
+        String durStr = safeString(sMap.get("duration"), "");
         Duration duration = parseDuration(durStr);
 
         boolean pinned = Boolean.TRUE.equals(sMap.get("pinned")) || Boolean.TRUE.equals(sMap.get("isPinned"));
@@ -119,7 +129,7 @@ public class ItineraryModelMapper {
 
         return new ItineraryStop(
                 id, stableId, venueId, name, name, district, type,
-                safeString(sMap.get("category"), "景点"),
+                safeString(sMap.get("category"), taxonomy.getHints("defaultStopCategory").stream().findFirst().orElse("")),
                 safeString(sMap.get("icon"), type.getDefaultIcon()),
                 time, duration,
                 safeString(sMap.get("location"), ""),
@@ -180,7 +190,7 @@ public class ItineraryModelMapper {
     }
 
     private LocalTime parseTime(String raw) {
-        if (raw == null || raw.isBlank()) return LocalTime.of(9, 0);
+        if (raw == null || raw.isBlank() || "待安排".equals(raw)) return null;
         try {
             String t = raw.trim();
             if (t.matches("\\d{1,2}:\\d{2}")) {
@@ -191,11 +201,11 @@ public class ItineraryModelMapper {
                 return LocalTime.parse(t.substring(0, 5));
             }
         } catch (Exception ignored) {}
-        return LocalTime.of(9, 0);
+        return null;
     }
 
     private Duration parseDuration(String raw) {
-        if (raw == null) return Duration.ofMinutes(90);
+        if (raw == null || raw.isBlank() || "待安排".equals(raw)) return null;
         try {
             int hours = 0;
             int minutes = 0;
@@ -218,6 +228,6 @@ public class ItineraryModelMapper {
                 return Duration.ofMinutes((long) val);
             }
         } catch (Exception ignored) {}
-        return Duration.ofMinutes(90);
+        return null;
     }
 }

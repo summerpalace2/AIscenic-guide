@@ -1,10 +1,10 @@
 package com.ai.guide.domain.planner.engine;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
 import com.ai.guide.domain.planner.service.PlannerMetricsLogger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -23,18 +23,25 @@ public class RouteCostProvider {
 
     private final GeoRouteGatewayPort geoRouteGateway;
     private final PlannerMetricsLogger metricsLogger;
+    private final DynamicShortTripPolicyPort dynamicPolicy;
     private final Map<String, RouteCost> finalEdgeCache = new ConcurrentHashMap<>();
     private final AtomicInteger finalEdgeProviderCalls = new AtomicInteger();
 
     @Autowired
     public RouteCostProvider(@Autowired(required = false) GeoRouteGatewayPort geoRouteGateway,
-                             @Autowired(required = false) PlannerMetricsLogger metricsLogger) {
+                             @Autowired(required = false) PlannerMetricsLogger metricsLogger,
+                             @Autowired(required = false) DynamicShortTripPolicyPort dynamicPolicy) {
         this.geoRouteGateway = geoRouteGateway;
         this.metricsLogger = metricsLogger != null ? metricsLogger : new PlannerMetricsLogger();
+        this.dynamicPolicy = dynamicPolicy == null ? DynamicShortTripPolicyPort::unconfigured : dynamicPolicy;
     }
 
     public RouteCostProvider(GeoRouteGatewayPort geoRouteGateway) {
-        this(geoRouteGateway, new PlannerMetricsLogger());
+        this(geoRouteGateway, new PlannerMetricsLogger(), null);
+    }
+
+    public RouteCostProvider(GeoRouteGatewayPort geoRouteGateway, DynamicShortTripPolicyPort dynamicPolicy) {
+        this(geoRouteGateway, new PlannerMetricsLogger(), dynamicPolicy);
     }
 
     /**
@@ -115,17 +122,17 @@ public class RouteCostProvider {
         finalEdgeProviderCalls.incrementAndGet();
         try {
             String city = resolveCity(origin, destination);
-            RoutePairOutcome outcome = geoRouteGateway.routePair(
+            GeoRoutePairOutcome outcome = geoRouteGateway.routePair(
                     origin.getLocation(), destination.getLocation(), city,
                     queryKeyword(origin), queryKeyword(destination), preference
             );
             if (outcome == null || outcome.selected() == null
-                    || outcome.selected().status() != OutcomeStatus.SUCCESS
+                    || outcome.selected().status() != GeoOutcomeStatus.SUCCESS
                     || outcome.selected().segment() == null
                     || !outcome.selected().segment().metricsComplete()) {
                 return null;
             }
-            AmapResponseNormalizer.RouteResult segment = outcome.selected().segment();
+            com.ai.guide.domain.geo.model.GeoRouteSegment segment = outcome.selected().segment();
             int distance = segment.distanceMeters() == null ? 0 : segment.distanceMeters();
             int duration = segment.durationSeconds() == null ? 0 : segment.durationSeconds();
             int walking = segment.walkingDistanceMeters() == null ? 0 : segment.walkingDistanceMeters();
@@ -142,50 +149,65 @@ public class RouteCostProvider {
     }
 
     private String detectCityFromAttraction(Attraction attraction) {
-        if (attraction == null || attraction.getAmapQuery() == null) return null;
+        if (attraction == null) return null;
+        String catalogCity = safe(attraction.getCity());
+        if (!catalogCity.isBlank()) return catalogCity;
+        if (attraction.getAmapQuery() == null) return null;
         String city=safe(String.valueOf(attraction.getAmapQuery().getOrDefault("city","")));
         return city.isBlank() ? null : city;
     }
 
     public RouteCost estimateFromCoordinates(Attraction origin, Attraction destination, String preference) {
         if (origin == null || destination == null) return RouteCost.unavailable("起终点景点为空");
-        double distKm = haversineDistanceKm(origin.getLocation(), destination.getLocation());
-        if (!Double.isFinite(distKm)) return RouteCost.unavailable("起终点坐标缺失或无效");
+        double rawDistanceKm = haversineDistanceKm(origin.getLocation(), destination.getLocation());
+        if (!Double.isFinite(rawDistanceKm)) return RouteCost.unavailable("起终点坐标缺失或无效");
+        DynamicShortTripPolicyPort.RouteFallbackPolicy policy = dynamicPolicy.getPolicy().routeFallbackPolicy();
+        if (policy == null || !policy.configured()) return RouteCost.unavailable("路线估算策略未配置");
+        double distKm = rawDistanceKm * policy.distanceSafetyMultiplier();
         int distanceMeters = (int) Math.round(distKm * 1000);
 
         String origDist = origin.getDistrict() == null ? "" : origin.getDistrict().trim();
         String destDist = destination.getDistrict() == null ? "" : destination.getDistrict().trim();
         boolean sameDistrict = !origDist.isBlank() && origDist.equals(destDist);
-        boolean isFarOuterDistrict = distKm > 30.0;
+        String originCity = safe(detectCityFromAttraction(origin));
+        String destinationCity = safe(detectCityFromAttraction(destination));
+        if (!originCity.isBlank() && !destinationCity.isBlank()
+                && !normalizeCity(originCity).equals(normalizeCity(destinationCity)))
+            return RouteCost.unavailable("跨城市路线需实时路线服务核验");
+        boolean isFarOuterDistrict = distKm > policy.farDistrictThresholdKm();
 
         int durationMinutes;
         int walkingMeters;
         String mode;
 
-        if (distKm <= 1.2 && !"taxi".equalsIgnoreCase(preference)) {
+        if (distKm <= policy.nearbyDistanceKm() && !"taxi".equalsIgnoreCase(preference)) {
             // Coordinates prove proximity, never pedestrian reachability across water,
             // fences or inaccessible terrain. Only provider-backed paths may assert WALKING.
-            return RouteCost.estimated(distanceMeters, Math.max(15, (int) Math.ceil(distKm / 4.5 * 60 * 2)),
+            return RouteCost.estimated(distanceMeters, Math.max(policy.nearbyMinimumMinutes(),
+                            (int) Math.ceil(distKm / policy.nearbySpeedKmh() * 60)),
                     distanceMeters, "TRANSIT", "交通估算，路线待核验：仅有直线距离，不能确认步行可达；已保守预留交通时间");
         } else if (sameDistrict) {
-            mode = distKm <= 5.0 ? "TRANSIT" : "DRIVING";
-            walkingMeters = Math.min(distanceMeters, 400);
-            durationMinutes = Math.max(10, (int) Math.round((distKm / 30.0) * 60 + 10));
+            mode = distKm <= policy.sameDistrictTransitMaximumKm() ? "TRANSIT" : "DRIVING";
+            walkingMeters = Math.min(distanceMeters, policy.sameDistrictWalkingMeters());
+            durationMinutes = Math.max(policy.sameDistrictMinimumMinutes(), (int) Math.round(
+                    (distKm / policy.sameDistrictSpeedKmh()) * 60 + policy.sameDistrictOverheadMinutes()));
         } else if (isFarOuterDistrict) {
             mode = "DRIVING";
-            walkingMeters = 200;
-            durationMinutes = Math.max(45, (int) Math.round((distKm / 55.0) * 60 + 20));
+            walkingMeters = policy.farDistrictWalkingMeters();
+            durationMinutes = Math.max(policy.farDistrictMinimumMinutes(), (int) Math.round(
+                    (distKm / policy.farDistrictSpeedKmh()) * 60 + policy.farDistrictOverheadMinutes()));
         } else {
             mode = "TRANSIT";
-            walkingMeters = 500;
-            durationMinutes = Math.max(20, (int) Math.round((distKm / 22.0) * 60 + 12));
+            walkingMeters = policy.crossDistrictWalkingMeters();
+            durationMinutes = Math.max(policy.crossDistrictMinimumMinutes(), (int) Math.round(
+                    (distKm / policy.crossDistrictSpeedKmh()) * 60 + policy.crossDistrictOverheadMinutes()));
         }
 
         String reason = sameDistrict
-                ? "同行政区（" + origDist + "）交通估算"
+                ? "同辖区坐标交通估算，路线待核验"
                 : isFarOuterDistrict
-                ? "主城与远郊（" + origDist + "与" + destDist + "）长途跨区交通估算"
-                : "主城跨区（" + origDist + "至" + destDist + "）公共交通估算";
+                ? "远距离坐标交通估算，路线待核验"
+                : "跨辖区坐标交通估算，路线待核验";
 
         return RouteCost.estimated(distanceMeters, durationMinutes, walkingMeters, mode, reason);
     }
@@ -215,7 +237,7 @@ public class RouteCostProvider {
                     * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
             a = Math.max(0.0, Math.min(1.0, a));
             double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return 6371.0 * c * 1.35;
+            return 6371.0 * c;
         } catch (Exception e) {
             return Double.POSITIVE_INFINITY;
         }
@@ -223,6 +245,10 @@ public class RouteCostProvider {
 
     private String safe(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String normalizeCity(String city) {
+        return safe(city).replaceAll("市$", "");
     }
 }
 

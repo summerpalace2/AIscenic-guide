@@ -1,0 +1,563 @@
+diff --git a/server/index.mjs b/server/index.mjs
+index cbbe1de..bd26d37 100644
+--- a/server/index.mjs
++++ b/server/index.mjs
+@@ -691,7 +691,7 @@ function formalTripHistoryProjection(formalTrip) {
+   };
+ }
+ 
+-function openFormalTripSession(formalTrip, { userId, deviceId } = {}) {
++function openFormalTripSession(formalTrip, { userId, deviceId, register = true } = {}) {
+   const saved = savedTripProjection(formalTrip);
+   const trip = clone(saved.trip);
+   const now = new Date().toISOString();
+@@ -718,7 +718,7 @@ function openFormalTripSession(formalTrip, { userId, deviceId } = {}) {
+     legacyMode: true,
+     adjustmentCapability: 'LEGACY'
+   };
+-  sessions.set(session.id, session);
++  if (register) sessions.set(session.id, session);
+   return session;
+ }
+ 
+@@ -816,11 +816,13 @@ function itineraryMemorySnapshot(session) {
+   };
+ }
+ 
+-function hydrateFormalTripWorkspace(session) {
++function hydrateFormalTripWorkspace(session, currentWorkspace) {
+   const userId = String(session?.userId || '').trim();
+   const formalTripId = String(session?.formalTripId || '').trim();
+   if (!userId || !formalTripId) return null;
+-  const workspace = persistentStore.getTripWorkspace?.(userId, formalTripId);
++  const workspace = currentWorkspace === undefined
++    ? persistentStore.getTripWorkspace?.(userId, formalTripId)
++    : currentWorkspace;
+   if (!workspace) {
+     session.itineraryMemorySnapshot = session.itineraryMemorySnapshot || itineraryMemorySnapshot(session);
+     return null;
+@@ -831,17 +833,18 @@ function hydrateFormalTripWorkspace(session) {
+   return workspace;
+ }
+ 
+-async function persistFormalTripWorkspace(session, patch = {}, { reset = false, expectedRevision, expectedEpoch } = {}) {
++function formalTripWorkspaceWrite(session, patch = {}, { reset = false, expectedRevision, expectedEpoch } = {}) {
+   const userId = String(session?.userId || '').trim();
+   const formalTripId = String(session?.formalTripId || '').trim();
+   if (!userId || !formalTripId) return null;
+   const current = persistentStore.getTripWorkspace?.(userId, formalTripId);
+   if (!reset && current?.chatEpoch && session.chatEpoch && session.chatEpoch !== current.chatEpoch && expectedRevision === undefined) {
+-    hydrateFormalTripWorkspace(session); return current;
++    hydrateFormalTripWorkspace(session);
++    return { userId, formalTripId, workspace: current, unchanged: true };
+   }
+   if (!reset) session.chatEpoch = current?.chatEpoch || session.chatEpoch || randomUUID();
+   session.itineraryMemorySnapshot = itineraryMemorySnapshot(session);
+-  return persistentStore.saveTripWorkspace?.({
++  return {
+     userId,
+     formalTripId,
+     reset, expectedRevision, expectedEpoch,
+@@ -851,7 +854,14 @@ async function persistFormalTripWorkspace(session, patch = {}, { reset = false,
+       itineraryMemorySnapshot: session.itineraryMemorySnapshot,
+       ...patch
+     }
+-  });
++  };
++}
++
++async function persistFormalTripWorkspace(session, patch = {}, options = {}) {
++  const write = formalTripWorkspaceWrite(session, patch, options);
++  if (!write) return null;
++  if (write.unchanged) return write.workspace;
++  return persistentStore.saveTripWorkspace?.(write);
+ }
+ 
+ /**
+@@ -2409,46 +2419,135 @@ async function api(req, res, url, requestSignal) {
+   // Opening a formal Java Trip creates only a process-local draft session so
+   // subsequent edits remain Java candidates. The formal Trip is never copied
+   // to Node persistent storage.
++  if (req.method === 'POST' && /^\/api\/trips\/[^/]+\/draft\/restore$/.test(url.pathname)) {
++    const user = await authUser(req);
++    if (!user) return json(res, 401, { ok: false, message: '请登录后恢复草稿。' });
++    const tripId = decodeURIComponent(url.pathname.split('/')[3]);
++    const input = await body(req);
++    const session = await restorePlannerSession(String(input.sessionId || ''), req);
++    if (!session || session.userId !== user.id || String(session.formalTripId || '') !== tripId
++        || !session.javaSessionId) {
++      return json(res, 404, { ok: false, message: '行程会话已失效，请重新打开正式行程。' });
++    }
++    const startingSyncRevision = Number(session.syncRevision || 1);
++    const startingTripVersion = Number(session.trip?.version || 1);
++    const startingTripSnapshot = JSON.stringify(session.trip || null);
++    try {
++      const restored = await javaCore.restorePlannerDraft(session.javaSessionId, {
++        trip: input.trip, expectedVersion: input.expectedVersion,
++        sessionAccessToken: session.sessionAccessToken || ''
++      }, javaTokenFor(req), requestSignal);
++      const currentSyncRevision = Number(session.syncRevision || 1);
++      const currentTripVersion = Number(session.trip?.version || 1);
++      if (currentSyncRevision > startingSyncRevision || currentTripVersion > startingTripVersion
++          || JSON.stringify(session.trip || null) !== startingTripSnapshot) {
++        return json(res, 409, { ok: false, code: 'PLANNER_REVISION_CONFLICT',
++          message: '规划版本已更新，请刷新后重试。' });
++      }
++      const restoredSyncRevision = restored.syncRevision;
++      const restoredTripVersion = restored.trip?.version;
++      if (typeof restoredSyncRevision !== 'number' || !Number.isSafeInteger(restoredSyncRevision) || restoredSyncRevision < 1
++          || typeof restoredTripVersion !== 'number' || !Number.isSafeInteger(restoredTripVersion) || restoredTripVersion < 1) {
++        return json(res, 502, { ok: false, code: 'PLANNER_RESTORE_CONTRACT_INVALID',
++          message: 'Java Core Backend 未返回有效的规划版本。' });
++      }
++      if (restoredSyncRevision < currentSyncRevision || restoredTripVersion < currentTripVersion) {
++        return json(res, 409, { ok: false, code: 'PLANNER_REVISION_CONFLICT',
++          message: '规划版本已更新，请刷新后重试。' });
++      }
++      if (restoredSyncRevision <= startingSyncRevision || restoredTripVersion <= startingTripVersion) {
++        return json(res, 502, { ok: false, code: 'PLANNER_RESTORE_CONTRACT_INVALID',
++          message: 'Java Core Backend 返回的规划版本没有推进。' });
++      }
++      session.trip = clone(restored.trip);
++      session.syncRevision = restoredSyncRevision;
++      session.updatedAt = new Date().toISOString();
++      // Java has already committed the revision. The previously saved BFF
++      // session still identifies it and rehydrates from Java after a restart.
++      try { await persistentStore.savePlannerDraft?.(session); }
++      catch (error) { void writeBffDiagnostic('planner-draft-persist-error', diagnosticError(error)); }
++      return json(res, 200, { ok: true, sessionId: session.id, trip: clone(session.trip),
++        message: '草稿已恢复，可继续编辑。' });
++    } catch (error) {
++      return javaErrorResponse(res, error, '恢复草稿失败。');
++    }
++  }
+   if (req.method === 'POST' && /^\/api\/trips\/[^/]+\/open$/.test(url.pathname)) {
+     const user = await authUser(req);
+     if (!user) return json(res, 401, { ok: false, message: '请登录后打开已保存行程。' });
+     const tripId = decodeURIComponent(url.pathname.split('/')[3]);
+     try {
+       const restored = await javaCore.openPlannerTrip(tripId, javaTokenFor(req), requestSignal);
+-      const formal = await javaCore.getTrip(javaTokenFor(req), tripId);
+-      const session = openFormalTripSession(formal, {
++      const sourceTrip = restored?.trip;
++      const formalTripVersion = restored?.formalTripVersion;
++      const syncRevision = restored?.syncRevision;
++      const validOpenSnapshot = restored?.ok === true
++        && typeof restored.sessionId === 'string' && Boolean(restored.sessionId.trim())
++        && (!Object.prototype.hasOwnProperty.call(restored, 'sessionAccessToken')
++          || typeof restored.sessionAccessToken === 'string')
++        && restored.formalTripId === tripId
++        && Number.isSafeInteger(formalTripVersion) && formalTripVersion > 0
++        && Number.isSafeInteger(syncRevision) && syncRevision > 0
++        && sourceTrip && typeof sourceTrip === 'object' && !Array.isArray(sourceTrip)
++        && Number.isSafeInteger(sourceTrip.version) && sourceTrip.version > 0
++        && sourceTrip.formalTripId === tripId
++        && sourceTrip.sourceTripId === tripId
++        && Number.isSafeInteger(sourceTrip.sourceTripVersion)
++        && sourceTrip.sourceTripVersion === formalTripVersion;
++      if (!validOpenSnapshot) return json(res, 502, {
++        ok: false, code: 'PLANNER_OPEN_CONTRACT_INVALID', message: 'Java Core Backend 未返回有效规划会话。'
++      });
++      const session = openFormalTripSession({
++        id: tripId,
++        title: String(sourceTrip.title || '未命名行程'),
++        currentVersion: formalTripVersion,
++        plan: sourceTrip
++      }, {
+         userId: user.id,
+-        deviceId: requestDeviceId(req)
++        deviceId: requestDeviceId(req),
++        register: false
+       });
+-      session.javaSessionId = String(restored.sessionId || '');
+-      session.sessionAccessToken = String(restored.sessionAccessToken || '');
+-      session.trip = clone(restored.trip || formal.plan || session.trip);
++      session.javaSessionId = restored.sessionId.trim();
++      session.sessionAccessToken = typeof restored.sessionAccessToken === 'string'
++        ? restored.sessionAccessToken.trim() : '';
++      session.trip = clone(sourceTrip);
+       session.trip.formalTripId = tripId;
+       session.trip.savedTripId = tripId;
+-      session.syncRevision = Number(restored.syncRevision || 1);
++      session.syncRevision = syncRevision;
+       session.legacyMode = false;
+       session.adjustmentCapability = 'V1_PROPOSAL';
+-      hydrateFormalTripWorkspace(session);
+-      const workspace = await persistFormalTripWorkspace(session);
+-      await persistentStore.savePlannerDraft?.(session);
+-      return json(res, 200, {
+-        ok: true,
+-        sessionId: session.id,
+-        javaSessionId: session.javaSessionId,
+-        sessionAccessToken: session.sessionAccessToken,
+-        savedTripId: tripId,
+-        legacyMode: false,
+-        adjustmentCapability: 'V1_PROPOSAL',
+-        formalTripVersion: restored.formalTripVersion,
+-        trip: clone(session.trip),
+-        workspace: workspace ? clone(workspace) : {
+-          chatMessages: [],
+-          chatMode: 'chat',
+-          plannerConversationContext: null,
+-          itineraryMemorySnapshot: clone(session.itineraryMemorySnapshot || itineraryMemorySnapshot(session))
+-        },
+-        message: 'Java Core Backend 正式行程已恢复为可编辑规划会话。'
+-      });
++      session.chatEpoch = session.chatEpoch || randomUUID();
++      session.itineraryMemorySnapshot = itineraryMemorySnapshot(session);
++      try {
++        const openState = await persistentStore.savePlannerOpenState(session);
++        if (!openState?.draft || !openState?.workspace) {
++          throw new Error('正式行程打开状态未能原子持久化。');
++        }
++        hydrateFormalTripWorkspace(session, openState.workspace);
++        const workspace = openState?.workspace || null;
++        sessions.set(session.id, session);
++        return json(res, 200, {
++          ok: true,
++          sessionId: session.id,
++          javaSessionId: session.javaSessionId,
++          sessionAccessToken: session.sessionAccessToken,
++          savedTripId: tripId,
++          legacyMode: false,
++          adjustmentCapability: 'V1_PROPOSAL',
++          formalTripVersion: restored.formalTripVersion,
++          trip: clone(session.trip),
++          workspace: workspace ? clone(workspace) : {
++            chatMessages: [],
++            chatMode: 'chat',
++            plannerConversationContext: null,
++            itineraryMemorySnapshot: clone(session.itineraryMemorySnapshot || itineraryMemorySnapshot(session))
++          },
++          message: 'Java Core Backend 正式行程已恢复为可编辑规划会话。'
++        });
++      } catch (error) {
++        await writeBffDiagnostic('planner-open-local-persist-error', diagnosticError(error));
++        throw error;
++      }
+     } catch (error) {
+       return javaErrorResponse(res, error, '无法打开 Java Core Backend 正式行程。');
+     }
+diff --git a/server/persistent-store.mjs b/server/persistent-store.mjs
+index fea7961..ba33ccf 100644
+--- a/server/persistent-store.mjs
++++ b/server/persistent-store.mjs
+@@ -101,8 +101,8 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+     await rename(tempPath, absolutePath);
+   }
+ 
+-  async function writeNow() {
+-    await writeState({
++  function persistedState(draftState = plannerDrafts, workspaceState = tripWorkspaces) {
++    return {
+       version: STORE_VERSION,
+       nextTripId: 1,
+       // These fields are retained as an explicit migration-compatible shape,
+@@ -113,16 +113,129 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+       preferencesByUser: {},
+       preferenceHistoryByUser: {},
+       feedbackByUser: Object.fromEntries(feedbackByUser),
+-      plannerDrafts: Object.fromEntries(plannerDrafts),
+-      tripWorkspaces: Object.fromEntries(tripWorkspaces)
+-    });
++      plannerDrafts: Object.fromEntries(draftState),
++      tripWorkspaces: Object.fromEntries(workspaceState)
++    };
+   }
+ 
+-  function persist() {
+-    writeQueue = writeQueue.then(writeNow);
++  async function writeNow() {
++    await writeState(persistedState());
++  }
++
++  function enqueueWrite(operation) {
++    // Keep surfacing this write's error to its caller, but let a later write
++    // recover the queue instead of inheriting a permanently rejected promise.
++    writeQueue = writeQueue.catch(() => {}).then(operation);
+     return writeQueue;
+   }
+ 
++  function persist() {
++    return enqueueWrite(writeNow);
++  }
++
++  function createPlannerDraft(session) {
++    const id = String(session?.id || '').trim();
++    if (!id) return null;
++    return structuredClone({
++      id,
++      input: session.input || '',
++      trip: session.trip || null,
++      shadow: null,
++      candidateSource: session.candidateSource || null,
++      candidateAppliedPreferences: session.candidateAppliedPreferences || [],
++      constraints: session.constraints || {},
++      preferencesApplied: session.preferencesApplied || [],
++      createdAt: session.createdAt || new Date().toISOString(),
++      updatedAt: session.updatedAt || new Date().toISOString(),
++      syncRevision: Number(session.syncRevision || 1),
++      replanHistory: session.replanHistory || [],
++      feedback: [],
++      userId: session.userId || null,
++      deviceId: session.deviceId || null,
++      formalTripId: session.formalTripId || null,
++      // Proposal state is only a BFF restart snapshot; Java owns proposal validity.
++      chatProposal: session.chatProposal || null,
++      plannerConversationContext: session.plannerConversationContext || null,
++      chatEpoch: session.chatEpoch || null,
++      itineraryMemorySnapshot: session.itineraryMemorySnapshot || null,
++      javaSessionId: session.javaSessionId || null,
++      sessionAccessTokenEncrypted: protectSecret(session.sessionAccessToken || '', authSecret),
++      legacyMode: Boolean(session.legacyMode),
++      adjustmentCapability: session.adjustmentCapability || 'LEGACY',
++      plannerVersion: session.plannerVersion || null,
++      policyVersion: session.policyVersion || null,
++      routeDataStatus: session.routeDataStatus || null,
++      explanationSource: session.explanationSource || null,
++      degraded: Boolean(session.degraded),
++      degradationReasons: session.degradationReasons || []
++    });
++  }
++
++  function createTripWorkspace({ userId, formalTripId, workspace, expectedRevision, expectedEpoch, reset = false } = {}, workspaces) {
++    const owner = String(userId || '').trim();
++    const tripId = String(formalTripId || '').trim();
++    if (!owner || !tripId) return null;
++    const source = workspace && typeof workspace === 'object' ? structuredClone(workspace) : {};
++    const key = `${owner}:${tripId}`;
++    const previous = workspaces.get(key);
++    const current = previous || {};
++    const revision = Number(current.workspaceRevision || 0);
++    if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision)
++        || expectedRevision !== revision || !expectedEpoch || expectedEpoch !== current.chatEpoch)) {
++      const error = new Error('对话工作区已更新，请重新打开行程后再保存。');
++      error.status = 409; error.code = 'TRIP_WORKSPACE_CONFLICT';
++      error.workspace = Object.keys(current).length ? structuredClone(current) : null;
++      throw error;
++    }
++    const messages = reset ? [] : Array.isArray(source.chatMessages)
++      ? source.chatMessages.slice(-160).map((message) => ({
++        role: message?.role === 'user' ? 'user' : 'assistant',
++        content: String(message?.content || '').slice(0, 12000),
++        pending: false,
++        error: message?.error ? String(message.error).slice(0, 500) : undefined
++      })).filter((message) => message.content || message.error)
++      : (Array.isArray(current.chatMessages) ? current.chatMessages : []);
++    const value = {
++      ownerUserId: owner,
++      formalTripId: tripId,
++      workspaceRevision: revision + (reset || source.chatMessages !== undefined || source.chatMode !== undefined || !current.chatEpoch ? 1 : 0),
++      chatMessages: messages,
++      chatMode: source.chatMode === undefined
++        ? (current.chatMode === 'planner' ? 'planner' : 'chat')
++        : (source.chatMode === 'planner' ? 'planner' : 'chat'),
++      chatEpoch: source.chatEpoch === undefined ? (current.chatEpoch || null) : (String(source.chatEpoch || '').slice(0,64) || null),
++      plannerConversationContext: source.plannerConversationContext === undefined
++        ? (current.plannerConversationContext || null)
++        : (source.plannerConversationContext && typeof source.plannerConversationContext === 'object'
++          ? structuredClone(source.plannerConversationContext)
++          : null),
++      itineraryMemorySnapshot: source.itineraryMemorySnapshot === undefined
++        ? (current.itineraryMemorySnapshot || null)
++        : (source.itineraryMemorySnapshot && typeof source.itineraryMemorySnapshot === 'object'
++          ? structuredClone(source.itineraryMemorySnapshot)
++          : null),
++      updatedAt: new Date().toISOString()
++    };
++    workspaces.set(key, value);
++    return structuredClone(value);
++  }
++
++  function mutatePlannerStateAndPersist(mutate) {
++    return enqueueWrite(async () => {
++      const draftState = new Map(plannerDrafts);
++      const workspaceState = new Map(tripWorkspaces);
++      const result = mutate(draftState, workspaceState);
++      // Getters continue reading committed Maps while this candidate snapshot
++      // is written. Commit both maps only after the atomic rename succeeds.
++      await writeState(persistedState(draftState, workspaceState));
++      plannerDrafts.clear();
++      for (const [key, value] of draftState) plannerDrafts.set(key, value);
++      tripWorkspaces.clear();
++      for (const [key, value] of workspaceState) tripWorkspaces.set(key, value);
++      return result;
++    });
++  }
++
+   if (enabled && hasLegacyAuthSecret) {
+     // Remove only the forbidden embedded signing key while preserving the
+     // read-only legacy migration payload until an explicit migration writes it.
+@@ -148,57 +261,20 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+       return value ? structuredClone(value) : null;
+     },
+     saveTripWorkspace({ userId, formalTripId, workspace, expectedRevision, expectedEpoch, reset = false } = {}) {
+-      const owner = String(userId || '').trim();
+-      const tripId = String(formalTripId || '').trim();
+-      if (!owner || !tripId) return Promise.resolve(null);
+-      const source = workspace && typeof workspace === 'object' ? workspace : {};
+-      const previous = tripWorkspaces.get(`${owner}:${tripId}`) || {};
+-      const revision = Number(previous.workspaceRevision || 0);
+-      if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision)
+-          || expectedRevision !== revision || !expectedEpoch || expectedEpoch !== previous.chatEpoch)) {
+-        const error = new Error('对话工作区已更新，请重新打开行程后再保存。');
+-        error.status = 409; error.code = 'TRIP_WORKSPACE_CONFLICT';
+-        error.workspace = Object.keys(previous).length ? structuredClone(previous) : null;
+-        throw error;
+-      }
+-      const messages = reset ? [] : Array.isArray(source.chatMessages)
+-        ? source.chatMessages.slice(-160).map((message) => ({
+-          role: message?.role === 'user' ? 'user' : 'assistant',
+-          content: String(message?.content || '').slice(0, 12000),
+-          pending: false,
+-          error: message?.error ? String(message.error).slice(0, 500) : undefined
+-        })).filter((message) => message.content || message.error)
+-        : (Array.isArray(previous.chatMessages) ? previous.chatMessages : []);
+-      const value = {
+-        ownerUserId: owner,
+-        formalTripId: tripId,
+-        workspaceRevision: revision + (reset || source.chatMessages !== undefined || source.chatMode !== undefined || !previous.chatEpoch ? 1 : 0),
+-        chatMessages: messages,
+-        chatMode: source.chatMode === undefined
+-          ? (previous.chatMode === 'planner' ? 'planner' : 'chat')
+-          : (source.chatMode === 'planner' ? 'planner' : 'chat'),
+-        chatEpoch: source.chatEpoch === undefined ? (previous.chatEpoch || null) : (String(source.chatEpoch || '').slice(0,64) || null),
+-        plannerConversationContext: source.plannerConversationContext === undefined
+-          ? (previous.plannerConversationContext || null)
+-          : (source.plannerConversationContext && typeof source.plannerConversationContext === 'object'
+-            ? structuredClone(source.plannerConversationContext)
+-            : null),
+-        itineraryMemorySnapshot: source.itineraryMemorySnapshot === undefined
+-          ? (previous.itineraryMemorySnapshot || null)
+-          : (source.itineraryMemorySnapshot && typeof source.itineraryMemorySnapshot === 'object'
+-            ? structuredClone(source.itineraryMemorySnapshot)
+-            : null),
+-        updatedAt: new Date().toISOString()
+-      };
+-      tripWorkspaces.set(`${owner}:${tripId}`, value);
+-      return persist().then(() => structuredClone(value));
++      const input = { userId, formalTripId, workspace, expectedRevision, expectedEpoch, reset };
++      if (!String(userId || '').trim() || !String(formalTripId || '').trim()) return Promise.resolve(null);
++      return mutatePlannerStateAndPersist((_drafts, workspaces) => {
++        return createTripWorkspace(input, workspaces);
++      });
+     },
+     deleteTripWorkspace(userId, formalTripId) {
+       const owner = String(userId || '').trim();
+       const tripId = String(formalTripId || '').trim();
+       if (!owner || !tripId) return Promise.resolve();
+-      tripWorkspaces.delete(`${owner}:${tripId}`);
+-      return persist();
++      const key = `${owner}:${tripId}`;
++      return mutatePlannerStateAndPersist((_drafts, workspaces) => {
++        workspaces.delete(key);
++      });
+     },
+     getPlannerDraft(sessionId) {
+       const value = plannerDrafts.get(String(sessionId || ''));
+@@ -209,52 +285,63 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+       return draft;
+     },
+     savePlannerDraft(session) {
+-      const id = String(session?.id || '').trim();
+-      if (!id) return Promise.resolve();
+-      plannerDrafts.set(id, structuredClone({
+-        id,
+-        input: session.input || '',
+-        trip: session.trip || null,
+-        shadow: null,
+-        candidateSource: session.candidateSource || null,
+-        candidateAppliedPreferences: session.candidateAppliedPreferences || [],
+-        constraints: session.constraints || {},
+-        preferencesApplied: session.preferencesApplied || [],
+-        createdAt: session.createdAt || new Date().toISOString(),
+-        updatedAt: session.updatedAt || new Date().toISOString(),
+-        syncRevision: Number(session.syncRevision || 1),
+-        replanHistory: session.replanHistory || [],
+-        feedback: [],
+-        userId: session.userId || null,
+-        deviceId: session.deviceId || null,
+-        formalTripId: session.formalTripId || null,
+-        // Proposal contents are non-secret UI/session state. Java remains
+-        // authoritative for proposal validity; this snapshot only restores
+-        // the pending preview after a BFF restart.
+-        chatProposal: session.chatProposal || null,
+-        plannerConversationContext: session.plannerConversationContext || null,
+-        chatEpoch: session.chatEpoch || null,
+-        itineraryMemorySnapshot: session.itineraryMemorySnapshot || null,
+-        javaSessionId: session.javaSessionId || null,
+-        sessionAccessTokenEncrypted: protectSecret(session.sessionAccessToken || '', authSecret),
+-        legacyMode: Boolean(session.legacyMode),
+-        adjustmentCapability: session.adjustmentCapability || 'LEGACY',
+-        plannerVersion: session.plannerVersion || null,
+-        policyVersion: session.policyVersion || null,
+-        routeDataStatus: session.routeDataStatus || null,
+-        explanationSource: session.explanationSource || null,
+-        degraded: Boolean(session.degraded),
+-        degradationReasons: session.degradationReasons || []
+-      }));
+-      return persist();
++      const draft = createPlannerDraft(session);
++      if (!draft) return Promise.resolve();
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.set(draft.id, draft);
++      });
++    },
++    savePlannerOpenState(session) {
++      const owner = String(session?.userId || '').trim();
++      const formalTripId = String(session?.formalTripId || '').trim();
++      if (!owner || !formalTripId || !String(session?.id || '').trim()) {
++        throw new Error('规划行程打开状态缺少有效会话或工作区归属。');
++      }
++      // Open is one local transaction: neither synchronous getter can observe
++      // one half while the combined JSON snapshot is waiting for rename. Read
++      // continuity fields at the queue head, after prior writes commit, so an
++      // earlier queued chat PUT cannot be overwritten by a stale Open snapshot.
++      return mutatePlannerStateAndPersist((drafts, workspaces) => {
++        const workspaceKey = `${owner}:${formalTripId}`;
++        const currentWorkspace = workspaces.get(workspaceKey);
++        if (currentWorkspace) {
++          session.plannerConversationContext = currentWorkspace.plannerConversationContext || null;
++          session.chatEpoch = currentWorkspace.chatEpoch || session.chatEpoch || null;
++        }
++        const workspaceWrite = {
++          userId: owner,
++          formalTripId,
++          workspace: {
++            plannerConversationContext: session.plannerConversationContext || null,
++            chatEpoch: session.chatEpoch || null,
++            itineraryMemorySnapshot: session.itineraryMemorySnapshot || null
++          }
++        };
++        const draft = createPlannerDraft(session);
++        if (!draft) {
++          throw new Error('规划行程打开状态缺少有效会话或工作区归属。');
++        }
++        if (String(draft.userId || '').trim() !== String(workspaceWrite.userId).trim()
++            || String(draft.formalTripId || '').trim() !== String(workspaceWrite.formalTripId).trim()
++            || String(workspaceWrite.userId).trim() !== owner
++            || String(workspaceWrite.formalTripId).trim() !== formalTripId) {
++          throw new Error('规划行程打开状态的会话与工作区归属不一致。');
++        }
++        drafts.set(draft.id, draft);
++        const workspace = createTripWorkspace(workspaceWrite, workspaces);
++        return { draft: structuredClone(draft), workspace };
++      });
+     },
+     deletePlannerDraft(sessionId) {
+-      plannerDrafts.delete(String(sessionId || ''));
+-      return persist();
++      const id = String(sessionId || '');
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.delete(id);
++      });
+     },
+     clearPlannerDrafts() {
+-      plannerDrafts.clear();
+-      return persist();
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.clear();
++      });
+     },
+     persist,
+     async flush() { await writeQueue; }

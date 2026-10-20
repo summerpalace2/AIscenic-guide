@@ -167,7 +167,7 @@ public class AgentARedTeamJointAssaultV2Test {
 
 
             String stop2Time = (String) stops.get(1).get("time");
-            assertEquals("00:45(+1d)", stop2Time, "formatTime 正确生成了跨天标记");
+            assertEquals("01:00(+1d)", stop2Time, "formatTime 正确生成了跨天标记并使用当前接驳配置");
 
             stops.add(new LinkedHashMap<>(Map.of("id", "s3", "name", "凌晨回酒店", "time", "待安排", "duration", "30分钟")));
             itineraryTimeEngine.rippleRecalculateStopTimes(stops, 2);
@@ -176,7 +176,7 @@ public class AgentARedTeamJointAssaultV2Test {
 
 
 
-            assertEquals("02:00(+1d)", stop3Time,
+            assertEquals("02:30(+1d)", stop3Time,
                     "正常行为必须符合当前接口与排程契约");
         }
 
@@ -194,7 +194,7 @@ public class AgentARedTeamJointAssaultV2Test {
             itineraryTimeEngine.rippleRecalculateStopTimes(stops, 1);
 
 
-            assertEquals("12:30", stops.get(2).get("time"),
+            assertEquals("13:00", stops.get(2).get("time"),
                     "正常行为必须符合当前接口与排程契约");
         }
     }

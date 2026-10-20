@@ -1,4 +1,4 @@
-package com.ai.guide.domain.rag.pipeline;
+package com.ai.guide.infrastructure.rag.importer;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;

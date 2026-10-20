@@ -1,4 +1,4 @@
-package com.ai.guide.domain.rag.pipeline;
+package com.ai.guide.infrastructure.rag.importer;
 
 
 import org.junit.jupiter.api.Test;
@@ -16,7 +16,7 @@ class GoldenDatasetV21RouteTaskBuilderTest {
     @Test
     void expandsAllP0EdgesAndPreservesDirection() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(ROUTE_GRAPH), "Skipping: golden_route_graph_p0.json not present");
-        var tasks = new GoldenDatasetV21RouteTaskBuilder().build(ROUTE_GRAPH);
+        var tasks = new GoldenDatasetV21RouteTaskBuilder().build(ROUTE_GRAPH, "重庆");
 
         assertEquals(14, tasks.size());
         assertEquals("ROUTE-EDGE-P0-001", tasks.get(0).taskId());
@@ -31,7 +31,7 @@ class GoldenDatasetV21RouteTaskBuilderTest {
     @Test
     void doesNotInventRouteMetricsBeforeCoordinateAndApiResolution() throws Exception {
         org.junit.jupiter.api.Assumptions.assumeTrue(Files.exists(ROUTE_GRAPH), "Skipping: golden_route_graph_p0.json not present");
-        var tasks = new GoldenDatasetV21RouteTaskBuilder().build(ROUTE_GRAPH);
+        var tasks = new GoldenDatasetV21RouteTaskBuilder().build(ROUTE_GRAPH, "重庆");
         var transit = tasks.stream()
                 .filter(task -> task.edgeId().equals("EDGE-P0-006"))
                 .findFirst()

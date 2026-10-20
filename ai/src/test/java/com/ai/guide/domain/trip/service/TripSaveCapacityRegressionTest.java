@@ -2,6 +2,8 @@ package com.ai.guide.domain.trip.service;
 
 import com.ai.guide.adapter.trip.web.TripController;
 import com.ai.guide.application.trip.TripApplicationService;
+import com.ai.guide.application.planner.PlannerSaveApplicationService;
+import com.ai.guide.application.planner.PlannerOpenApplicationService;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
@@ -64,7 +66,9 @@ class TripSaveCapacityRegressionTest {
     }
 
     private PlannerService planner(PlannerSessionRepositoryPort repository) {
-        return new PlannerService(null, null, repository, trips, mapper, null, null, null);
+        return new PlannerService(null, null, repository, trips, mapper, null, null, null,
+                null, null, true, new PlannerSaveApplicationService(repository, trips),
+                new PlannerOpenApplicationService(repository, trips, mapper, true));
     }
 
     @Test void repeatedPlannerSaveBeforeAndAfterIdLinkingStaysAtVersionOne() {

@@ -3,7 +3,16 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanPageContext;
+import com.ai.guide.domain.attraction.gateway.AttractionCatalogPort;
+import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.attraction.service.AttractionAliasMatcher;
+import com.ai.guide.domain.attraction.service.AttractionService;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import java.util.List;
+import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -11,7 +20,29 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ConversationIntentClassifierTest {
 
-    private final ConversationIntentClassifier classifier = new ConversationIntentClassifier();
+    private final ConversationIntentClassifier classifier = fixtureClassifier();
+
+    private static ConversationIntentClassifier fixtureClassifier() {
+        try (var input = ConversationIntentClassifierTest.class.getClassLoader().getResourceAsStream("attractions.json")) {
+            if (input == null) throw new IllegalStateException("missing attraction test fixture");
+            List<Attraction> places = new ObjectMapper().readValue(input, new TypeReference<>() {});
+            Map<String, Attraction> byId = places.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(Attraction::getId, place -> place));
+            AttractionService catalog = new AttractionService(new AttractionCatalogPort() {
+                @Override public List<Attraction> find(String district, String category) {
+                    return places.stream().filter(place -> district == null || district.isBlank() || district.equals(place.getDistrict()))
+                            .filter(place -> category == null || category.isBlank() || category.equals(place.getCategory())).toList();
+                }
+                @Override public Attraction findById(String id) { return byId.get(id); }
+            });
+            var taxonomy = new JsonTaxonomyAdapter();
+            ConversationIntentClassifier classifier = new ConversationIntentClassifier(catalog, new AttractionAliasMatcher(catalog, taxonomy));
+            classifier.setTaxonomy(taxonomy);
+            classifier.setDiningCategoryGrounder(new com.ai.guide.domain.planner.engine.DiningCategoryGrounder(taxonomy));
+            return classifier;
+        } catch (Exception error) {
+            throw new IllegalStateException("cannot load attraction test fixture", error);
+        }
+    }
 
     @Test
     void explicitDayAndAttractionArePreservedForAddStop() {
@@ -228,6 +259,16 @@ class ConversationIntentClassifierTest {
         var intentKids = classifier.classify("带娃去方便吗？", PlanPageContext.builder().activeDay(1).selectedStopId("stop-1").build());
         assertEquals(ConversationIntentType.PLACE_QUESTION, intentKids.getType());
         assertEquals("QA", intentKids.getOperation());
+    }
+
+    @Test
+    void heatAvoidanceKeepsItsOwnConditionInsteadOfBecomingRain() {
+        var intent = classifier.classify("重新规划今天的户外行程，太晒了，帮我避暑", PlanPageContext.builder()
+                .activeDay(1).build());
+
+        assertEquals(ConversationIntentType.REPLAN_DAY_FOR_CONDITION, intent.getType());
+        assertEquals("HIGH_TEMPERATURE", intent.getCondition());
+        assertTrue(intent.getConditions().contains("HIGH_TEMPERATURE"));
     }
 
     @Test

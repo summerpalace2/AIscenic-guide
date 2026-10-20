@@ -1,12 +1,12 @@
 package com.ai.guide.infrastructure.planner.amap;
 
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.model.RouteOutcome;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
-import com.ai.guide.domain.planner.model.WeatherOutcome;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRouteOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
+import com.ai.guide.domain.geo.model.GeoWeatherOutcome;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import com.ai.guide.domain.search.gateway.PoiSearchGatewayPort;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -35,6 +35,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import com.ai.guide.common.context.OperationDeadline;
 
 /**
  * 高德地图多模式路线计算与折线渲染辅助服务
@@ -126,7 +127,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(256),
                 daemonThreadFactory("amap-route-"),
-                new ThreadPoolExecutor.CallerRunsPolicy()
+                new ThreadPoolExecutor.AbortPolicy()
         );
         int orchestrationThreads = Math.max(2, this.maxConcurrency);
         this.orchestrationExecutor = new ThreadPoolExecutor(
@@ -155,77 +156,85 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         return maxConcurrency;
     }
 
-    public PoiOutcome searchPoi(String keywords, String city) {
+    public GeoPoiOutcome searchPoi(String keywords, String city) {
         return searchPoi(keywords, city, null);
     }
 
     @Override
-    public List<AmapResponseNormalizer.PoiCandidate> searchPoiCandidates(String keywords, String city) {
-        PoiOutcome outcome = searchPoi(keywords, city);
+    public List<com.ai.guide.domain.geo.model.GeoPoiCandidate> searchPoiCandidates(String keywords, String city) {
+        GeoPoiOutcome outcome = searchPoi(keywords, city);
         return (outcome != null && outcome.candidates() != null) ? outcome.candidates() : List.of();
     }
 
-    public PoiOutcome searchPoi(String keywords, String city, String types) {
+    public GeoPoiOutcome searchPoi(String keywords, String city, String types) {
         if (keywords == null || keywords.isBlank()) {
-            return new PoiOutcome(OutcomeStatus.INVALID, List.of(), "POI 关键词为空", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.INVALID, List.of(), "POI 关键词为空", Instant.now());
         }
         if (!isConfigured()) {
-            return new PoiOutcome(OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
         }
         AmapRequestCache.RequestKey key = key("poi-text", "v5/place/text",
                 keywords, city, types == null ? "" : types, "business,navi,photos", "true", "20");
-        return requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
-                () -> loadPoi(keywords, city, types), outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+        return cachedPoi(() -> requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+                () -> loadPoi(keywords, city, types), outcome -> outcome.status() == GeoOutcomeStatus.SUCCESS));
     }
 
-    private PoiOutcome loadPoi(String keywords, String city, String types) {
+    private GeoPoiOutcome cachedPoi(Supplier<GeoPoiOutcome> lookup) {
+        try { return lookup.get(); }
+        catch (RuntimeException failure) {
+            ProviderFailure classified = observe(asProviderFailure(failure));
+            return new GeoPoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
+        }
+    }
+
+    private GeoPoiOutcome loadPoi(String keywords, String city, String types) {
         try {
             JsonNode response = execute(
                     () -> client.get(client.buildPoiTextRequest(keywords, city, types, "business,navi,photos")),
                     requestTimeoutMs,
                     1);
-            return new PoiOutcome(OutcomeStatus.SUCCESS,
+            return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizePois(response), "", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
-            return new PoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
+            return new GeoPoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
         }
     }
 
-    public PoiOutcome searchAround(String location, int radiusMeters, String types,
+    public GeoPoiOutcome searchAround(String location, int radiusMeters, String types,
                                    String keywords, String city) {
         return searchAround(location, radiusMeters, types, keywords, city, 1);
     }
 
-    public PoiOutcome searchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
+    public GeoPoiOutcome searchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
         if (client == null) {
             return searchAround(location, radiusMeters, types, keywords, city);
         }
         return executeSearchAround(location, radiusMeters, types, keywords, city, pages);
     }
 
-    private PoiOutcome executeSearchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
+    private GeoPoiOutcome executeSearchAround(String location, int radiusMeters, String types, String keywords, String city, int pages) {
         if (location == null || location.isBlank() || !validCoordinate(location)) {
-            return new PoiOutcome(OutcomeStatus.INVALID, List.of(), "周边搜索坐标无效", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.INVALID, List.of(), "周边搜索坐标无效", Instant.now());
         }
         if (!isConfigured()) {
-            return new PoiOutcome(OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
         }
         int effectivePages = Math.max(1, Math.min(6, pages));
         AmapRequestCache.RequestKey key = key("poi-around", "v5/place/around",
                 location, String.valueOf(radiusMeters), types == null ? "" : types,
                 keywords == null ? "" : keywords, city == null ? "" : city, String.valueOf(effectivePages), "weight");
-        return requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+        return cachedPoi(() -> requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
                 () -> loadPoiAround(location, radiusMeters, types, keywords, effectivePages),
-                outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+                outcome -> outcome.status() == GeoOutcomeStatus.SUCCESS));
     }
 
-    private PoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords) {
+    private GeoPoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords) {
         return loadPoiAround(location, radiusMeters, types, keywords, 1);
     }
 
-    private PoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords, int pages) {
-        List<AmapResponseNormalizer.PoiCandidate> allCandidates = new ArrayList<>();
+    private GeoPoiOutcome loadPoiAround(String location, int radiusMeters, String types, String keywords, int pages) {
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> allCandidates = new ArrayList<>();
         Set<String> seenPoiIds = new HashSet<>();
         try {
             for (int page = 1; page <= pages; page++) {
@@ -235,11 +244,11 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                             () -> client.get(client.buildPoiAroundRequest(location, radiusMeters, types, keywords, "business,navi,photos", p, "weight")),
                             requestTimeoutMs,
                             0);
-                    List<AmapResponseNormalizer.PoiCandidate> pageList = AmapResponseNormalizer.normalizePois(response);
+                    List<com.ai.guide.domain.geo.model.GeoPoiCandidate> pageList = AmapResponseNormalizer.normalizePois(response);
                     if (pageList == null || pageList.isEmpty()) {
                         break;
                     }
-                    for (AmapResponseNormalizer.PoiCandidate c : pageList) {
+                    for (com.ai.guide.domain.geo.model.GeoPoiCandidate c : pageList) {
                         String id = c.poiId() != null && !c.poiId().isBlank() ? c.poiId() : c.name();
                         if (id != null && seenPoiIds.add(id)) {
                             allCandidates.add(c);
@@ -257,10 +266,10 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                     throw pageFailure;
                 }
             }
-            return new PoiOutcome(OutcomeStatus.SUCCESS, allCandidates, "", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, allCandidates, "", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
-            return new PoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
+            return new GeoPoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
         }
     }
 
@@ -269,26 +278,28 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
      * walking/transit comparison as the Web baseline. A failed preferred mode
      * may still use the other successful mode as an explicit fallback.
      */
-    public RoutePairOutcome routePair(String origin, String destination, String city,
+    public GeoRoutePairOutcome routePair(String origin, String destination, String city,
                                       String originPoi, String destinationPoi, String preference) {
         if (!validCoordinate(origin) || !validCoordinate(destination)) {
-            RouteOutcome invalid = new RouteOutcome(OutcomeStatus.INVALID, null,
+            GeoRouteOutcome invalid = new GeoRouteOutcome(GeoOutcomeStatus.INVALID, null,
                     "起点或终点坐标无效", "", Instant.now());
-            return new RoutePairOutcome(invalid, invalid, invalid, preference, false);
+            return new GeoRoutePairOutcome(invalid, invalid, invalid, preference, false);
         }
         if (!isConfigured()) {
-            RouteOutcome unavailable = new RouteOutcome(OutcomeStatus.UNAVAILABLE, null,
+            GeoRouteOutcome unavailable = new GeoRouteOutcome(GeoOutcomeStatus.UNAVAILABLE, null,
                     "未配置高德服务端密钥", "", Instant.now());
-            return new RoutePairOutcome(unavailable, unavailable, unavailable, preference, false);
+            return new GeoRoutePairOutcome(unavailable, unavailable, unavailable, preference, false);
         }
 
-        Future<RouteOutcome> walkingFuture = submitOrRun(() -> routeWalking(origin, destination));
-        Future<RouteOutcome> transitFuture = submitOrRun(() -> routeTransit(origin, destination, city, originPoi, destinationPoi));
+        // Include orchestration queueing and both v5/v3 attempts in one pair budget.
+        long deadline = System.nanoTime() + Math.min(OperationDeadline.remainingNanos(), TimeUnit.MILLISECONDS.toNanos(4L * routeTimeoutMs + 500L));
+        Future<GeoRouteOutcome> walkingFuture = submitRoute(() -> routeWalking(origin, destination));
+        Future<GeoRouteOutcome> transitFuture = submitRoute(() -> routeTransit(origin, destination, city, originPoi, destinationPoi));
 
-        RouteOutcome walking = joinOutcome(walkingFuture);
-        RouteOutcome transit = joinOutcome(transitFuture);
+        GeoRouteOutcome walking = joinOutcome(walkingFuture, deadline);
+        GeoRouteOutcome transit = joinOutcome(transitFuture, deadline);
         boolean taxiUnsupported = "taxi".equalsIgnoreCase(preference);
-        RouteOutcome selected;
+        GeoRouteOutcome selected;
         if (taxiUnsupported) {
             // No driving/taxi request builder exists yet; do not claim taxi data.
             selected = firstSuccess(walking, transit);
@@ -297,20 +308,25 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         } else {
             selected = firstSuccess(walking, transit);
         }
-        return new RoutePairOutcome(walking, transit, selected, preference, taxiUnsupported);
+        return new GeoRoutePairOutcome(walking, transit, selected, preference, taxiUnsupported);
     }
 
-    public WeatherOutcome weather(String cityCode) {
+    public GeoWeatherOutcome weather(String cityCode) {
         if (!isConfigured()) {
-            return new WeatherOutcome(OutcomeStatus.UNAVAILABLE, null,
+            return new GeoWeatherOutcome(GeoOutcomeStatus.UNAVAILABLE, null,
                     "未配置高德服务端密钥", Instant.now());
         }
         AmapRequestCache.RequestKey key = key("weather", "v3/weather/weatherInfo", cityCode, "all");
-        return requestCache.getOrLoad(key, weatherCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
-                () -> loadWeather(cityCode), outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+        try {
+            return requestCache.getOrLoad(key, weatherCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+                    () -> loadWeather(cityCode), outcome -> outcome.status() == GeoOutcomeStatus.SUCCESS);
+        } catch (RuntimeException failure) {
+            ProviderFailure classified = observe(asProviderFailure(failure));
+            return new GeoWeatherOutcome(classified.status, null, classified.getMessage(), Instant.now());
+        }
     }
 
-    private WeatherOutcome loadWeather(String cityCode) {
+    private GeoWeatherOutcome loadWeather(String cityCode) {
         try {
             String resolvedCityCode = cityCode == null ? "" : cityCode.trim();
             if (!resolvedCityCode.matches("\\d{6}")) {
@@ -319,72 +335,72 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                 resolvedCityCode = AmapResponseNormalizer.normalizeGeocode(geocodeResponse).adcode();
             }
             if (resolvedCityCode == null || !resolvedCityCode.matches("\\d{6}")) {
-                return new WeatherOutcome(OutcomeStatus.INVALID, null, "无法解析所在城市的天气行政区编码", Instant.now());
+                return new GeoWeatherOutcome(GeoOutcomeStatus.INVALID, null, "无法解析所在城市的天气行政区编码", Instant.now());
             }
             final String weatherCityCode = resolvedCityCode;
             JsonNode response = execute(
                     () -> client.get(client.buildWeatherRequest(weatherCityCode, "all")),
                     requestTimeoutMs,
                     0);
-            return new WeatherOutcome(OutcomeStatus.SUCCESS,
+            return new GeoWeatherOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizeWeather(response), "", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
-            return new WeatherOutcome(classified.status, null, classified.getMessage(), Instant.now());
+            return new GeoWeatherOutcome(classified.status, null, classified.getMessage(), Instant.now());
         }
     }
 
     /** Fetches the provider detail payload for a previously matched POI. */
-    public PoiOutcome poiDetail(String poiId) {
+    public GeoPoiOutcome poiDetail(String poiId) {
         if (poiId == null || poiId.isBlank()) {
-            return new PoiOutcome(OutcomeStatus.INVALID, List.of(), "POI 标识为空", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.INVALID, List.of(), "POI 标识为空", Instant.now());
         }
         if (!isConfigured()) {
-            return new PoiOutcome(OutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
+            return new GeoPoiOutcome(GeoOutcomeStatus.UNAVAILABLE, List.of(), "未配置高德服务端密钥", Instant.now());
         }
         AmapRequestCache.RequestKey key = key("poi-detail", "v5/place/detail",
                 poiId, "business,navi,photos");
-        return requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
-                () -> loadPoiDetail(poiId), outcome -> outcome.status() == OutcomeStatus.SUCCESS);
+        return cachedPoi(() -> requestCache.getOrLoad(key, poiCacheTtlNanos, requestCacheEnabled, requestDedupEnabled,
+                () -> loadPoiDetail(poiId), outcome -> outcome.status() == GeoOutcomeStatus.SUCCESS));
     }
 
-    private PoiOutcome loadPoiDetail(String poiId) {
+    private GeoPoiOutcome loadPoiDetail(String poiId) {
         try {
             JsonNode response = execute(
                     () -> client.get(client.buildPoiDetailRequest(poiId, "business,navi,photos")),
                     requestTimeoutMs,
                     1);
-            return new PoiOutcome(OutcomeStatus.SUCCESS,
+            return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizePois(response), "", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
-            return new PoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
+            return new GeoPoiOutcome(classified.status, List.of(), classified.getMessage(), Instant.now());
         }
     }
 
-    private RouteOutcome routeWalking(String origin, String destination) {
+    private GeoRouteOutcome routeWalking(String origin, String destination) {
         AmapRequestCache.RequestKey key = key("route-walking", "v5/direction/walking",
                 origin, destination, "cost,navi,polyline");
         return requestCache.getOrLoad(key, requestCacheEnabled, requestDedupEnabled,
                 () -> loadWalking(origin, destination), result -> routeResultTtl(result, routeCacheTtlNanos));
     }
 
-    private RouteOutcome loadWalking(String origin, String destination) {
+    private GeoRouteOutcome loadWalking(String origin, String destination) {
         try {
             JsonNode response = execute(
                     () -> client.get(client.buildWalkingRequest(origin, destination, "cost,navi,polyline")),
                     routeTimeoutMs,
                     1);
-            return new RouteOutcome(OutcomeStatus.SUCCESS,
+            return new GeoRouteOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizeWalking(response), "", "v5/direction/walking", Instant.now());
         } catch (RuntimeException failure) {
             ProviderFailure classified = observe(asProviderFailure(failure));
-            return new RouteOutcome(classified.status, null, classified.getMessage(),
+            return new GeoRouteOutcome(classified.status, null, classified.getMessage(),
                     "v5/direction/walking", Instant.now());
         }
     }
 
-    private RouteOutcome routeTransit(String origin, String destination, String city,
+    private GeoRouteOutcome routeTransit(String origin, String destination, String city,
                                       String originPoi, String destinationPoi) {
         // 增加 15 分钟时变桶因子，保障公交/地铁在末班车停运或高峰切换时动态刷新，杜绝长 TTL 导致停运误导
         long timeBucket = System.currentTimeMillis() / (15 * 60 * 1000L);
@@ -394,56 +410,65 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                 () -> loadTransit(origin, destination, city, originPoi, destinationPoi), result -> routeResultTtl(result, Math.min(routeCacheTtlNanos, ttlNanos(15 * 60 * 1000L))));
     }
 
-    private RouteOutcome loadTransit(String origin, String destination, String city,
+    private GeoRouteOutcome loadTransit(String origin, String destination, String city,
                                      String originPoi, String destinationPoi) {
+        if (!isCityCode(city)) {
+            if (city != null && city.trim().matches("\\d+")) {
+                return new GeoRouteOutcome(GeoOutcomeStatus.INVALID, null,
+                        "城市编码格式无效，不能作为城市名称查询", "v3/direction/transit/integrated", Instant.now());
+            }
+            return loadTransitV3(origin, destination, city,
+                    "未提供可验证的 citycode，已使用 V3 城市名称兼容路线");
+        }
         try {
             JsonNode response = execute(
-                    () -> client.get(client.buildTransitRequest(origin, destination, city, "0", originPoi, destinationPoi)),
+                    () -> client.get(client.buildTransitRequest(origin, destination, city, city, "0", originPoi, destinationPoi)),
                     routeTimeoutMs,
                     1);
-            return new RouteOutcome(OutcomeStatus.SUCCESS,
+            return new GeoRouteOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizeTransit(response), "",
                     "v5/direction/transit/integrated", Instant.now());
         } catch (RuntimeException v5Error) {
             ProviderFailure v5Failure = observe(asProviderFailure(v5Error));
-            if (!v5Failure.fallbackAllowed) {
-                return new RouteOutcome(v5Failure.status, null, v5Failure.getMessage(),
-                        "v5/direction/transit/integrated", Instant.now());
-            }
-            // v3 is the compatibility fallback used by the production adapter.
-            try {
-                JsonNode response = execute(
-                        () -> client.get(client.buildTransitFallbackRequest(origin, destination, city)),
-                        routeTimeoutMs,
-                        1);
-                return new RouteOutcome(OutcomeStatus.SUCCESS,
-                        AmapResponseNormalizer.normalizeTransit(response),
-                        "v5 transit fallback: " + v5Failure.getMessage(),
-                        "v3/direction/transit/integrated", Instant.now());
-            } catch (RuntimeException v3Error) {
-                ProviderFailure v3Failure = observe(asProviderFailure(v3Error));
-                return new RouteOutcome(v3Failure.status, null,
-                        "v5: " + v5Failure.getMessage() + "; v3: " + v3Failure.getMessage(),
-                        "v5/direction/transit/integrated", Instant.now());
-            }
+            return new GeoRouteOutcome(v5Failure.status, null, v5Failure.getMessage(),
+                    "v5/direction/transit/integrated", Instant.now());
         }
     }
 
-    private RouteOutcome firstSuccess(RouteOutcome first, RouteOutcome second) {
+    private GeoRouteOutcome loadTransitV3(String origin, String destination, String city, String reason) {
+        try {
+            JsonNode response = execute(
+                    () -> client.get(client.buildTransitFallbackRequest(origin, destination, city)), routeTimeoutMs, 1);
+            return new GeoRouteOutcome(GeoOutcomeStatus.SUCCESS,
+                    AmapResponseNormalizer.normalizeTransit(response), reason,
+                    "v3/direction/transit/integrated", Instant.now());
+        } catch (RuntimeException v3Error) {
+            ProviderFailure v3Failure = observe(asProviderFailure(v3Error));
+            return new GeoRouteOutcome(v3Failure.status, null,
+                    reason + "; V3 兼容路线失败: " + v3Failure.getMessage(),
+                    "v3/direction/transit/integrated", Instant.now());
+        }
+    }
+
+    private boolean isCityCode(String value) {
+        return value != null && value.trim().matches("\\d{3,4}");
+    }
+
+    private GeoRouteOutcome firstSuccess(GeoRouteOutcome first, GeoRouteOutcome second) {
         if (successful(first)) return first;
         if (successful(second)) return second;
         return first != null ? first : second;
     }
 
-    private boolean successful(RouteOutcome outcome) {
-        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS
+    private boolean successful(GeoRouteOutcome outcome) {
+        return outcome != null && outcome.status() == GeoOutcomeStatus.SUCCESS
                 && outcome.segment() != null && outcome.segment().metricsComplete();
     }
-    private long routeResultTtl(RouteOutcome outcome, long successTtl) {
+    private long routeResultTtl(GeoRouteOutcome outcome, long successTtl) {
         if (successful(outcome)) return successTtl;
         // A successful provider response without a usable route may change shortly.
         // Authentication, timeout and provider errors are never cached as an empty route.
-        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS ? ttlNanos(emptyRouteTtlMs) : 0L;
+        return outcome != null && outcome.status() == GeoOutcomeStatus.SUCCESS ? ttlNanos(emptyRouteTtlMs) : 0L;
     }
 
     private JsonNode execute(Supplier<JsonNode> operation, int timeoutMs, int retries) {
@@ -452,39 +477,49 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         }
         ProviderFailure latest = null;
         for (int attempt = 0; attempt <= retries; attempt++) {
-            Future<JsonNode> future = executor.submit(operation::get);
+            if (OperationDeadline.expired()) throw new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "规划请求预算已用尽", false);
+            Supplier<JsonNode> boundedOperation = OperationDeadline.carry(() -> {
+                if (OperationDeadline.expired()) throw new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "规划请求预算已用尽", false);
+                return operation.get();
+            });
+            Future<JsonNode> future;
+            try { future = executor.submit(boundedOperation::get); }
+            catch (RejectedExecutionException rejected) {
+                throw new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德请求队列已满", false);
+            }
             try {
-                return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+                return future.get(Math.min(OperationDeadline.remainingNanos(), TimeUnit.MILLISECONDS.toNanos(timeoutMs)), TimeUnit.NANOSECONDS);
             } catch (TimeoutException error) {
                 future.cancel(true);
-                latest = new ProviderFailure(OutcomeStatus.TIMEOUT, "高德接口超时");
+                latest = new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "高德接口超时");
             } catch (InterruptedException error) {
                 future.cancel(true);
                 Thread.currentThread().interrupt();
-                latest = new ProviderFailure(OutcomeStatus.UNAVAILABLE, "高德接口调用被中断");
+                latest = new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德接口调用被中断");
             } catch (ExecutionException error) {
                 future.cancel(true);
                 Throwable cause = error.getCause() == null ? error : error.getCause();
-                latest = classify(cause);
-                if (latest.status == OutcomeStatus.RATE_LIMITED) {
+                latest = asProviderFailure(cause);
+                if (latest.status == GeoOutcomeStatus.RATE_LIMITED) {
                     activateQpsCooldown();
                     break;
                 }
-                if (latest.status == OutcomeStatus.INVALID) break;
+                if (latest.status == GeoOutcomeStatus.INVALID) break;
             }
             if (attempt >= retries || latest == null || !latest.retryable
-                    || (latest.status != OutcomeStatus.TIMEOUT && latest.status != OutcomeStatus.UNAVAILABLE)) {
+                    || (latest.status != GeoOutcomeStatus.TIMEOUT && latest.status != GeoOutcomeStatus.UNAVAILABLE)) {
                 break;
             }
             try {
-                Thread.sleep(180L);
+                if (OperationDeadline.expired()) break;
+                TimeUnit.NANOSECONDS.sleep(Math.min(OperationDeadline.remainingNanos(), TimeUnit.MILLISECONDS.toNanos(180L)));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                return fail(new ProviderFailure(OutcomeStatus.UNAVAILABLE, "高德接口调用被中断", false));
+                return fail(new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德接口调用被中断", false));
             }
         }
         return fail(latest == null
-                ? new ProviderFailure(OutcomeStatus.UNAVAILABLE, "高德接口暂不可用")
+                ? new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德接口暂不可用")
                 : latest);
     }
 
@@ -498,23 +533,23 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     }
 
     private ProviderFailure observe(ProviderFailure failure) {
-        if (failure.status == OutcomeStatus.RATE_LIMITED) activateQpsCooldown();
+        if (failure.status == GeoOutcomeStatus.RATE_LIMITED) activateQpsCooldown();
         return failure;
     }
 
     private ProviderFailure classify(Throwable cause) {
         if (cause instanceof AmapResponseNormalizer.AmapResponseException responseFailure) {
             if (isRateLimited(responseFailure.info(), responseFailure.infocode(), responseFailure.getMessage())) {
-                return new ProviderFailure(OutcomeStatus.RATE_LIMITED, responseFailure.getMessage(), false, false);
+                return new ProviderFailure(GeoOutcomeStatus.RATE_LIMITED, responseFailure.getMessage(), false, false);
             }
             if (isAuthError(responseFailure.info(), responseFailure.infocode(), responseFailure.getMessage())) {
-                return new ProviderFailure(OutcomeStatus.AUTH_ERROR, responseFailure.getMessage(), false, false);
+                return new ProviderFailure(GeoOutcomeStatus.AUTH_ERROR, responseFailure.getMessage(), false, false);
             }
             boolean compatibility = isCompatibilityFailure(responseFailure.info(), responseFailure.getMessage());
-            return new ProviderFailure(OutcomeStatus.UNAVAILABLE, responseFailure.getMessage(), false, compatibility);
+            return new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, responseFailure.getMessage(), false, compatibility);
         }
         if (cause instanceof IllegalArgumentException || cause instanceof IllegalStateException) {
-            return new ProviderFailure(OutcomeStatus.INVALID, cause.getMessage(), false, false);
+            return new ProviderFailure(GeoOutcomeStatus.INVALID, cause.getMessage(), false, false);
         }
         Throwable cursor = cause;
         while (cursor != null) {
@@ -523,15 +558,15 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                     || String.valueOf(cursor.getMessage()).contains("handshake")
                     || String.valueOf(cursor.getMessage()).contains("SSL")
                     || String.valueOf(cursor.getMessage()).contains("TLS")) {
-                return new ProviderFailure(OutcomeStatus.TLS_ERROR, "高德TLS握手失败: " + cursor.getMessage(), true, false);
+                return new ProviderFailure(GeoOutcomeStatus.TLS_ERROR, "高德TLS握手失败: " + cursor.getMessage(), true, false);
             }
             if (cursor instanceof SocketTimeoutException || cursor instanceof TimeoutException
                     || String.valueOf(cursor.getMessage()).toLowerCase().contains("timeout")) {
-                return new ProviderFailure(OutcomeStatus.TIMEOUT, "高德接口超时", true, true);
+                return new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "高德接口超时", true, true);
             }
             cursor = cursor.getCause();
         }
-        return new ProviderFailure(OutcomeStatus.UNAVAILABLE, "高德接口暂不可用", true, true);
+        return new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德接口暂不可用", true, true);
     }
 
     private boolean isAuthError(String info, String infocode, String message) {
@@ -556,7 +591,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     }
 
     private ProviderFailure rateLimited(String reason) {
-        return new ProviderFailure(OutcomeStatus.RATE_LIMITED, reason, false, false);
+        return new ProviderFailure(GeoOutcomeStatus.RATE_LIMITED, reason, false, false);
     }
 
     private boolean qpsCooldownActive() {
@@ -585,33 +620,41 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     }
 
     private boolean validCoordinate(String value) {
-        AmapResponseNormalizer.Coordinate coordinate = AmapResponseNormalizer.parseCoordinate(value);
+        com.ai.guide.domain.geo.model.GeoCoordinate coordinate = com.ai.guide.domain.geo.model.GeoCoordinates.parse(value);
         return coordinate != null && Double.isFinite(coordinate.longitude())
                 && Double.isFinite(coordinate.latitude())
                 && coordinate.longitude() >= -180 && coordinate.longitude() <= 180
                 && coordinate.latitude() >= -90 && coordinate.latitude() <= 90;
     }
 
-    private <T> Future<T> submitOrRun(Supplier<T> task) {
-        FutureTask<T> futureTask = new FutureTask<>(task::get);
+    private <T> Future<T> submitRoute(Supplier<T> task) {
+        FutureTask<T> futureTask = new FutureTask<>(OperationDeadline.carry(task)::get);
+        if (OperationDeadline.expired()) { futureTask.cancel(false); return futureTask; }
         try {
             orchestrationExecutor.execute(futureTask);
         } catch (RejectedExecutionException rejected) {
-            futureTask.run();
+            // Running rejected provider work inline bypasses the caller's wait budget.
+            futureTask.cancel(false);
         }
         return futureTask;
     }
 
-    private RouteOutcome joinOutcome(Future<RouteOutcome> future) {
+    private GeoRouteOutcome joinOutcome(Future<GeoRouteOutcome> future, long deadline) {
         try {
-            return future.get();
+            return future.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+        } catch (TimeoutException timeout) {
+            future.cancel(true);
+            return new GeoRouteOutcome(GeoOutcomeStatus.TIMEOUT, null, "路线计算等待预算已用尽", "", Instant.now());
+        } catch (java.util.concurrent.CancellationException rejected) {
+            return new GeoRouteOutcome(GeoOutcomeStatus.UNAVAILABLE, null, "路线计算队列已满", "", Instant.now());
         } catch (InterruptedException interrupted) {
+            future.cancel(true);
             Thread.currentThread().interrupt();
-            return new RouteOutcome(OutcomeStatus.UNAVAILABLE, null, "路线计算被中断", "", Instant.now());
+            return new GeoRouteOutcome(GeoOutcomeStatus.UNAVAILABLE, null, "路线计算被中断", "", Instant.now());
         } catch (ExecutionException error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
             ProviderFailure failure = asProviderFailure(cause);
-            return new RouteOutcome(failure.status, null, failure.getMessage(), "", Instant.now());
+            return new GeoRouteOutcome(failure.status, null, failure.getMessage(), "", Instant.now());
         }
     }
 
@@ -624,6 +667,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
         };
     }
 
+
     @PreDestroy
     public void close() {
         orchestrationExecutor.shutdownNow();
@@ -631,19 +675,19 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
     }
 
     private static final class ProviderFailure extends RuntimeException {
-        private final OutcomeStatus status;
+        private final GeoOutcomeStatus status;
         private final boolean retryable;
         private final boolean fallbackAllowed;
 
-        private ProviderFailure(OutcomeStatus status, String message) {
-            this(status, message, status == OutcomeStatus.TIMEOUT, status == OutcomeStatus.UNAVAILABLE);
+        private ProviderFailure(GeoOutcomeStatus status, String message) {
+            this(status, message, status == GeoOutcomeStatus.TIMEOUT, status == GeoOutcomeStatus.UNAVAILABLE);
         }
 
-        private ProviderFailure(OutcomeStatus status, String message, boolean retryable) {
-            this(status, message, retryable, status == OutcomeStatus.UNAVAILABLE);
+        private ProviderFailure(GeoOutcomeStatus status, String message, boolean retryable) {
+            this(status, message, retryable, status == GeoOutcomeStatus.UNAVAILABLE);
         }
 
-        private ProviderFailure(OutcomeStatus status, String message,
+        private ProviderFailure(GeoOutcomeStatus status, String message,
                                 boolean retryable, boolean fallbackAllowed) {
             super(message == null || message.isBlank() ? "高德接口调用失败" : message);
             this.status = status;

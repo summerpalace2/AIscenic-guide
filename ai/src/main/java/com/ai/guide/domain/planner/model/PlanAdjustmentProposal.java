@@ -1,6 +1,5 @@
 package com.ai.guide.domain.planner.model;
 
-import com.ai.guide.domain.planner.service.ProposalStore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -21,6 +20,8 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class PlanAdjustmentProposal {
+    public static final long DEFAULT_TTL_MS = 15 * 60 * 1000L;
+
     private String proposalId;
     private String sessionId;
     private String conversationEpoch;
@@ -54,7 +55,11 @@ public class PlanAdjustmentProposal {
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean isExpired() {
-        return System.currentTimeMillis() > expiresAt;
+        return isExpired(System.currentTimeMillis());
+    }
+
+    public boolean isExpired(long nowMillis) {
+        return nowMillis >= expiresAt;
     }
 
     public Map<String, Object> asMap() {

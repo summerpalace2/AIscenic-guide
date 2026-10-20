@@ -2,7 +2,6 @@ package com.ai.guide.adapter.search.web;
 
 import com.ai.guide.application.search.SearchApplicationService;
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,9 +34,9 @@ public class SearchController {
     }
 
     @GetMapping("/amap")
-    public Result<List<AmapResponseNormalizer.PoiCandidate>> searchAmap(
+    public Result<List<com.ai.guide.domain.geo.model.GeoPoiCandidate>> searchAmap(
             @RequestParam String q,
-            @RequestParam(defaultValue = "重庆市") String city,
+            @RequestParam(defaultValue = "") String city,
             @RequestParam(required = false) String types) {
         return searchApplicationService.searchAmap(q, city, types);
     }

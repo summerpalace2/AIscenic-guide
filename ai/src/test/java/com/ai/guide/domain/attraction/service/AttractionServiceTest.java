@@ -28,14 +28,26 @@ class AttractionServiceTest {
             // 2. 验证 ID 唯一
             assertTrue(ids.add(attr.getId()), "ID 应该唯一: " + attr.getId());
 
-            // 3. 验证坐标合法 (必须含有逗号分隔的经纬度)
+            // Existing coordinate-backed assets retain their contract; new name-only assets await provider resolution.
             assertNotNull(attr.getLocation(), "坐标不能为空: " + attr.getId());
+            assertNotNull(attr.getCity(), "城市不能为空: " + attr.getId());
+            assertFalse(attr.getCity().isBlank(), "城市不能为空: " + attr.getId());
+            if ("重庆".equals(attr.getCity())) assertFalse(attr.getLocation().isBlank(), "重庆既有坐标资产不可退化: " + attr.getId());
+            if (attr.getLocation().isBlank()) {
+                assertNotNull(attr.getAmapQuery().get("keywords"), "待解析景点必须保留检索关键词: " + attr.getId());
+                assertFalse(String.valueOf(attr.getAmapQuery().get("keywords")).isBlank());
+            } else {
             String[] coord = attr.getLocation().split(",");
             assertEquals(2, coord.length, "坐标格式应该是 lng,lat: " + attr.getLocation());
             double lng = Double.parseDouble(coord[0]);
             double lat = Double.parseDouble(coord[1]);
-            assertTrue(lng >= 105.0 && lng <= 110.0, "经度应在重庆范围内: " + lng);
-            assertTrue(lat >= 28.0 && lat <= 31.0, "纬度应在重庆范围内: " + lat);
+            assertTrue(Double.isFinite(lng) && lng >= -180.0 && lng <= 180.0, "经度非法: " + lng);
+            assertTrue(Double.isFinite(lat) && lat >= -90.0 && lat <= 90.0, "纬度非法: " + lat);
+            if ("重庆".equals(attr.getCity())) {
+                assertTrue(lng >= 105.0 && lng <= 110.0, "经度应在重庆范围内: " + lng);
+                assertTrue(lat >= 28.0 && lat <= 31.0, "纬度应在重庆范围内: " + lat);
+            }
+            }
 
             // 4. 验证字段完整
             assertNotNull(attr.getName(), "name 不能为空: " + attr.getId());

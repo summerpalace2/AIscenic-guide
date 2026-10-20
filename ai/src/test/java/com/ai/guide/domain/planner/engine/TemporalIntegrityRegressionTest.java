@@ -1,6 +1,8 @@
 package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -10,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TemporalIntegrityRegressionTest {
     private final ItineraryTimeEngine engine = new ItineraryTimeEngine();
-    private final PlanVerifier verifier = new PlanVerifier();
+    private final PlanVerifier verifier = new PlanVerifier(new JsonTaxonomyAdapter());
 
     @Test void parsesHoursCompoundDecimalRangeAndHalfWithoutTreatingHoursAsMinutes() {
         assertEquals(120, engine.parseDurationMinutes("约 2 小时"));
@@ -20,6 +22,33 @@ class TemporalIntegrityRegressionTest {
         assertEquals(90, engine.parseDurationMinutes("1小时半"));
         assertEquals(90, engine.parseDurationMinutes("一个半小时"));
         assertEquals(30, engine.parseDurationMinutes("半小时"));
+        assertEquals(0, engine.parseDurationMinutes(null), "Missing duration must not create a synthetic visit length");
+        assertEquals(0, engine.parseKnownDurationMinutes(null), "Unknown duration must remain unknown rather than inventing a visit length");
+        assertNull(engine.parseExplicitTimeMinutes(null), "Unknown time must remain unknown to timeline calculations");
+        assertThrows(IllegalArgumentException.class, () -> engine.parseTimeMinutes(null),
+                "Compatibility callers must not silently turn a missing clock into noon");
+    }
+
+    @Test void rippleLeavesUnanchoredStopsWithoutInventedTimes() {
+        var first = stop("a", "", "60分钟");
+        var second = stop("b", "", "60分钟");
+        engine.rippleRecalculateStopTimesFromExplicitFacts(new ArrayList<>(List.of(first, second)), 1);
+        assertEquals("", second.get("time"));
+    }
+
+    @Test void explicitClockUsesValidTimeFirstAndDoesNotLetPlaceholderHideStartTime() {
+        assertEquals("10:00", engine.explicitClock(Map.of("time", "10:00", "startTime", "11:00")));
+        assertEquals("11:00", engine.explicitClock(Map.of("time", "待安排", "startTime", "11:00")));
+        assertEquals("11:00", engine.explicitClock(Map.of("startTime", "11:00")));
+    }
+
+    @Test void slotClassificationUsesExternalTemporalWindows() {
+        var taxonomy = new JsonTaxonomyAdapter();
+        assertTrue(engine.isMorningSlot("08:30", taxonomy));
+        assertFalse(engine.isMorningSlot("02:00", taxonomy));
+        assertTrue(engine.isEveningSlot("17:30", taxonomy));
+        assertTrue(engine.isEveningSlot("19:30", taxonomy));
+        assertFalse(engine.isEveningSlot("15:00", taxonomy));
     }
 
     @Test void rippleIncludesFullVisitAndResolvedTransferAcrossMidnight() {
@@ -42,6 +71,19 @@ class TemporalIntegrityRegressionTest {
         b.put("venueId", "a");
         b.put("time", "19:30");
         assertFalse(has(List.of(day("2026-10-07", a, b)), new TravelConstraints(), "TIME_OVERLAP"));
+    }
+
+    @Test void verifierRejectsTimedStopWithoutKnownVisitDuration() {
+        assertTrue(has(List.of(day("2026-10-07", stop("a", "09:00", ""))),
+                new TravelConstraints(), "VISIT_DURATION_UNKNOWN"));
+    }
+
+    @Test void verifierDoesNotInventTransferTimeWhenNoEstimatePolicyIsInstalled() {
+        var withoutEstimate = new PlanVerifier(TaxonomyPort.empty());
+        var first = stop("a", "09:00", "30分钟");
+        var second = stop("b", "10:00", "30分钟");
+        assertTrue(withoutEstimate.verify(List.of(day("2026-10-07", first, second)), new TravelConstraints())
+                .violations().stream().anyMatch(v -> "ROUTE_DURATION_UNKNOWN".equals(v.type())));
     }
 
     @Test void arrivalAndDepartureCompareActualClockAndWholeVisit() {

@@ -98,27 +98,30 @@ public final class PlanAdjustmentHelper {
         return null;
     }
 
-    public static boolean isDiningStop(Map<String, Object> stop) {
+    public static boolean isDiningStop(Map<String, Object> stop, com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort taxonomy) {
         if (stop == null) return false;
         String type = String.valueOf(stop.get("type"));
         String category = String.valueOf(stop.get("category"));
         String icon = String.valueOf(stop.get("icon"));
         String name = String.valueOf(stop.get("name"));
         String id = String.valueOf(stop.get("id"));
+        boolean mealName = List.of("slotBreakfast", "slotLunch", "slotDinner", "slotNightSnack", "slotTeaBreak")
+                .stream().flatMap(key -> taxonomy.getHints(key).stream()).anyMatch(name::contains);
         return "DINING".equalsIgnoreCase(type)
-                || "美食".equals(category)
-                || "餐".equals(icon)
+                || taxonomy.getHints("diningStopCategories").stream().anyMatch(category::equals)
+                || taxonomy.getHints("diningStopIcons").stream().anyMatch(icon::equals)
                 || Boolean.TRUE.equals(stop.get("isDining"))
-                || name.contains("午餐")
-                || name.contains("晚餐")
-                || name.contains("早餐")
-                || name.contains("宵夜")
-                || name.contains("茶歇")
+                || mealName
                 || id.contains("dining")
                 || id.contains("lunch")
                 || id.contains("dinner")
                 || id.contains("tea-break")
                 || id.contains("breakfast");
+    }
+
+    /** Compatibility predicate for callers without a taxonomy dependency; relies on structured fields and ID contract only. */
+    public static boolean isDiningStop(Map<String, Object> stop) {
+        return isDiningStop(stop, com.ai.guide.domain.taxonomy.gateway.TaxonomyPort.empty());
     }
 
     public static String extractDistrictFromStop(Map<String, Object> stop) {
@@ -128,17 +131,12 @@ public final class PlanAdjustmentHelper {
         return "";
     }
 
-    public static AttractionDiningKnowledge.DiningOption verifiedDiningOption(DiningVenue venue, String slotType) {
+    public static com.ai.guide.domain.dining.model.DiningOption verifiedDiningOption(DiningVenue venue, String slotType,
+                                                                                     com.ai.guide.domain.planner.engine.DiningCategoryGrounder grounder) {
         if (venue == null || safe(venue.getId()).isBlank() || safe(venue.getName()).isBlank()
                 || !isValidCoordinate(venue.getLocation())) return null;
-        String prefix = switch (slotType) {
-            case "BREAKFAST" -> "【早餐推荐】";
-            case "DINNER" -> "【晚餐推荐】";
-            case "TEA_BREAK" -> "【特色茶歇】";
-            case "NIGHT_SNACK" -> "【宵夜推荐】";
-            default -> "【午餐推荐】";
-        };
-        return new AttractionDiningKnowledge.DiningOption(venue.getId(), prefix + venue.getName(),
+        String prefix = grounder == null ? "" : grounder.mealDisplayPrefix(slotType);
+        return new com.ai.guide.domain.dining.model.DiningOption(venue.getId(), prefix + venue.getName(),
                 venue.getSpecialtyDish(), venue.getCategory(), venue.getAverageCost(), venue.getDuration(),
                 venue.getDistanceDesc(), venue.getSummary(), venue.getRecommendationReason(), venue.getTone(), venue.getLocation());
     }
@@ -275,28 +273,18 @@ public final class PlanAdjustmentHelper {
     }
 
     public static boolean isValidCoordinate(String location) {
-        if (location == null) return false;
-        String[] parts = location.split(",", -1);
-        if (parts.length != 2) return false;
-        try {
-            double longitude = Double.parseDouble(parts[0].trim());
-            double latitude = Double.parseDouble(parts[1].trim());
-            return Double.isFinite(longitude) && Double.isFinite(latitude)
-                    && longitude >= -180 && longitude <= 180 && latitude >= -90 && latitude <= 90;
-        } catch (NumberFormatException e) {
-            return false;
-        }
+        return com.ai.guide.domain.geo.model.GeoCoordinateRules.isValid(location);
     }
 
-    public static String resolveDefaultCoordinate(Map<String, Object> draftTrip, TravelConstraints constraints, List<Map<String, Object>> stops) {
+    public static String resolveDefaultCoordinate(Map<String, Object> draftTrip, TravelConstraints constraints,
+                                                   List<Map<String, Object>> stops, double maxCentroidSpanMeters) {
         if (stops != null && !stops.isEmpty()) {
             double sumLng = 0;
             double sumLat = 0;
-            double minLng = Double.MAX_VALUE;
-            double maxLng = -Double.MAX_VALUE;
-            double minLat = Double.MAX_VALUE;
-            double maxLat = -Double.MAX_VALUE;
             String lastValidLoc = null;
+            double lastLng = 0;
+            double lastLat = 0;
+            double maxDistanceFromLastMeters = 0;
             int count = 0;
 
             for (Map<String, Object> s : stops) {
@@ -312,20 +300,21 @@ public final class PlanAdjustmentHelper {
                                 && lng >= -180.0 && lng <= 180.0 && lat >= -90.0 && lat <= 90.0) {
                             sumLng += lng;
                             sumLat += lat;
-                            minLng = Math.min(minLng, lng);
-                            maxLng = Math.max(maxLng, lng);
-                            minLat = Math.min(minLat, lat);
-                            maxLat = Math.max(maxLat, lat);
+                            if (lastValidLoc != null) {
+                                maxDistanceFromLastMeters = Math.max(maxDistanceFromLastMeters,
+                                        haversineMeters(lng, lat, lastLng, lastLat));
+                            }
                             lastValidLoc = String.format(java.util.Locale.ROOT, "%.6f,%.6f", lng, lat);
+                            lastLng = lng;
+                            lastLat = lat;
                             count++;
                         }
                     } catch (Exception ignored) {}
                 }
             }
             if (count > 0) {
-                // 如果多个打卡点跨度过大（如相距上百公里的远郊武隆与巫山，经纬度跨度超过0.5度），
-                // 算术平均质心会畸变落入深山无人区；此时应锚定最新（最后一个有效）游览点
-                if ((maxLng - minLng > 0.5 || maxLat - minLat > 0.5) && lastValidLoc != null) {
+                // A wide route span makes the arithmetic centroid a poor search anchor; use the latest visit instead.
+                if (maxDistanceFromLastMeters > Math.max(0, maxCentroidSpanMeters) && lastValidLoc != null) {
                     return lastValidLoc;
                 }
                 return String.format(java.util.Locale.ROOT, "%.6f,%.6f", sumLng / count, sumLat / count);
@@ -333,6 +322,16 @@ public final class PlanAdjustmentHelper {
         }
         String start = extractStartCoordinate(draftTrip, constraints);
         return isValidCoordinate(start) ? start : null;
+    }
+
+    private static double haversineMeters(double lng1, double lat1, double lng2, double lat2) {
+        double latDelta = Math.toRadians(lat2 - lat1);
+        double lngDelta = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(latDelta / 2) * Math.sin(latDelta / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lngDelta / 2) * Math.sin(lngDelta / 2);
+        double safeA = Math.max(0, Math.min(1, a));
+        return 6_371_000 * 2 * Math.atan2(Math.sqrt(safeA), Math.sqrt(1 - safeA));
     }
 
     public static Integer number(Object value) {

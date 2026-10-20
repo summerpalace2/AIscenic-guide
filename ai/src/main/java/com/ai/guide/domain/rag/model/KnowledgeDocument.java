@@ -12,13 +12,17 @@ public class KnowledgeDocument {
     private String id;
     private String title;
     private String category;
+    private String scope = "UNSPECIFIED";
+    private String city = "";
     private String content;
     private String tags;           // JSON array string
     private String fileUrl;
     private String fileMd5;
     private String sourceName;     // Qdrant payload 中用于关联该文档碎片的 source
+    private String sourceUrl;      // Structured external reference; not an editorial approval flag.
     private String status;         // active / archived
     private String vectorStatus;   // pending / syncing / synced / failed
+    private String indexRequestMode; // durable TEXT / FILE / DELETE request, or empty
     private Integer chunkCount;
     private String createdBy;
     private LocalDateTime createdAt;

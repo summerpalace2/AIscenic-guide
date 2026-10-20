@@ -1,0 +1,193 @@
+package com.ai.guide.infrastructure.analytics.pdf;
+
+import com.lowagie.text.Font;
+import com.ai.guide.infrastructure.pdf.PdfFontProvider;
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.BaseFont;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
+import com.ai.guide.domain.analytics.gateway.AnalyticsRepositoryPort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import java.awt.*;
+import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 运营日报与统计总结 PDF 报表导出服务 (Analytics PDF Export Service)
+ *
+ * 所属领域：domain.analytics (运营监控与服务看板域)
+ * 架构职责：基于 OpenPDF/iText 引擎，将指定日期的服务总量、热门问题列表、情绪极性比例及异常反馈渲染为标准排版的 PDF 统计报告文档。
+ *
+ * 核心方法与职责：
+ * 1. {@link #exportDailyReport}: 生成指定日期的运营日报 PDF 字节流。
+ *    - 参数：date (报告日期，格式 yyyy-MM-dd；若为 null 则默认生成昨日报告)。
+ *    - 返回值：生成的 PDF 二进制字节数组 byte[]。
+ */
+@org.springframework.stereotype.Component
+public class OpenPdfAnalyticsReportRenderer implements com.ai.guide.domain.analytics.gateway.AnalyticsPdfRendererPort {
+
+    private static final Logger log = LoggerFactory.getLogger(OpenPdfAnalyticsReportRenderer.class);
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    private final AnalyticsRepositoryPort repository;
+    private final PdfFontProvider fonts;
+
+    public OpenPdfAnalyticsReportRenderer(AnalyticsRepositoryPort repository) {
+        this(repository, new PdfFontProvider());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OpenPdfAnalyticsReportRenderer(AnalyticsRepositoryPort repository, PdfFontProvider fonts) {
+        this.repository = repository;
+        this.fonts = fonts;
+    }
+
+    /**
+     * 导出日报 PDF
+     * @param date 日期 (yyyy-MM-dd)，null 表示昨天
+     * @return PDF 字节数组
+     */
+    public byte[] exportDailyReport(String date) {
+        if (date == null) date = LocalDate.now().minusDays(1).format(DATE_FMT);
+        String dayStart = date + " 00:00:00";
+        String dayEnd = LocalDate.parse(date).plusDays(1).format(DATE_FMT) + " 00:00:00";
+
+        AnalyticsRepositoryPort.DailyReportData data = repository.loadDailyReportData(dayStart, dayEnd);
+        int total = data.total();
+        int pos = data.positive();
+        int neg = data.negative();
+        List<Map<String, Object>> hotQuestions = data.hotQuestions();
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document document = new Document(PageSize.A4, 50, 50, 50, 50);
+            PdfWriter.getInstance(document, baos);
+            document.open();
+
+            BaseFont bf = fonts.getFont();
+            Font titleFont = new Font(bf, 22, Font.BOLD, new Color(0x63, 0x66, 0xF1));
+            Font h2Font = new Font(bf, 14, Font.BOLD, new Color(0x2D, 0x37, 0x48));
+            Font bodyFont = new Font(bf, 11, Font.NORMAL, new Color(0x33, 0x33, 0x33));
+            Font smallFont = new Font(bf, 10, Font.NORMAL, new Color(0x71, 0x80, 0x96));
+
+            Paragraph title = new Paragraph("渝游智策 - 日服务报告", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingAfter(10);
+            document.add(title);
+
+            Paragraph dateP = new Paragraph("报告日期: " + date, smallFont);
+            dateP.setAlignment(Element.ALIGN_CENTER);
+            dateP.setSpacingAfter(30);
+            document.add(dateP);
+
+            document.add(new Paragraph("一、数据概览", h2Font));
+            document.add(Chunk.NEWLINE);
+
+            PdfPTable statTable = new PdfPTable(2);
+            statTable.setWidthPercentage(60);
+            statTable.setHorizontalAlignment(Element.ALIGN_CENTER);
+            addStatRow(statTable, "总服务次数", Integer.toString(total), bf);
+            addStatRow(statTable, "正面情绪", Integer.toString(pos), bf);
+            addStatRow(statTable, "负面情绪", Integer.toString(neg), bf);
+            addStatRow(statTable, "满意度", total > 0 ? String.format("%.0f%%", (pos * 100.0 / total)) : "N/A", bf);
+            document.add(statTable);
+            document.add(Chunk.NEWLINE);
+
+            document.add(new Paragraph("二、热门问题 TOP5", h2Font));
+            document.add(Chunk.NEWLINE);
+
+            for (Map<String, Object> q : hotQuestions) {
+                document.add(new Paragraph("  " + q.get("rank") + ". " + q.get("question") + " (" + q.get("count") + "次)", bodyFont));
+            }
+            if (hotQuestions.isEmpty()) {
+                document.add(new Paragraph("  暂无数据", smallFont));
+            }
+
+            document.add(Chunk.NEWLINE);
+            document.add(new Paragraph("三、情绪分布", h2Font));
+            document.add(Chunk.NEWLINE);
+
+            PdfPTable emoTable = new PdfPTable(3);
+            emoTable.setWidthPercentage(80);
+            emoTable.setHorizontalAlignment(Element.ALIGN_CENTER);
+            addHeaderCell(emoTable, "情绪", bf);
+            addHeaderCell(emoTable, "次数", bf);
+            addHeaderCell(emoTable, "占比", bf);
+            addEmoRow(emoTable, "正面", pos, total, bf);
+            addEmoRow(emoTable, "负面", neg, total, bf);
+            addEmoRow(emoTable, "中性", total - pos - neg, total, bf);
+            document.add(emoTable);
+
+            document.add(Chunk.NEWLINE);
+            Paragraph footer = new Paragraph("本报告由智慧文旅 AI 决策助手自动生成", smallFont);
+            footer.setAlignment(Element.ALIGN_CENTER);
+            document.add(footer);
+
+            document.close();
+            log.info("[PDF] 日报导出完成: {} ({} bytes)", date, baos.size());
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("[PDF] 生成失败: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /** Historical exports render persisted data and range; they never re-query today's mutable service logs. */
+    public byte[] exportStoredReport(Map<String,Object> report) {
+        if(report==null)throw new IllegalArgumentException("报告不能为空");
+        String raw=java.util.Objects.toString(report.get("data"),"{}");
+        try(var out=new ByteArrayOutputStream()) {
+            var data=new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw);
+            Document document=new Document(PageSize.A4,50,50,50,50);PdfWriter.getInstance(document,out);document.open();
+            BaseFont bf=fonts.getFont();Font title=new Font(bf,18,Font.BOLD),body=new Font(bf,11);
+            document.add(new Paragraph(java.util.Objects.toString(report.get("title"),"运营历史报告"),title));
+            document.add(new Paragraph("报告类型："+report.get("type")+"；统计范围："+report.get("periodStart")+" — "+report.get("periodEnd"),body));
+            document.add(new Paragraph("以下内容为报告生成时保存的数据快照。",body));
+            var fields=data.fields();while(fields.hasNext()) {var entry=fields.next();document.add(new Paragraph(entry.getKey()+"："+(entry.getValue().isTextual()?entry.getValue().asText():entry.getValue().toPrettyString()),body));}
+            document.close();return out.toByteArray();
+        }catch(Exception e){throw new IllegalStateException("历史报告快照无法导出",e);}
+    }
+
+    private void addStatRow(PdfPTable table, String label, String value, BaseFont bf) {
+        Font font = new Font(bf, 12, Font.NORMAL);
+        PdfPCell labelCell = new PdfPCell(new Phrase(label, font));
+        labelCell.setPadding(8);
+        labelCell.setBackgroundColor(new Color(0xF7, 0xFA, 0xFC));
+        table.addCell(labelCell);
+        PdfPCell valueCell = new PdfPCell(new Phrase(value, font));
+        valueCell.setPadding(8);
+        valueCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(valueCell);
+    }
+
+    private void addHeaderCell(PdfPTable table, String text, BaseFont bf) {
+        Font font = new Font(bf, 11, Font.BOLD, Color.WHITE);
+        PdfPCell cell = new PdfPCell(new Phrase(text, font));
+        cell.setBackgroundColor(new Color(0x63, 0x66, 0xF1));
+        cell.setPadding(8);
+        cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(cell);
+    }
+
+    private void addEmoRow(PdfPTable table, String emotion, int count, int total, BaseFont bf) {
+        Font font = new Font(bf, 11, Font.NORMAL);
+        PdfPCell c1 = new PdfPCell(new Phrase(emotion, font));
+        c1.setPadding(6);
+        c1.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(c1);
+        PdfPCell c2 = new PdfPCell(new Phrase(String.valueOf(count), font));
+        c2.setPadding(6);
+        c2.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(c2);
+        PdfPCell c3 = new PdfPCell(new Phrase(total > 0 ? String.format("%.1f%%", (count * 100.0 / total)) : "N/A", font));
+        c3.setPadding(6);
+        c3.setHorizontalAlignment(Element.ALIGN_CENTER);
+        table.addCell(c3);
+    }
+
+}

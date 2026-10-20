@@ -1,0 +1,52 @@
+{
+  "checkpoint": "CP4.1-start",
+  "capturedAt": "2026-10-09",
+  "repository": "D:\\scenic-guide",
+  "head": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+  "trackedPatchSha256": "96f04a05e1dead4e9962aa405fbb12b76ff678de1fcd1ae4ba3879a3627dc3c1",
+  "trackedPatchCommand": "git diff --binary HEAD --output=%TEMP%\\CP4_1_starting_tracked.patch (run from repository via git -C D:\\scenic-guide)",
+  "scopeFiles": [
+    {
+      "path": "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java",
+      "sha256": "dba8036c8aa47af4c0e56ed5bbbf948bb1127d4508c76d3afd9fdd4a5c7136b1"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java",
+      "sha256": "3d14667d7cd6814b8009efa363c5b4174c3f84d8c0a4f19b583c2985c912e380"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java",
+      "sha256": "3517f96e000e525d2bfd130840985772ba20e2acb8116c140ddefee3d06aa489"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java",
+      "sha256": "7d9b0dc4ff63134190a7ca3b7740ecce67d7c9684d131fbd6875d0017395402a"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/trip/TripApplicationService.java",
+      "sha256": "137d8c922973fb53dd673bd1a6087d9ed3b4d67ffd25e036787b17730155efe7"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/trip/service/TripService.java",
+      "sha256": "c4f88b9a275e26386eef14a0456ec6829d70efaa3d74a274a984d757cef5de30"
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerSessionRepositoryPort.java",
+      "sha256": "fe5e5745188c173e17627c591efb20185102556c1af9a9081c0744ba569e6fb9"
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java",
+      "sha256": "052656e22bcbbea709c2b6af29e5bb486e4356b3ac868a7f5362452259fb97ba"
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java",
+      "sha256": "73cb9c43e1ac0dad1a3959169a5fe5c40ad3030ef1e7b0e5d8c4fe7345afb7ce"
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/domain/trip/service/TripServiceTest.java",
+      "sha256": "a222dd1b19d1ddc0eeb1b0577ae41be62012538a4490c02a48a75f9a64b2aac1"
+    }
+  ],
+  "statusShort": " M ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java\r\n M ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java\r\n M ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java\r\n M ai/src/main/java/com/ai/guide/common/config/KnowledgeDbConfig.java\r\n M ai/src/main/java/com/ai/guide/domain/memory/service/TravelMemoryService.java\r\n M ai/src/main/java/com/ai/guide/domain/planner/model/PlanAdjustmentProposal.java\r\n M ai/src/main/java/com/ai/guide/domain/planner/service/PendingIntentContinuations.java\r\n M ai/src/main/java/com/ai/guide/domain/planner/service/PlanAdjustmentService.java\r\n M ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java\r\n D ai/src/main/java/com/ai/guide/domain/planner/service/ProposalStore.java\r\n M ai/src/main/java/com/ai/guide/domain/planner/service/adjustment/AddStopAdjustmentStrategy.java\r\n M ai/src/main/java/com/ai/guide/domain/rag/service/KnowledgeDocumentService.java\r\n M ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java\r\n M ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java\r\n M ai/src/test/java/com/ai/guide/domain/memory/service/MemoryPaginationRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/memory/service/MemoryPromptLifecycleRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/memory/service/MemorySafetyBudgetRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/memory/service/TravelMemoryServiceTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/AgentARedTeamAssaultTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/AgentBRedTeamAssaultCampaignTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/CancellationProposalLifecycleTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/CombinedLogicRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/DeepAuditRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/FourthPlanningTemporalRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/P2DeepExploitAssaultTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/Phase6FinalClosureTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/PlanAdjustmentServiceTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/PlannerSafetyBoundaryRegressionTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/ProposalStoreAndChatContextTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/RealUserDiningExploitAssaultTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/RedTeamAdversarialAssaultTest.java\r\n M ai/src/test/java/com/ai/guide/domain/planner/service/ScopedReplanAndMultiSlotRegressionTest.java\r\n?? ai/src/main/java/com/ai/guide/application/planner/ApplyAdjustmentResult.java\r\n?? ai/src/main/java/com/ai/guide/application/planner/PlanningActor.java\r\n?? ai/src/main/java/com/ai/guide/application/planner/PreviewAdjustmentResult.java\r\n?? ai/src/main/java/com/ai/guide/domain/memory/port/\r\n?? ai/src/main/java/com/ai/guide/domain/planner/gateway/ProposalRepositoryPort.java\r\n?? ai/src/main/java/com/ai/guide/domain/planner/model/AdjustmentLifecycleExecution.java\r\n?? ai/src/main/java/com/ai/guide/domain/planner/model/AdjustmentPreview.java\r\n?? ai/src/main/java/com/ai/guide/domain/planner/model/AdjustmentPreviewExecution.java\r\n?? ai/src/main/java/com/ai/guide/domain/planner/model/RestoreDraftRequest.java\r\n?? ai/src/main/java/com/ai/guide/domain/planner/model/StopPlan.java\r\n?? ai/src/main/java/com/ai/guide/infrastructure/memory/\r\n?? ai/src/main/java/com/ai/guide/infrastructure/planner/proposal/\r\n?? ai/src/test/java/com/ai/guide/application/planner/\r\n?? ai/src/test/java/com/ai/guide/domain/memory/port/\r\n?? ai/src/test/java/com/ai/guide/domain/planner/model/StopPlanRoundTripTest.java\r\n?? ai/src/test/java/com/ai/guide/domain/planner/service/LatePreviewCancellationLifecycleTest.java\r\n?? ai/src/test/java/com/ai/guide/domain/planner/service/PlannerDraftRestoreTest.java\r\n?? ai/src/test/java/com/ai/guide/infrastructure/planner/proposal/\r\n?? docs/baseline/\r\n?? docs/refactor/",
+  "behavior": "Current PlannerService.save: anonymous actor => 401; find owned USER session or claim anonymous capability for actor; create snapshot from server-held session only; key planner-save-{sessionId}-{currentVersion}; TripService.savePlannerSnapshot handles stable formal ID, PLANNER_SAVE/PLANNER_LINK idempotency, NOOP and sourceTripVersion CAS/rebase; session link retried up to 3 with newer server draft preserved; response status/body mirrored by PlannerController."
+}

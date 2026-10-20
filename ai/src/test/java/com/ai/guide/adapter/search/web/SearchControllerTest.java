@@ -2,7 +2,7 @@ package com.ai.guide.adapter.search.web;
 
 import com.ai.guide.application.search.SearchApplicationService;
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -49,8 +50,8 @@ class SearchControllerTest {
     @Test
     @DisplayName("GET /ai/search/amap - 成功检索高德 POI")
     void testSearchAmapSuccess() throws Exception {
-        AmapResponseNormalizer.PoiCandidate poi = new AmapResponseNormalizer.PoiCandidate(
-                "B001", "解放碑步行街", new AmapResponseNormalizer.Coordinate(106.57, 29.55),
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = new com.ai.guide.domain.geo.model.GeoPoiCandidate(
+                "B001", "解放碑步行街", new com.ai.guide.domain.geo.model.GeoCoordinate(106.57, 29.55),
                 "渝中区", "风景名胜", null, null, "B001", "http://photo.jpg", null
         );
         when(applicationService.searchAmap(eq("解放碑"), eq("重庆市"), eq("风景名胜")))
@@ -70,11 +71,12 @@ class SearchControllerTest {
     @Test
     @DisplayName("GET /ai/search/amap - 高德服务不可用时返回 503")
     void testSearchAmapServiceUnavailable() throws Exception {
-        when(applicationService.searchAmap(eq("大足石刻"), eq("重庆市"), anyString()))
+        when(applicationService.searchAmap(eq("大足石刻"), eq("重庆市"), nullable(String.class)))
                 .thenReturn(Result.error(503, "高德检索暂不可用: 未配置高德服务端密钥"));
 
         mockMvc.perform(get("/ai/search/amap")
                         .param("q", "大足石刻")
+                        .param("city", "重庆市")
                         .param("types", "110000"))
                 .andExpect(status().isOk()) // Controller 返回 ResponseEntity 包装的 Result 或直接 Result
                 .andExpect(jsonPath("$.code").value(503))

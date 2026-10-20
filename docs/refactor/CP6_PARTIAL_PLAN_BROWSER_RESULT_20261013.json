@@ -1,0 +1,55 @@
+{
+  "jarSha256": "61cf86f0905be968fd97c85afd8284573b6da3d6dded0c33d84e3a81d055700b",
+  "providers": "controlled localhost HTTP only; no external supplier acceptance",
+  "realJavaDeadline": true,
+  "phases": {
+    "initial": {
+      "stopCount": 3,
+      "version": 1,
+      "degraded": true,
+      "reasons": [
+        "PLANNING_DEADLINE_EXCEEDED"
+      ],
+      "spatialStatus": "PARTIAL_TIMEOUT"
+    },
+    "preview": {
+      "stopCount": 2,
+      "version": 1,
+      "degraded": true,
+      "reasons": [
+        "PLANNING_DEADLINE_EXCEEDED"
+      ],
+      "spatialStatus": "PARTIAL_TIMEOUT"
+    },
+    "applied": {
+      "stopCount": 2,
+      "version": 2,
+      "degraded": true,
+      "reasons": [
+        "PLANNING_DEADLINE_EXCEEDED"
+      ],
+      "spatialStatus": "PARTIAL_TIMEOUT"
+    },
+    "restored": {
+      "stopCount": 2,
+      "version": 1,
+      "degraded": true,
+      "reasons": [
+        "PLANNING_DEADLINE_EXCEEDED"
+      ],
+      "spatialStatus": "PARTIAL_TIMEOUT"
+    },
+    "deleted": {
+      "stopCount": 1,
+      "version": 2,
+      "degraded": true,
+      "reasons": [
+        "PLANNING_DEADLINE_EXCEEDED"
+      ],
+      "spatialStatus": "PARTIAL_TIMEOUT"
+    }
+  },
+  "reopenedWithNewPlanningSession": true,
+  "completeControlHasDeadline": false,
+  "previewLeftCurrentPlanUnchanged": true
+}

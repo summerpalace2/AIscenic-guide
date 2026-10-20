@@ -1,0 +1,87 @@
+{
+  "rules": [
+    {
+      "domain": "DIET",
+      "keywords": ["烧烤", "烤串", "烤脑花", "烤鱼", "吃烧烤", "整点烧烤"],
+      "trait": "偏好特色烧烤与市井烤串",
+      "confidence": 0.96,
+      "suggestions": [
+        {"action":"replace_meal","label":"安排附近特色烧烤或烤串聚餐","icon":"🍢","payload":"寻找并替换为附近特色烧烤餐厅"},
+        {"action":"save_slot_preference","label":"将【烧烤】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"烧烤\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["甜的", "甜品", "甜食", "吃甜", "想吃甜", "糖水", "豆花", "冰粉", "凉糕", "糍粑", "糕点", "蛋糕", "烘焙"],
+      "trait": "偏好甜品糖水与特色甜点",
+      "confidence": 0.93,
+      "suggestions": [
+        {"action":"add_stop","label":"沿途加一站甜点/糖水小憩","icon":"🍰","payload":"在当前行程加入一处甜点或特色糖水小憩停留"},
+        {"action":"save_slot_preference","label":"将【甜品糖水】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"甜品糖水\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["清淡", "不吃辣", "少辣", "微辣", "不能吃辣", "少油", "喝汤", "热汤", "暖胃", "养生", "炖汤", "抄手清汤", "老鸭汤", "蹄花"],
+      "trait": "饮食偏好清淡温润与少辣热汤",
+      "confidence": 0.94,
+      "suggestions": [
+        {"action":"replace_meal","label":"安排清淡汤品或温和正餐","icon":"🥣","payload":"安排清淡滋补汤品正餐"},
+        {"action":"save_slot_preference","label":"将【清淡少辣】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"清淡少辣\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["火锅", "老火锅", "九宫格", "串串", "毛血旺", "辣子鸡", "江湖菜", "重辣", "中辣", "特辣", "麻辣", "喜辣", "爱吃辣", "想吃辣", "喜欢吃辣", "吃辣", "吃点辣", "能吃辣", "无辣不欢", "嗜辣", "辣的", "整点辣", "搞点辣", "川菜", "爆辣", "红汤"],
+      "trait": "饮食偏好麻辣浓郁与地道火锅",
+      "confidence": 0.95,
+      "suggestions": [
+        {"action":"replace_meal","label":"推荐并替换为符合口味的麻辣餐饮","icon":"🍲","payload":"寻找并替换为附近符合用户麻辣偏好的餐厅"},
+        {"action":"save_slot_preference","label":"将【老火锅】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"老火锅\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["茶馆", "老茶馆", "盖碗茶", "喝茶", "喝茶馆", "泡茶", "品茗"],
+      "trait": "偏好特色老茶馆与慢生活品茗",
+      "confidence": 0.95,
+      "suggestions": [
+        {"action":"add_stop","label":"沿途安排老茶馆品茗停留","icon":"🍵","payload":"在路线中增加一处特色老茶馆或盖碗茶品茗停留"},
+        {"action":"save_slot_preference","label":"将【老茶馆】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"老茶馆\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["咖啡", "下午茶", "拿铁", "特调", "精酿", "歇歇脚", "找个地方坐坐"],
+      "trait": "偏好咖啡、饮品与休闲小憩",
+      "confidence": 0.91,
+      "suggestions": [
+        {"action":"add_stop","label":"沿途安排饮品与休息停留","icon":"☕","payload":"在路线中增加一处饮品或休息点"},
+        {"action":"save_slot_preference","label":"将【饮品休息】加入偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"饮品休息\"}"}
+      ]
+    },
+    {
+      "domain": "DIET",
+      "keywords": ["夜市", "小吃街", "路边摊", "逛吃", "酸辣粉", "小面", "特色小吃", "好吃街"],
+      "trait": "偏好街头特色小吃与夜市体验",
+      "confidence": 0.92,
+      "suggestions": [
+        {"action":"add_stop","label":"晚间衔接特色小吃体验","icon":"🍢","payload":"行程晚间连接当地特色小吃区域"},
+        {"action":"save_slot_preference","label":"将【特色小吃】加入美食偏好","icon":"✦","payload":"{\"slot\":\"dining\",\"tag\":\"特色小吃\"}"}
+      ]
+    },
+    {"domain":"PACE","keywords":["走累","脚酸","脚疼","腿酸","腿疼","膝盖","走不动","爬不动","少走","不想走","懒得走","有点懒","很懒","太懒","偷懒","犯懒","不想动","少爬坡","少台阶","平路","平地","爬坡累","体力有限","体力一般","省力","省腿"],"trait":"偏好少走路，优先平路与平缓动线","confidence":0.96,"suggestions":[{"action":"replan_pace","label":"优化为少台阶与低步行平缓路线","icon":"🚶","payload":"优化今天行程，少走路、少台阶、优先平路"},{"action":"reduce_density","label":"精简日程，减少1处步行较远的站点","icon":"⏱","payload":"今天行程太累了，少推荐一个景点"},{"action":"save_slot_preference","label":"将【少爬坡少走路】加入出行偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"少爬坡少走路\"}"}]},
+    {"domain":"PACE","keywords":["慢节奏","不想太赶","太累","别太赶","休闲","轻松点","不要特种兵","不赶时间","佛系游"],"trait":"出行偏好慢节奏休闲，避免奔波","confidence":0.92,"suggestions":[{"action":"replan_pace","label":"调整为慢节奏舒适漫游模式","icon":"🌿","payload":"调整今天的游览节奏更从容一些，留足休息时间"},{"action":"save_slot_preference","label":"将【慢节奏休闲】加入出行偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"慢节奏休闲\"}"}]},
+    {"domain":"PACE","keywords":["起不来","睡懒觉","睡到自然醒","晚起","上午不出发","下午才出门","不早起","起太早"],"trait":"作息偏好从容晚起，睡到自然醒","confidence":0.90,"suggestions":[{"action":"adjust_time","label":"顺延上午出发时间","icon":"⏰","payload":"将出发时间推迟，行程从容安排"},{"action":"save_slot_preference","label":"将【习惯晚起】加入出行偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"习惯晚起\"}"}]},
+    {"domain":"PACE","keywords":["特种兵","充实","暴走","多逛几个","多看几个","不怕累","多走走","抓紧时间"],"trait":"偏好高密度充实打卡，多走多看","confidence":0.89,"suggestions":[{"action":"add_stop","label":"顺路方向追加1处特色打卡点","icon":"🚀","payload":"在顺路方向再增加一个值得一看的特色景点"},{"action":"save_slot_preference","label":"将【充实高效打卡】加入出行偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"充实高效打卡\"}"}]},
+    {"domain":"ENVIRONMENT","keywords":["下雨","雨天","雨好大","避雨","鞋湿","淋雨","室内","雨季"],"trait":"注重天气体感，雨天优先室内场馆","confidence":0.95,"suggestions":[{"action":"indoor_mode","label":"切换为室内舒适避雨场馆","icon":"☂","payload":"今天下雨，请优先安排室内舒适场馆"},{"action":"save_slot_preference","label":"将【室内场馆】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"室内场馆\"}"}]},
+    {"domain":"ENVIRONMENT","keywords":["太热","怕热","怕晒","防晒","中暑","大太阳","吹空调","避暑","暴晒"],"trait":"注重防晒避暑，优先阴凉与空调环境","confidence":0.92,"suggestions":[{"action":"cool_mode","label":"调整炎热时段为室内或清凉体验","icon":"❄","payload":"调整炎热时段为室内或清凉避暑安排"},{"action":"save_slot_preference","label":"将【室内避暑】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"室内避暑\"}"}]},
+    {"domain":"ENVIRONMENT","keywords":["人太多","人挤人","排队","清静","安静","小众","冷门","不想挤","清幽"],"trait":"偏好小众清幽去处，避开人流拥挤","confidence":0.91,"suggestions":[{"action":"quiet_mode","label":"替换为同片区清幽小众去处","icon":"🍃","payload":"避开拥挤地点，推荐同区域安静的小众去处"},{"action":"save_slot_preference","label":"将【清幽小众】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"清幽小众\"}"}]},
+    {"domain":"EXPERIENCE","keywords":["拍照","摄影","出片","机位","找角度","发朋友圈","汉服","写真","拍大片","好看的照片"],"trait":"重视摄影出片，追求取景与光影","confidence":0.93,"suggestions":[{"action":"photo_mode","label":"优化路线至周边摄影取景点","icon":"📸","payload":"推荐附近取景效果好的摄影机位"},{"action":"save_slot_preference","label":"将【摄影出片】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"摄影出片\"}"}]},
+    {"domain":"EXPERIENCE","keywords":["夜景","看夜景","夜色","立交桥","轻轨穿楼","赛博朋克","天台","城市灯光"],"trait":"偏爱城市夜景与夜间观景","confidence":0.94,"suggestions":[{"action":"night_view","label":"优化傍晚与晚间观景安排","icon":"🌙","payload":"将傍晚和晚间行程优化为适合观景的地点"},{"action":"save_slot_preference","label":"将【夜景观景】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"夜景观景\"}"}]},
+    {"domain":"EXPERIENCE","keywords":["历史","人文","古迹","非遗","老街","博物馆","古镇","古建","老故事","传统"],"trait":"偏爱人文历史与传统文化","confidence":0.91,"suggestions":[{"action":"culture_mode","label":"沿途安排人文历史与文化场馆","icon":"🏛️","payload":"推荐附近具有历史文化价值的场馆与古迹"},{"action":"save_slot_preference","label":"将【人文历史】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"人文历史\"}"}]},
+    {"domain":"EXPERIENCE","keywords":["自然","山水","峡谷","瀑布","徒步","森林","公园","风景区","爬山"],"trait":"偏爱自然山水与户外风光","confidence":0.92,"suggestions":[{"action":"add_stop","label":"沿途增加自然风光停留","icon":"🏞️","payload":"推荐附近自然风光体验点"},{"action":"save_slot_preference","label":"将【自然山水】加入景点偏好","icon":"✦","payload":"{\"slot\":\"attraction\",\"tag\":\"自然山水\"}"}]},
+    {"domain":"COMPANION","keywords":["老人","长辈","父母","爸妈","带老人","老年人","腿脚不便"],"trait":"同行有长辈，优先适老舒适与休息设施","confidence":0.95,"suggestions":[{"action":"senior_friendly","label":"适配长辈体感：少台阶、避大坡度","icon":"🧓","payload":"为长辈优化行程，避开陡坡台阶并增加休息"},{"action":"save_memory","label":"将【同行有长辈需适老关照】沉淀至档案","icon":"✦","payload":"同行有长辈，优先适老舒适与休息设施"}]},
+    {"domain":"COMPANION","keywords":["带娃","孩子","宝宝","小朋友","亲子","游乐","推车"],"trait":"家庭亲子出行，注重儿童友好与推车平顺","confidence":0.93,"suggestions":[{"action":"kids_friendly","label":"切换为亲子友好与推车平顺动线","icon":"👶","payload":"优化为儿童友好动线，避开陡坡并增加适龄体验"},{"action":"save_memory","label":"将【亲子出行需兼顾儿童】沉淀至档案","icon":"✦","payload":"家庭亲子出行，注重儿童友好与推车平顺"}]}
+  ]
+}

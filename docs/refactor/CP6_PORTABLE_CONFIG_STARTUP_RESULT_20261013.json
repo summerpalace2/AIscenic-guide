@@ -1,0 +1,84 @@
+{
+  "exportTests": {
+    "run": 4,
+    "passed": 4
+  },
+  "scope": "Isolated startup/configuration; not real infrastructure acceptance",
+  "bff": {
+    "ready": true,
+    "processPortOverridesFile": true,
+    "selectedFilePublicMapLoaded": true,
+    "privateProviderValuesNotExposed": true,
+    "externalUpstream": false,
+    "directory": "C:\\Users\\summer\\AppData\\Local\\Temp\\BFF 配置核验-VM4wzS"
+  },
+  "node": {
+    "passed": 87,
+    "failed": 0,
+    "run": 87,
+    "skipped": 0
+  },
+  "java": {
+    "jar": "D:\\scenic-guide\\ai\\target\\scenic-guide-ai-0.0.1-SNAPSHOT.jar",
+    "results": [
+      {
+        "scenario": "missing-jwt",
+        "ready": false,
+        "aggregateHealthStatus": null,
+        "jwtRequiredFailure": true,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": 1
+      },
+      {
+        "scenario": "blank-provider",
+        "ready": false,
+        "aggregateHealthStatus": null,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": true,
+        "exitBeforeCleanup": 1
+      },
+      {
+        "scenario": "local-file",
+        "ready": true,
+        "aggregateHealthStatus": 503,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": null
+      },
+      {
+        "scenario": "process-wins",
+        "ready": true,
+        "aggregateHealthStatus": 503,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": null
+      },
+      {
+        "scenario": "jvm-wins",
+        "ready": true,
+        "aggregateHealthStatus": 503,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": null
+      },
+      {
+        "scenario": "parent-file",
+        "ready": true,
+        "aggregateHealthStatus": 503,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": null
+      },
+      {
+        "scenario": "process-only",
+        "ready": true,
+        "aggregateHealthStatus": 503,
+        "jwtRequiredFailure": false,
+        "providerRequiredFailure": false,
+        "exitBeforeCleanup": null
+      }
+    ],
+    "localProviderCalls": 0,
+    "fixtureDirectory": "C:\\Users\\summer\\AppData\\Local\\Temp\\cp6-java-config-lbeh2ns_"
+  }
+}

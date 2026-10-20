@@ -1,0 +1,11 @@
+{
+  "outcome": "not_used",
+  "reason": "已按隔离数据库验收检索经验，未命中合适主题，未套用历史经验。依据源码、独立审查及修复前失败回归，修正PG初始化锁范围和schema隔离；用户env确认仅SQLite，未宣称真实PG通过。",
+  "effect": "完成迁移逻辑修复、请求供应商预算及真实聊天追问核验；最终后端1183项中1169通过14跳过。真实浏览器规划/预览/应用/保存/恢复/继续删站单次通过；真实部分生成分支和PG仍未验证。已有经验未采用，不能归因经验带来收益。",
+  "evidence": [
+    {"path": "D:/scenic-guide/docs/refactor/CP6_SEQUENTIAL_READINESS_20261012.md", "role": "verification"},
+    {"path": "D:/scenic-guide/cp6-schema-before.log", "role": "verification"},
+    {"path": "D:/scenic-guide/cp6-sequential-final-full.log", "role": "verification"},
+    {"path": "D:/scenic-guide/docs/refactor/CP6_SEQUENTIAL_FINAL_TEST_SUMMARY_20261012.json", "role": "verification"}
+  ]
+}

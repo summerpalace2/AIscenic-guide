@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "directory": "C:\\Users\\summer\\AppData\\Local\\Temp\\cp6-bff-cluster-pMagxb",
+  "schema": "cp6_b533935b30bf4d88808d4fe8f363eff7",
+  "phases": [
+    "same-cookie-cross-bff-auth",
+    "formal-read-failure-compensates-owned-pending-open",
+    "ack-lost-receipt-recovery-without-blind-compensation",
+    "open-lost-receipt-cross-instance-recovery",
+    "chat-server-history-cross-java",
+    "preview-isolated-from-current-authoritative-trip",
+    "apply-lost-receipt-cross-instance-exactly-once",
+    "apply-key-fingerprint-conflict",
+    "prewarmed-bff-refreshes-current-plan-context",
+    "simultaneous-cross-instance-confirm-one-revision",
+    "cross-instance-cancel-rejects-stale-proposal",
+    "anonymous-cannot-read-user-planner-session",
+    "other-owner-cannot-read-user-planner-session",
+    "cross-bff-logout-invalidates-original-cookie",
+    "bff-peer-kill-save-reopen-retains-server-chat-history"
+  ],
+  "instances": {
+    "java": 2,
+    "bff": 2
+  },
+  "jarSha256": "fa7f6e9721878b957a0c73e68196059bdff33d9fc0fe0c42508aac71c15af050",
+  "supplierMode": "controlled local HTTP; not real model semantic quality",
+  "platform": "Windows PG16.15/community Redis7.4.3",
+  "cleanup": {
+    "applicationProcessesStopped": true,
+    "schemaDropped": true,
+    "redisFlushed": false,
+    "redisScope": "Dedicated disposable runtime; service shutdown is verified separately by the orchestrator"
+  },
+  "observedEvidence": {
+    "streamingModelRequests": 4,
+    "droppedCommittedOpenReceipts": 2,
+    "droppedCommittedApplyReceipts": 1,
+    "droppedCommittedAckReceipts": 2
+  },
+  "evidenceSha256": {
+    "result-summary.json": "6ad1e04c67c155451860219839e7c8fb7f3880e13d22a675a40fb92d9ffb4c0c",
+    "proxy-calls.json": "6721f61925693757868c6a2b5169524dea7dd6bc236d1dfcbc9ce08dd50f079e",
+    "provider-calls.json": "10e20ca833d0c1871ad5ae2ed0c7a31f68194a97f4a88507a679a9cbb390964e"
+  },
+  "sourceSha256": {
+    "D:\\scenic-guide\\tools\\cp6-infra\\verify-bff-cluster.mjs": "1874d576300f97c5bc39cf4b0032e14910067cd3b8eb427a59cece53721ebfa4",
+    "D:\\loop-p0-functional-inventory-1-home\\server\\index.mjs": "6c744cbd80b07eff6af8c392aa2fdf5ca195e6ca124ebdff4f208a1499040784"
+  }
+}

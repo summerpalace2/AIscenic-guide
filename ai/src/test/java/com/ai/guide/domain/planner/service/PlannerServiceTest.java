@@ -65,7 +65,7 @@ class PlannerServiceTest {
         mutation.setReason("少走路");
         mutation.setSessionAccessToken(String.valueOf(created.body().get("sessionAccessToken")));
         PlannerService.ServiceResult replanned = plannerService.replan(String.valueOf(created.body().get("sessionId")), mutation);
-        assertEquals(200, replanned.status());
+        assertEquals(200, replanned.status(), () -> replanned.body().toString());
         assertEquals("cq-grand-theatre", replanned.body().get("replacementVenueId"));
         Map<?, ?> updatedTrip = (Map<?, ?>) replanned.body().get("trip");
         assertEquals(2, updatedTrip.get("version"));
@@ -76,7 +76,7 @@ class PlannerServiceTest {
     void guestIdempotencyReplayRequiresTheSameCapability() {
         String key = "planner-guest-replay-" + UUID.randomUUID();
         PlanRequest firstRequest = new PlanRequest();
-        firstRequest.setPrompt("喜欢城市和夜景");
+        firstRequest.setPrompt("重庆旅游，喜欢城市和夜景");
         firstRequest.setIdempotencyKey(key);
         PlannerService.ServiceResult first = plannerService.create(firstRequest);
         assertEquals(200, first.status());
@@ -84,7 +84,7 @@ class PlannerServiceTest {
         String capability = String.valueOf(first.body().get("sessionAccessToken"));
 
         PlanRequest replayRequest = new PlanRequest();
-        replayRequest.setPrompt("喜欢城市和夜景");
+        replayRequest.setPrompt("重庆旅游，喜欢城市和夜景");
         replayRequest.setIdempotencyKey(key);
         replayRequest.setSessionAccessToken(capability);
         PlannerService.ServiceResult replay = plannerService.create(replayRequest);
@@ -92,14 +92,14 @@ class PlannerServiceTest {
         assertEquals(sessionId, replay.body().get("sessionId"));
 
         PlanRequest missingCapability = new PlanRequest();
-        missingCapability.setPrompt("喜欢城市和夜景");
+        missingCapability.setPrompt("重庆旅游，喜欢城市和夜景");
         missingCapability.setIdempotencyKey(key);
         PlannerService.ServiceResult isolated = plannerService.create(missingCapability);
         assertEquals(200, isolated.status());
         assertNotEquals(sessionId, isolated.body().get("sessionId"));
 
         PlanRequest wrongCapability = new PlanRequest();
-        wrongCapability.setPrompt("喜欢城市和夜景");
+        wrongCapability.setPrompt("重庆旅游，喜欢城市和夜景");
         wrongCapability.setIdempotencyKey(key);
         wrongCapability.setSessionAccessToken("wrong-capability");
         assertEquals(401, plannerService.create(wrongCapability).status());
@@ -108,7 +108,7 @@ class PlannerServiceTest {
     @Test
     void rejectsStalePlannerVersion() {
         PlanRequest request = new PlanRequest();
-        request.setPrompt("喜欢城市和夜景");
+        request.setPrompt("周六上午到重庆，周日晚上离开，玩两天，喜欢城市和夜景");
         request.setIdempotencyKey("planner-stale-" + UUID.randomUUID());
         PlannerService.ServiceResult created = plannerService.create(request);
         String sessionId = String.valueOf(created.body().get("sessionId"));
@@ -119,7 +119,8 @@ class PlannerServiceTest {
         mutation.setReason("看夜景");
         mutation.setExpectedVersion(1);
         mutation.setSessionAccessToken(token);
-        assertEquals(200, plannerService.replan(sessionId, mutation).status());
+        var initialReplan = plannerService.replan(sessionId, mutation);
+        assertEquals(200, initialReplan.status(), () -> initialReplan.body().toString());
 
         PlannerMutationRequest stale = new PlannerMutationRequest();
         stale.setTargetStopId("day1-jiefangbei");
@@ -148,7 +149,7 @@ class PlannerServiceTest {
 
             PlanRequest firstRequest = new PlanRequest();
             firstRequest.setUsePreferences(true);
-            firstRequest.setPrompt("");
+            firstRequest.setPrompt("重庆旅游");
             firstRequest.setIdempotencyKey("planner-preference-history-" + UUID.randomUUID());
             PlannerService.ServiceResult first = plannerService.create(firstRequest);
             assertEquals(200, first.status());
@@ -173,7 +174,7 @@ class PlannerServiceTest {
 
             PlanRequest secondRequest = new PlanRequest();
             secondRequest.setUsePreferences(true);
-            secondRequest.setPrompt("");
+            secondRequest.setPrompt("重庆旅游");
             secondRequest.setIdempotencyKey("planner-preference-history-" + UUID.randomUUID());
             PlannerService.ServiceResult second = plannerService.create(secondRequest);
             assertEquals(200, second.status());
@@ -346,6 +347,17 @@ class PlannerServiceTest {
         assertEquals(revisionsBefore, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM planner_plan_revision", Integer.class));
         assertEquals(tripsBefore, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trip", Integer.class));
         assertEquals(tripVersionsBefore, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM trip_version", Integer.class));
+    }
+
+    @Test void createFingerprintIgnoresMapOrderButPreservesListOrder() {
+        var first=new java.util.LinkedHashMap<String,Object>();first.put("a",1);first.put("b",2);
+        var second=new java.util.LinkedHashMap<String,Object>();second.put("b",2);second.put("a",1);
+        assertEquals(creationIdentity(Map.of("nested",first)),creationIdentity(Map.of("nested",second)));
+        assertNotEquals(creationIdentity(Map.of("ordered",List.of("a","b"))),creationIdentity(Map.of("ordered",List.of("b","a"))));
+    }
+    private String creationIdentity(Map<String,Object> values) {
+        return org.springframework.test.util.ReflectionTestUtils.invokeMethod(plannerService,"fingerprint","prompt",values,false,
+                com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot.empty(),"decision");
     }
 
     private void deletePlannerSession(String sessionId) {

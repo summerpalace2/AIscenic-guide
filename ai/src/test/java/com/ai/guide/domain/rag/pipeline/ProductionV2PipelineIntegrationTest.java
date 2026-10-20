@@ -1,10 +1,14 @@
 package com.ai.guide.domain.rag.pipeline;
+
+import com.ai.guide.infrastructure.rag.importer.ProductionV2ChunkService;
 import com.ai.guide.infrastructure.rag.qdrant.ProductionV2QdrantImporter;
 
 
 
 
-import com.ai.guide.domain.rag.service.ProductionV2FactQueryService;
+import com.ai.guide.domain.rag.gateway.ProductionV2FactQueryPort;
+import com.ai.guide.infrastructure.rag.repository.ProductionV2FactQueryAdapter;
+import com.ai.guide.infrastructure.rag.importer.ProductionV2DataPipelineService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +34,7 @@ class ProductionV2PipelineIntegrationTest {
     private static final Path REPORT = Path.of("target", "production-v2-test-reports", "golden-demo-report.json");
 
     private JdbcTemplate jdbcTemplate;
-    private ProductionV2FactQueryService factQuery;
+    private ProductionV2FactQueryPort factQuery;
     private ProductionV2QdrantImporter qdrantImporter;
 
     @BeforeEach
@@ -39,7 +43,7 @@ class ProductionV2PipelineIntegrationTest {
         Files.deleteIfExists(DB);
         jdbcTemplate = new JdbcTemplate(new DriverManagerDataSource("jdbc:sqlite:" + DB.toAbsolutePath()));
         new ProductionV2DataPipelineService(jdbcTemplate).importProductionV2(SOURCE, false);
-        factQuery = new ProductionV2FactQueryService(jdbcTemplate);
+        factQuery = new ProductionV2FactQueryAdapter(jdbcTemplate);
         qdrantImporter = new ProductionV2QdrantImporter(
                 new ProductionV2ChunkService(), null, null,
                 new ObjectMapper().findAndRegisterModules(),
@@ -66,7 +70,7 @@ class ProductionV2PipelineIntegrationTest {
 
         int citedCoreFacts = 0;
         for (Map.Entry<String, String> entry : coreFactFields.entrySet()) {
-            ProductionV2FactQueryService.FactResult result = factQuery
+            ProductionV2FactQueryPort.FactResult result = factQuery
                     .first(entry.getKey(), entry.getValue())
                     .orElseThrow(() -> new AssertionError("missing core fact: " + entry.getKey()));
             assertNotNull(result.citation());
@@ -75,17 +79,17 @@ class ProductionV2PipelineIntegrationTest {
         }
         assertEquals(9, citedCoreFacts);
 
-        ProductionV2FactQueryService.FactResult unknown = factQuery
+            ProductionV2FactQueryPort.FactResult unknown = factQuery
                 .first("eling_testbed2", "ticket_price").orElseThrow();
         assertNull(unknown.value());
         assertEquals("UNKNOWN", unknown.factStatus());
 
-        ProductionV2FactQueryService.FactResult huguang = factQuery
+            ProductionV2FactQueryPort.FactResult huguang = factQuery
                 .first("huguang_guild_hall", "ticket_price").orElseThrow();
         assertEquals("CLM-HGG-003A", huguang.claimId());
         assertEquals(25, huguang.value().asInt());
 
-        ProductionV2FactQueryService.FactResult stale = factQuery
+            ProductionV2FactQueryPort.FactResult stale = factQuery
                 .first("yangtze_cableway", "opening_hours").orElseThrow();
         assertEquals("STALE", stale.factStatus());
         assertFalse(stale.currentFactEligible());

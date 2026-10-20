@@ -1,12 +1,13 @@
 package com.ai.guide.domain.user.service;
 
 
-import com.ai.guide.common.security.JwtUtil;
+import com.ai.guide.domain.user.gateway.JwtTokenIssuerPort;
+import com.ai.guide.domain.user.gateway.PasswordEncoderPort;
 import com.ai.guide.domain.user.model.User;
+import com.ai.guide.domain.user.gateway.UserAccountRepositoryPort;
 import com.ai.guide.infrastructure.user.security.LegacyNodeScryptVerifier;
+import com.ai.guide.infrastructure.user.security.BcryptPasswordEncoderAdapter;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -30,47 +30,44 @@ class UserServiceLegacyPasswordMigrationTest {
 
     @Test
     void successfulLegacyLoginRehashesAndIssuesToken() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        JwtTokenIssuerPort tokenIssuer = mock(JwtTokenIssuerPort.class);
         String username = "legacy-migration@example.invalid";
         User legacy = legacyUser(username);
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(username)))
-                .thenReturn(List.of(legacy));
-        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-        when(jwtUtil.generateToken(eq("legacy-id"), eq(username), eq("USER")))
+        when(repository.findByUsername(username)).thenReturn(java.util.Optional.of(legacy));
+        when(repository.upgradeLegacyCredentials(any(User.class), anyString(), anyString())).thenReturn(1);
+        when(tokenIssuer.issue(eq("legacy-id"), eq(username), eq("USER")))
                 .thenReturn("legacy-token");
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
+        UserService service = new UserService(repository, new BcryptPasswordEncoderAdapter(), tokenIssuer, new LegacyNodeScryptVerifier());
         Map<String, Object> result = service.login(username, PASSWORD);
 
         assertEquals("legacy-token", result.get("token"));
         assertEquals("USER", result.get("role"));
-        verify(jdbcTemplate).update(contains("password_salt = ''"), any(Object[].class));
-        verify(jdbcTemplate).update(contains("password_scheme = 'BCRYPT'"), any(Object[].class));
+        verify(repository).upgradeLegacyCredentials(any(User.class), anyString(), anyString());
     }
 
     @Test
     void wrongLegacyPasswordDoesNotMutateOrIssueToken() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        JwtTokenIssuerPort tokenIssuer = mock(JwtTokenIssuerPort.class);
         String username = "legacy-wrong@example.invalid";
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(username)))
-                .thenReturn(List.of(legacyUser(username)));
+        when(repository.findByUsername(username)).thenReturn(java.util.Optional.of(legacyUser(username)));
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
+        UserService service = new UserService(repository, new BcryptPasswordEncoderAdapter(), tokenIssuer, new LegacyNodeScryptVerifier());
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.login(username, "phase5b-wrong-password"));
 
         assertTrue(error.getMessage().contains("密码错误"));
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
-        verify(jwtUtil, never()).generateToken(anyString(), anyString(), anyString());
+        verify(repository, never()).upgradeLegacyCredentials(any(User.class), anyString(), anyString());
+        verify(tokenIssuer, never()).issue(anyString(), anyString(), anyString());
     }
 
     @Test
     void secondLoginUsesTheNewBcryptCredential() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        JwtTokenIssuerPort tokenIssuer = mock(JwtTokenIssuerPort.class);
         String username = "legacy-second-login@example.invalid";
         User legacy = legacyUser(username);
         User bcrypt = new User();
@@ -84,19 +81,18 @@ class UserServiceLegacyPasswordMigrationTest {
         bcrypt.setResetRequired(false);
         bcrypt.setRole("USER");
         bcrypt.setStatus("active");
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(username)))
-                .thenReturn(List.of(legacy), List.of(bcrypt));
-        when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-        when(jwtUtil.generateToken(eq("legacy-id"), eq(username), eq("USER")))
+        when(repository.findByUsername(username)).thenReturn(java.util.Optional.of(legacy), java.util.Optional.of(bcrypt));
+        when(repository.upgradeLegacyCredentials(any(User.class), anyString(), anyString())).thenReturn(1);
+        when(tokenIssuer.issue(eq("legacy-id"), eq(username), eq("USER")))
                 .thenReturn("legacy-token", "bcrypt-token");
 
-        UserService service = new UserService(jdbcTemplate, jwtUtil, new LegacyNodeScryptVerifier());
+        UserService service = new UserService(repository, new BcryptPasswordEncoderAdapter(), tokenIssuer, new LegacyNodeScryptVerifier());
         service.login(username, PASSWORD);
         Map<String, Object> second = service.login(username, PASSWORD);
 
         assertEquals("bcrypt-token", second.get("token"));
-        verify(jwtUtil, org.mockito.Mockito.times(2))
-                .generateToken(eq("legacy-id"), eq(username), eq("USER"));
+        verify(tokenIssuer, org.mockito.Mockito.times(2))
+                .issue(eq("legacy-id"), eq(username), eq("USER"));
     }
 
     private User legacyUser(String username) {

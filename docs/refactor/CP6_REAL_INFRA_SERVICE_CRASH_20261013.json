@@ -1,0 +1,39 @@
+{
+  "scope": "Windows PostgreSQL 16.15 and Redis 7.4.3 community Cygwin only",
+  "productionLinuxAcceptance": false,
+  "status": "passed",
+  "steps": [
+    {
+      "name": "postgres-durability-preconditions",
+      "fsync": true,
+      "synchronousCommit": true,
+      "fullPageWrites": true,
+      "committedMarker": true
+    },
+    {
+      "name": "postgres-force-kill-and-recover",
+      "beforePid": 23964,
+      "afterPid": 40788,
+      "sameDataDirectory": true,
+      "markerIntact": true
+    },
+    {
+      "name": "redis-durable-marker",
+      "appendOnly": true,
+      "appendFsync": "always",
+      "sameConnectionWaitAofLocal": 1
+    },
+    {
+      "name": "redis-force-kill-and-recover",
+      "beforePid": 72228,
+      "afterPid": 47636,
+      "sameConfigAndDataDirectory": true,
+      "markerIntact": true
+    }
+  ],
+  "cleanup": {
+    "postgresSchemaRemoved": true,
+    "redisMarkerRemoved": true,
+    "redisOriginalFsyncRestored": true
+  }
+}

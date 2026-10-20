@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionService;
@@ -8,9 +10,9 @@ import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.engine.DynamicGeoCentroidResolver;
 import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
 import com.ai.guide.domain.planner.engine.MealGapSolver;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import com.ai.guide.domain.planner.model.*;
 import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +46,7 @@ public class AgentARedTeamAssaultTest {
     private PlanAdjustmentService planAdjustmentService;
 
     @Autowired
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @Autowired
     private PlannerSessionRepositoryPort sessionRepositoryPort;
@@ -74,7 +76,7 @@ public class AgentARedTeamAssaultTest {
     void tearDown() {
         planAdjustmentService.setDiningVenueService(actualDiningVenueService);
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     @Nested
@@ -152,7 +154,7 @@ public class AgentARedTeamAssaultTest {
                     .duration("60分钟")
                     .build();
 
-            TaxonomyPort.MealWindow lunchWindow = taxonomy.getMealWindow("LUNCH");
+            com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow lunchWindow = taxonomy.getMealWindow("LUNCH");
 
             // 构造两个站点，中间空隙刚好只有 40 分钟（12:00 到 12:40），但火锅需要 60 分钟
             List<Map<String, Object>> stops = List.of(
@@ -207,7 +209,7 @@ public class AgentARedTeamAssaultTest {
             );
 
             // 执行质心解析：绝不抛出 NumberFormatException，且严格返回 null（拒绝编造虚假重庆坐标）
-            String resolved = PlanAdjustmentHelper.resolveDefaultCoordinate(Map.of(), null, poisonStops);
+            String resolved = PlanAdjustmentHelper.resolveDefaultCoordinate(Map.of(), null, poisonStops, 50_000.0);
             assertNull(resolved, "全毒丸坐标下，resolveDefaultCoordinate 必须返回 null，严禁编造任何坐标！");
         }
 
@@ -225,7 +227,7 @@ public class AgentARedTeamAssaultTest {
             Map<String, Object> trip = Map.of("city", "重庆市");
             TravelConstraints constraints = TravelConstraints.builder().destination("重庆市").build();
 
-            String anchorCoord = PlanAdjustmentHelper.resolveDefaultCoordinate(trip, constraints, crossProvinceStops);
+            String anchorCoord = PlanAdjustmentHelper.resolveDefaultCoordinate(trip, constraints, crossProvinceStops, 50_000.0);
             assertNotNull(anchorCoord);
 
             // 断言：由于跨度大于 0.5 度，系统防畸变机制必须锚定最新打卡点洪崖洞坐标，而不是荒无人烟的算术平均深山！

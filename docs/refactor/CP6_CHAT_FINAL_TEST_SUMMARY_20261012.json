@@ -1,0 +1,13 @@
+{
+  "board": "chat-followup-and-mode-matrix",
+  "date": "2026-10-12",
+  "java": {"run": 1192, "passed": 1178, "skipped": 14, "failures": 0, "errors": 0, "log": "chat-sse-final-full-regression.log"},
+  "node": {"passed": 57, "failed": 0, "skipped": 0, "log": "D:/loop-p0-functional-inventory-1-home/chat-board-node-final.log"},
+  "controlledBrowser": {"passed": 11, "skipped": 1, "failed": 0},
+  "realBrowserFinal": {"passed": 1, "failed": 1, "note": "Itinerary save/open/pronoun passed. Guest six replies collected; oracle rejected historical cancelled Beijing. Original failure retained; shared semantic oracle reassessed captured replies successfully without supplier calls."},
+  "finalJarSha256": "84064CCF1ED97927A46D4A4D31FA88953532B3E939A536AE733D51CE3A466A7E",
+  "realBrowserJarSha256": "DE1D638B0FBD2A09E7A6132A4EBD87D5807BFCD47E80B08FEB0D35EC444A0FA8",
+  "lastSerializerFixVerification": "MockMvc real SSE serialization and frontend chunked JSON text token preservation, without another paid real-model run",
+  "limitations": ["Skipped infrastructure coverage remains unaccepted", "Page reset retains model context", "Knowledge corpus lacks strict structured city filtering", "Real partial-timeout plan save/open remains unaccepted"],
+  "delivery": "local review only; no commit, push or deployment"
+}

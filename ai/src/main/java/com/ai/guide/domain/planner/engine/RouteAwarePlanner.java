@@ -9,6 +9,8 @@ import com.ai.guide.domain.planner.service.TravelDateResolver;
 import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
 import com.ai.guide.domain.planner.model.topography.ElevationFlow;
 import com.ai.guide.domain.planner.service.TopographyStrategyRouter;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
 import com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy;
 import com.ai.guide.domain.planner.service.strategy.ChengduPlainTopographyStrategy;
@@ -30,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -50,13 +53,15 @@ public class RouteAwarePlanner {
     private final LocalPlanRepairer localPlanRepairer;
     private final PlannerMetricsLogger metricsLogger;
     private final TopographyStrategyRouter topographyStrategyRouter;
+    private final PlannerTaxonomyPort taxonomy;
 
     @Autowired
     public RouteAwarePlanner(RouteCostProvider routeCostProvider,
                              PlanVerifier planVerifier,
                              LocalPlanRepairer localPlanRepairer,
                              @Autowired(required = false) PlannerMetricsLogger metricsLogger,
-                             @Autowired(required = false) TopographyStrategyRouter topographyStrategyRouter) {
+                             @Autowired(required = false) TopographyStrategyRouter topographyStrategyRouter,
+                             PlannerTaxonomyPort taxonomy) {
         this.routeCostProvider = routeCostProvider;
         this.planVerifier = planVerifier;
         this.localPlanRepairer = localPlanRepairer;
@@ -64,6 +69,13 @@ public class RouteAwarePlanner {
         this.topographyStrategyRouter = topographyStrategyRouter != null ? topographyStrategyRouter
                 : new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy(),new ChengduPlainTopographyStrategy(),
                         new XiAnHeritageTopographyStrategy(),new GenericPlainTopographyStrategy()));
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+    }
+
+    public RouteAwarePlanner(RouteCostProvider routeCostProvider, PlanVerifier planVerifier,
+                             LocalPlanRepairer localPlanRepairer, PlannerMetricsLogger metricsLogger,
+                             TopographyStrategyRouter topographyStrategyRouter) {
+        this(routeCostProvider, planVerifier, localPlanRepairer, metricsLogger, topographyStrategyRouter, TaxonomyPort.empty());
     }
 
     public RouteAwarePlanner(RouteCostProvider routeCostProvider,
@@ -76,7 +88,7 @@ public class RouteAwarePlanner {
         return topographyStrategyRouter.route(constraints == null ? null : constraints.getDestination());
     }
 
-    private boolean usesChongqingCatalogPolicy(TravelConstraints constraints) {
+    private boolean usesBaselineCatalogPolicy(TravelConstraints constraints) {
         return "CHONGQING".equalsIgnoreCase(resolveTopographyStrategy(constraints).supportedCity());
     }
 
@@ -94,9 +106,8 @@ public class RouteAwarePlanner {
                                               ItineraryBuilderPort builder) {
         List<Map<String, Object>> days = new ArrayList<>();
         Set<String> usedAttractionIds = new HashSet<>();
-        String[] themes = usesChongqingCatalogPolicy(constraints)
-                ? new String[]{"母城地标与两江夜景", "文博探索与山城魔幻", "江岸开阔视野与工业文创", "千年古镇与巴渝风情"}
-                : new String[]{"城市地标与夜景", "文博探索", "自然与文创", "历史与当地风情"};
+        List<String> configuredThemes = taxonomy.getHints(usesBaselineCatalogPolicy(constraints) ? "baselineDayThemes" : "genericDayThemes");
+        String[] themes = configuredThemes.toArray(String[]::new);
 
         for (int day = 1; day <= dayCount; day++) {
             String dayDate = calculateDayDate(constraints, day);
@@ -156,11 +167,12 @@ public class RouteAwarePlanner {
             }
 
             Map<String, Object> dayMap = new LinkedHashMap<>();
+            String dayTheme = themes.length == 0 ? "" : themes[(day - 1) % themes.length];
             dayMap.put("day", day);
             dayMap.put("date", dayDate == null ? dateLabel(constraints, day) : dayDate);
             dayMap.put("dateLabel", dayDate == null
-                    ? "第" + day + "天 · " + themes[(day - 1) % themes.length]
-                    : dayDate + " · 第" + day + "天 · " + themes[(day - 1) % themes.length]);
+                    ? "第" + day + "天" + (dayTheme.isBlank() ? "" : " · " + dayTheme)
+                    : dayDate + " · 第" + day + "天" + (dayTheme.isBlank() ? "" : " · " + dayTheme));
             dayMap.put("weather", Map.of("label", "天气", "value", "未知·待查询", "status", "未知", "note", "出发前需确认动态天气。"));
             dayMap.put("stops", stops);
             days.add(dayMap);
@@ -284,7 +296,7 @@ public class RouteAwarePlanner {
             if (stop.get(key) instanceof Map<?,?> original) {
                 Map<String,Object> retained = new LinkedHashMap<>();
                 original.forEach((k,v) -> retained.put(String.valueOf(k),v));
-                for (String field : List.of("polyline", "summary", "duration", "durationSeconds", "durationMinutes",
+                for (String field : List.of("routeFromPrevious", "polyline", "summary", "duration", "durationSeconds", "durationMinutes",
                         "distance", "distanceMeters", "walkingDistanceMeters", "walkingMeters", "selected", "selectedMode",
                         "routeDataStatus", "status", "reason", "mode", "transportMode")) retained.remove(field);
                 if (retained.isEmpty()) stop.remove(key); else stop.put(key, retained);
@@ -327,7 +339,7 @@ public class RouteAwarePlanner {
             if (used.contains(candidate.getId())) continue;
 
             // Hard constraint 0: Distant district requires explicit mention or matching start place
-            boolean isCandidateDistant = usesChongqingCatalogPolicy(constraints) && isDistantDistrict(candidate.getDistrict());
+            boolean isCandidateDistant = usesBaselineCatalogPolicy(constraints) && isDistantDistrict(candidate.getDistrict());
             if (isCandidateDistant) {
                 boolean explicitlyRequested = (explicitIds != null && explicitIds.contains(candidate.getId()))
                         || (constraints.getMustVisit() != null && constraints.getMustVisit().stream().anyMatch(m -> candidate.getName().contains(m) || candidate.getId().contains(m)));
@@ -351,7 +363,7 @@ public class RouteAwarePlanner {
             }
 
             // Hard constraint 4: Cross-district half-day collision (GS-01)
-            if (previous != null && usesChongqingCatalogPolicy(constraints)) {
+            if (previous != null && usesBaselineCatalogPolicy(constraints)) {
                 boolean prevDistant = isDistantDistrict(previous.getDistrict());
                 boolean currDistant = isDistantDistrict(candidate.getDistrict());
                 if (prevDistant != currDistant) {
@@ -366,9 +378,11 @@ public class RouteAwarePlanner {
                     : routeCostProvider.calculate(previous, candidate, constraints.getTransportPreference());
 
             if (routeCost == null || routeCost.duration() == null || routeCost.status() == RouteCost.RouteDataStatus.UNAVAILABLE) continue;
-            double travelPenalty = routeCost.duration().toMinutes() * 0.4;
-            double walkingPenalty = "低".equals(constraints.getWalkingTolerance()) ? (routeCost.walkingMeters() * 0.03) : 0;
-            double timePreferenceBonus = slot.preferredPredicate().test(candidate) ? 25.0 : 0.0;
+            double travelPenalty = routeCost.duration().toMinutes()
+                    * PlannerScoringPolicy.parameter(taxonomy, "routeTravelPenaltyPerMinute");
+            double walkingPenalty = isLowWalking(constraints)
+                    ? routeCost.walkingMeters() * PlannerScoringPolicy.parameter(taxonomy, "routeLowWalkingPenaltyPerMeter") : 0;
+            double timePreferenceBonus = slot.preferredPredicate().test(candidate) ? scoreWeight("routeTimePreference") : 0.0;
 
             // 1. 折返惩罚（Zig-zag Penalty）：杜绝同一天在“山顶 ↔ 滨江”反复横跳或频繁来回跨江
             TopographyStrategyPort topoStrategy = resolveTopographyStrategy(constraints);
@@ -377,16 +391,13 @@ public class RouteAwarePlanner {
             // 2. 顺势而下加分与爬坡减分（Downhill First for Low-Walking / Elder-Friendly）
             double topographyBonus = 0.0;
             if (previous != null) {
-                boolean isLowWalking = "低".equals(constraints.getWalkingTolerance())
-                        || (constraints.getCompanions() != null && constraints.getCompanions().contains("父母"))
-                        || (constraints.getRawPrompt() != null && (constraints.getRawPrompt().contains("少走")
-                                || constraints.getRawPrompt().contains("轻松") || constraints.getRawPrompt().contains("坡")));
+                boolean isLowWalking = isLowWalking(constraints);
                 ElevationFlow flow = topoStrategy.detectElevationFlow(previous, candidate);
                 if (isLowWalking) {
                     if (flow == ElevationFlow.DOWNHILL) {
-                        topographyBonus += 25.0; // 顺山势下坡，长辈游极度舒适
+                        topographyBonus += scoreWeight("routeTopographyDownhill");
                     } else if (flow == ElevationFlow.UPHILL) {
-                        topographyBonus -= 30.0; // 逆山势爬坡，长辈体力消耗过大
+                        topographyBonus += scoreWeight("routeTopographyUphill");
                     }
                 }
             }
@@ -404,89 +415,80 @@ public class RouteAwarePlanner {
 
     private ScoreBreakdown calculateAttractionScoreBreakdown(Attraction a, TravelConstraints c, List<String> explicitIds, Attraction previous, int day) {
         List<String> reasonCodes = new ArrayList<>();
-        int explicitBonus = explicitIds != null && explicitIds.contains(a.getId()) ? 200 : 0;
-        int mustVisitScore = (c.getMustVisit() != null && c.getMustVisit().stream().anyMatch(m -> a.getName().contains(m) || a.getId().contains(m))) ? 300 : 0;
-        int avoidPenalty = (c.getAvoid() != null && c.getAvoid().stream().anyMatch(av -> a.getName().contains(av) || a.getId().contains(av) || av.equals(a.getCategory()))) ? -500 : 0;
+        int explicitBonus = explicitIds != null && explicitIds.contains(a.getId()) ? scoreWeight("routeExplicitMention") : 0;
+        int mustVisitScore = (c.getMustVisit() != null && c.getMustVisit().stream().anyMatch(m -> a.getName().contains(m) || a.getId().contains(m))) ? scoreWeight("routeMustVisit") : 0;
+        int avoidPenalty = (c.getAvoid() != null && c.getAvoid().stream().anyMatch(av -> a.getName().contains(av) || a.getId().contains(av) || av.equals(a.getCategory()))) ? scoreWeight("routeAvoidPenalty") : 0;
 
         int interestScore = 0;
         for (String interest : c.getInterests()) {
-            if ("自然".equals(interest) || "自然奇观".equals(interest)) {
-                if ("自然".equals(a.getCategory()) || a.matchesAnyTagOrFeature("自然", "峡谷", "喀斯特峡谷")) {
-                    interestScore += 55;
-                    reasonCodes.add("INTEREST_NATURE");
+            if (taxonomy.getHints("plannerNatureInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerNatureCategories", "plannerNatureFeatures")) {
+                    interestScore += scoreWeight("routeInterestNature"); reasonCodes.add("INTEREST_NATURE");
                 }
-            } else if ("人文".equals(interest) || "人文历史".equals(interest)) {
-                if ("人文".equals(a.getCategory()) || a.matchesAnyTagOrFeature("人文", "历史", "古建", "抗战遗址", "千年古刹", "世界文化遗产")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_HISTORY");
+            } else if (taxonomy.getHints("plannerHistoryInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerHistoryCategories", "plannerHistoryFeatures")) {
+                    interestScore += scoreWeight("routeInterestHistory"); reasonCodes.add("INTEREST_HISTORY");
                 }
-            } else if ("8D魔幻".equals(interest)) {
-                if ("8D魔幻".equals(a.getCategory()) || a.matchesAnyTagOrFeature("8D魔幻", "单轨", "天桥", "空中连廊", "空中巴士")) {
-                    interestScore += 55;
-                    reasonCodes.add("INTEREST_8D_MAGIC");
+            } else if (taxonomy.getHints("chongqingTerrainInterestLabels").contains(interest) && usesBaselineCatalogPolicy(c)) {
+                if (matchesFeatures(a, "chongqingTerrainInterestFeatures")) {
+                    interestScore += scoreWeight("routeInterestTerrain"); reasonCodes.add("INTEREST_8D_MAGIC");
                 }
-            } else if ("夜景".equals(interest) || "山城夜景".equals(interest)) {
-                if ("夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "临江", "江岸夜景", "俯瞰全城")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_NIGHT_VIEW");
+            } else if (taxonomy.getHints("plannerNightInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerNightCategories", "plannerNightScoringFeatures")) {
+                    interestScore += scoreWeight("routeInterestNight"); reasonCodes.add("INTEREST_NIGHT_VIEW");
                 }
-            } else if ("温泉".equals(interest) || "天然温泉".equals(interest)) {
-                if ("温泉".equals(a.getCategory()) || a.matchesAnyTagOrFeature("温泉", "天然地热温泉", "古温泉", "养生放松") || a.getName().contains("温泉")) {
-                    interestScore += 60;
-                    reasonCodes.add("INTEREST_HOTSPRING");
+            } else if (taxonomy.getHints("plannerThermalInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerThermalCategories", "plannerThermalFeatures") || matchesName(a, "plannerThermalNameTerms")) {
+                    interestScore += scoreWeight("routeInterestThermal"); reasonCodes.add("INTEREST_HOTSPRING");
                 }
-            } else if ("市井".equals(interest) || "市井烟火".equals(interest)) {
-                if ("市井".equals(a.getCategory()) || a.matchesAnyTagOrFeature("市井", "市井烟火", "老街", "古镇", "老重庆")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_LOCAL_LIFE");
+            } else if (taxonomy.getHints("plannerLocalInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerLocalCategories", "plannerLocalCultureScoringFeatures")) {
+                    interestScore += scoreWeight("routeInterestLocal"); reasonCodes.add("INTEREST_LOCAL_LIFE");
                 }
             } else if (a.matchesAnyTagOrFeature(interest) || interest.equals(a.getCategory()) || a.getName().contains(interest)) {
-                interestScore += 40;
-                reasonCodes.add("INTEREST_TAG_MATCH");
+                interestScore += scoreWeight("routeInterestGeneric"); reasonCodes.add("INTEREST_TAG_MATCH");
             }
         }
 
         int walkingScore = 0;
-        if ("低".equals(c.getWalkingTolerance())) {
-            if ("低".equals(a.getWalkDifficulty()) || "SUPPORTED".equals(a.getEffectiveAccessibility())) walkingScore += 35;
-            if (a.matchesAnyTagOrFeature("少走路", "长辈友好", "平街", "无障碍")) walkingScore += 25;
-            if ("高".equals(a.getWalkDifficulty())) walkingScore -= 50;
-            if ("中".equals(a.getWalkDifficulty())) walkingScore -= 15;
+        if (taxonomy.getHints("walkingLowAliases").contains(c.getWalkingTolerance())) {
+            if (taxonomy.getHints("walkingEasyLevels").contains(a.getWalkDifficulty()) || "SUPPORTED".equals(a.getEffectiveAccessibility())) walkingScore += scoreWeight("routeWalkEasy");
+            if (matchesFeatures(a, "plannerWalkingAccessibleFeatures")) walkingScore += scoreWeight("routeWalkAccessible");
+            if (taxonomy.getHints("walkingHardLevels").contains(a.getWalkDifficulty())) walkingScore += scoreWeight("routeWalkHard");
+            if (taxonomy.getHints("walkingMediumLevels").contains(a.getWalkDifficulty())) walkingScore += scoreWeight("routeWalkMedium");
         }
 
-        int companionScore = switch (c.getCompanions()) {
-            case "带父母", "带老人", "长辈同行" -> {
-                int delta = "INDOOR".equals(a.getEffectiveEnvironment()) ? 25 : 0;
-                if (a.matchesAnyTagOrFeature("长辈最爱", "长辈友好", "无障碍", "少走路")) delta += 35;
-                if ("低".equals(a.getWalkDifficulty())) delta += 30;
-                if ("高".equals(a.getWalkDifficulty())) delta -= 40;
-                yield delta;
-            }
-            case "带孩子", "亲子家庭", "亲子" -> {
-                int delta = "INDOOR".equals(a.getEffectiveEnvironment()) ? 25 : 0;
-                if (a.matchesAnyTagOrFeature("亲子", "科普", "国宝级")) delta += 45;
-                if ("自然".equals(a.getCategory())) delta += 35;
-                if (a.matchesAnyTagOrFeature("8D魔幻", "单轨")) delta += 30;
-                yield delta;
-            }
-            case "情侣出游", "情侣双人", "情侣" -> {
-                int delta = 0;
-                if ("夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "浪漫")) delta += 35;
-                if (a.matchesAnyTagOrFeature("温泉", "天然地热温泉") || a.getName().contains("温泉")) delta += 45;
-                if (a.matchesAnyTagOrFeature("俯瞰全城", "开埠文化")) delta += 30;
-                yield delta;
-            }
-            case "朋友出游", "朋友结伴" -> (a.matchesAnyTagOrFeature("8D魔幻", "美食", "打卡", "夜生活") || "城市".equals(a.getCategory())) ? 35 : 0;
-            case "独自出发", "一个人", "自由行" -> (a.matchesAnyTagOrFeature("地标", "文创", "城市书房") || "文创".equals(a.getCategory())) ? 30 : 0;
-            default -> 0;
-        };
+        int companionScore = 0;
+        String companions = c.getCompanions();
+        if (matchesHint(companions, "plannerCompanionSeniorAliases")) {
+            companionScore += taxonomy.getHints("indoorEnvironmentValues").contains(a.getEffectiveEnvironment()) ? scoreWeight("routeCompanionIndoor") : 0;
+            if (matchesFeatures(a, "plannerCompanionSeniorFeatures")) companionScore += scoreWeight("routeSeniorFriendly");
+            if (taxonomy.getHints("walkingEasyLevels").contains(a.getWalkDifficulty())) companionScore += scoreWeight("routeSeniorLowWalking");
+            if (taxonomy.getHints("walkingHardLevels").contains(a.getWalkDifficulty())) companionScore += scoreWeight("routeSeniorHard");
+        } else if (matchesHint(companions, "plannerCompanionChildAliases")) {
+            companionScore += taxonomy.getHints("indoorEnvironmentValues").contains(a.getEffectiveEnvironment()) ? scoreWeight("routeCompanionIndoor") : 0;
+            if (matchesFeatures(a, "plannerCompanionChildEducationFeatures")) companionScore += scoreWeight("routeChildEducation");
+            if (matchesConfigured(a, "plannerNatureCategories", "plannerCompanionChildNatureFeatures")) companionScore += scoreWeight("routeChildNature");
+            if (usesBaselineCatalogPolicy(c) && matchesFeatures(a, "chongqingTerrainInterestFeatures")) companionScore += scoreWeight("routeChildTerrain");
+        } else if (matchesHint(companions, "plannerCompanionCoupleAliases")) {
+            if (matchesConfigured(a, "plannerNightCategories", "plannerCompanionCoupleRomanceFeatures")) companionScore += scoreWeight("routeCoupleRomance");
+            if (matchesFeatures(a, "plannerCompanionCoupleThermalFeatures") || matchesName(a, "plannerThermalNameTerms")) companionScore += scoreWeight("routeCoupleThermal");
+            if (matchesFeatures(a, "plannerCompanionCoupleScenicFeatures")) companionScore += scoreWeight("routeCoupleScenic");
+        } else if (matchesHint(companions, "plannerCompanionFriendsAliases")) {
+            if ((usesBaselineCatalogPolicy(c) && matchesFeatures(a, "chongqingTerrainInterestFeatures"))
+                    || matchesConfigured(a, "plannerCompanionFriendsCategories", "plannerCompanionFriendsFeatures")) companionScore += scoreWeight("routeFriendsActive");
+        } else if (matchesHint(companions, "plannerCompanionSoloAliases")) {
+            if (matchesConfigured(a, "plannerCreativeCategories", "plannerCompanionSoloFeatures")) companionScore += scoreWeight("routeSoloCalm");
+        }
 
         int diningScore = 0;
-        if ("清淡不辣".equals(c.getDietPreference()) || "清淡".equals(c.getDietPreference())) {
-            if ("INDOOR".equals(a.getEffectiveEnvironment()) || a.matchesAnyTagOrFeature("最美林荫道", "清淡友好")) diningScore += 30;
-            if (a.matchesAnyTagOrFeature("火锅", "江湖菜")) diningScore -= 20;
-        } else if ("重庆火锅".equals(c.getDietPreference())) {
-            if ("美食".equals(a.getCategory()) || a.matchesAnyTagOrFeature("火锅", "美食", "小吃")) diningScore += 40;
+        boolean avoidsSpicy = c.getDietPreference() != null
+                && taxonomy.getHints("nonSpicyFlavors").stream().anyMatch(c.getDietPreference()::contains);
+        if (avoidsSpicy) {
+            if (taxonomy.getHints("indoorEnvironmentValues").contains(a.getEffectiveEnvironment()) || matchesFeatures(a, "plannerDiningPeacefulFeatures")) diningScore += scoreWeight("routeDiningNonSpicy");
+            if (taxonomy.getHints("spicyFlavors").stream().anyMatch(a::matchesAnyTagOrFeature)) diningScore += scoreWeight("routeDiningSpicyPenalty");
+        } else if (matchesConfiguredFlavor(a, c.getDietPreference())) {
+            if (matchesConfigured(a, "plannerFoodCategories", "foodTags")) diningScore += scoreWeight("routeDiningFood");
         }
         int districtScore = 0;
         // 起点邻近加分（START_PLACE_DISTRICT_PROXIMITY）仅在第1天起步阶段生效；
@@ -494,40 +496,10 @@ public class RouteAwarePlanner {
         TopographyStrategyPort topoStrategy = resolveTopographyStrategy(c);
         boolean allowStartPlaceProximity = (day == 1)
                 && topoStrategy.allowStartPlaceProximity(previous, a);
-        if (allowStartPlaceProximity && usesChongqingCatalogPolicy(c) && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
-            String sp = c.getStartPlace();
-            if ((sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山")) && "江津区".equals(a.getDistrict())) {
-                districtScore += 120;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山")) && "南岸区".equals(a.getDistrict())) {
-                districtScore += 80;
-                if (a.getName().contains("南山") || a.getId().contains("nanshan") || a.getName().contains("龙门浩") || a.getName().contains("马鞍山")) {
-                    districtScore += 40;
-                }
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城")) && "沙坪坝区".equals(a.getDistrict())) {
-                districtScore += 80;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("渝中") || sp.contains("解放碑") || sp.contains("朝天门")) && "渝中区".equals(a.getDistrict())) {
-                districtScore += 60;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("江北") || sp.contains("观音桥")) && "江北区".equals(a.getDistrict())) {
-                districtScore += 60;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("九龙坡") || sp.contains("杨家坪")) && "九龙坡区".equals(a.getDistrict())) {
-                districtScore += 80;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("巴南")) && "巴南区".equals(a.getDistrict())) {
-                districtScore += 80;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("北碚")) && "北碚区".equals(a.getDistrict())) {
-                districtScore += 80;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("大渡口")) && "大渡口区".equals(a.getDistrict())) {
-                districtScore += 80;
-                reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
-            } else if ((sp.contains("渝北")) && "渝北区".equals(a.getDistrict())) {
-                districtScore += 60;
+        if (allowStartPlaceProximity && usesBaselineCatalogPolicy(c) && c.getStartPlace() != null && !c.getStartPlace().isBlank() && !"未提供".equals(c.getStartPlace())) {
+            int startPlaceBonus = startPlaceDistrictBonus(c.getStartPlace(), a);
+            if (startPlaceBonus > 0) {
+                districtScore += startPlaceBonus + configuredDistrictBoost(a);
                 reasonCodes.add("START_PLACE_DISTRICT_PROXIMITY");
             }
         }
@@ -536,7 +508,56 @@ public class RouteAwarePlanner {
         return new ScoreBreakdown(interestScore, companionScore, walkingScore, diningScore, mustVisitScore, avoidPenalty, explicitBonus, totalScore, reasonCodes);
     }
 
+    private int scoreWeight(String key) { return PlannerScoringPolicy.weight(taxonomy, key); }
+    private boolean isLowWalking(TravelConstraints constraints) {
+        if (constraints == null) return false;
+        if (taxonomy.getHints("walkingLowAliases").contains(constraints.getWalkingTolerance())) return true;
+        String companions = constraints.getCompanions();
+        if (companions != null && taxonomy.getHints("plannerCompanionSeniorAliases").stream()
+                .anyMatch(alias -> companions.contains(alias) || alias.contains(companions))) return true;
+        String prompt = constraints.getRawPrompt();
+        return prompt != null && taxonomy.getHints("plannerLowWalkingPromptAliases").stream().anyMatch(prompt::contains);
+    }
+    private boolean matchesHint(String value, String key) { return value != null && taxonomy.getHints(key).contains(value); }
+    private boolean matchesFeatures(Attraction attraction, String key) {
+        return attraction != null && attraction.matchesAnyTagOrFeature(taxonomy.getHints(key).toArray(String[]::new));
+    }
+    private boolean matchesName(Attraction attraction, String key) {
+        return attraction != null && taxonomy.getHints(key).stream().anyMatch(term -> attraction.getName().contains(term));
+    }
+    private boolean matchesConfigured(Attraction attraction, String categoryKey, String featureKey) {
+        return attraction != null && (taxonomy.getHints(categoryKey).contains(attraction.getCategory()) || matchesFeatures(attraction, featureKey));
+    }
+
+    private int startPlaceDistrictBonus(String startPlace, Attraction attraction) {
+        for (String rule : taxonomy.getHints("startPlaceDistrictRules")) {
+            String[] fields = rule.split("\\|", 3);
+            if (fields.length != 3 || !fields[0].equals(attraction.getDistrict())) continue;
+            if (!java.util.Arrays.stream(fields[1].split(",")).anyMatch(startPlace::contains)) continue;
+            try { return Integer.parseInt(fields[2]); }
+            catch (NumberFormatException ignored) { return 0; }
+        }
+        return 0;
+    }
+
+    private int configuredDistrictBoost(Attraction attraction) {
+        for (String rule : taxonomy.getHints("startPlaceDistrictBoostRules")) {
+            String[] fields = rule.split("\\|", 3);
+            if (fields.length != 3 || !fields[0].equals(attraction.getDistrict())) continue;
+            if (!java.util.Arrays.stream(fields[1].split(",")).anyMatch(keyword -> attraction.getName().contains(keyword)
+                    || attraction.getId().contains(keyword.toLowerCase(java.util.Locale.ROOT)))) continue;
+            try { return Integer.parseInt(fields[2]); }
+            catch (NumberFormatException ignored) { return 0; }
+        }
+        return 0;
+    }
+
     private record SlotSpecification(String time, Predicate<Attraction> preferredPredicate) {}
+
+    /** Capacity from the same schedule policy used by the actual selector. */
+    public int expectedAttractionSlots(int day, int dayCount, TravelConstraints constraints) {
+        return buildDaySlots(day, dayCount, constraints).size();
+    }
 
     private List<SlotSpecification> buildDaySlots(int day, int dayCount, TravelConstraints constraints) {
         boolean isFirstDay = (day == 1);
@@ -544,53 +565,80 @@ public class RouteAwarePlanner {
         String arrival = constraints == null ? "" : constraints.getArrivalAt();
         String departure = constraints == null ? "" : constraints.getDepartureAt();
 
-        // Day 1 Arrival window constraint (GS-04)
+        // Day 1 Arrival window constraint (GS-04); schedule policy is supplied by taxonomy assets.
         if (isFirstDay && (arrival.contains("晚上") || arrival.contains("夜间"))) {
-            return List.of(new SlotSpecification("19:30", this::isNightAttraction));
+            return configuredSlots("scheduleArrivalNight");
         }
         if (isFirstDay && (arrival.contains("下午"))) {
-            return List.of(
-                    new SlotSpecification("14:30", attraction -> !isNightAttraction(attraction)),
-                    new SlotSpecification("19:30", this::isNightAttraction)
-            );
+            return configuredSlots("scheduleArrivalAfternoon");
         }
 
         // Final Day Departure window constraint
         if (isLastDay && (departure.contains("上午") || departure.contains("早晨"))) {
-            return List.of(new SlotSpecification("10:00", attraction -> !isNightAttraction(attraction)));
+            return configuredSlots("scheduleDepartureMorning");
         }
         if (isLastDay && (departure.contains("中午") || departure.contains("下午"))) {
-            return List.of(
-                    new SlotSpecification("10:00", attraction -> !isNightAttraction(attraction)),
-                    new SlotSpecification("14:30", attraction -> !isNightAttraction(attraction))
-            );
+            return configuredSlots("scheduleDepartureMidday");
         }
 
         // Standard 3-slot day
-        return List.of(
-                new SlotSpecification("10:00", attraction -> !isNightAttraction(attraction)),
-                new SlotSpecification("14:30", attraction -> !isNightAttraction(attraction)),
-                new SlotSpecification("18:30", this::isNightAttraction)
-        );
+        return configuredSlots("scheduleStandardDay");
+    }
+
+    private List<SlotSpecification> configuredSlots(String key) {
+        List<String> configured = taxonomy.getHints(key);
+        if (configured.isEmpty()) return List.of();
+        return configured.stream().map(value -> {
+            String[] fields = value.split("\\|", 2);
+            if (fields.length != 2 || fields[0].isBlank()) throw new IllegalStateException("Invalid schedule slot asset: " + key);
+            Predicate<Attraction> preferred = "NIGHT".equalsIgnoreCase(fields[1]) ? this::isNightAttraction
+                    : "DAY".equalsIgnoreCase(fields[1]) ? attraction -> !isNightAttraction(attraction)
+                    : throwInvalidSlotType(key, fields[1]);
+            return new SlotSpecification(fields[0], preferred);
+        }).toList();
+    }
+
+    private Predicate<Attraction> throwInvalidSlotType(String key, String type) {
+        throw new IllegalStateException("Invalid schedule slot type " + type + " in " + key);
     }
 
     private boolean isNightAttraction(Attraction a) {
         String bestTime = String.valueOf(a.getBestTime() == null ? "" : a.getBestTime());
         List<String> tags = a.getTags() == null ? List.of() : a.getTags();
-        return "夜景".equals(a.getCategory()) || tags.contains("夜景") || bestTime.contains("18:") || bestTime.contains("19:");
+        return taxonomy.getHints("plannerNightCategories").contains(a.getCategory())
+                || tags.stream().anyMatch(tag -> taxonomy.getHints("plannerNightScoringFeatures").stream().anyMatch(tag::contains))
+                || isWithinConfiguredNightWindow(bestTime);
     }
 
     private boolean isEveningSlot(String time) {
-        return time.contains("18:") || time.contains("19:") || time.contains("20:") || time.contains("21:") || time.contains("晚上") || time.contains("夜间");
+        return taxonomy.getHints("plannerNightWords").stream().anyMatch(time::contains)
+                || isWithinConfiguredNightWindow(time);
     }
 
-    private static final Set<String> CENTRAL_URBAN_DISTRICTS = Set.of(
-            "渝中区", "江北区", "南岸区", "沙坪坝区", "九龙坡区", "大渡口区", "渝北区", "巴南区", "北碚区"
-    );
+    private boolean matchesConfiguredFlavor(Attraction attraction, String preference) {
+        if (attraction == null || preference == null || preference.isBlank()) return false;
+        return taxonomy.getFlavorAliases().stream()
+                .filter(alias -> alias.label().equals(preference) || alias.keywords().contains(preference))
+                .flatMap(alias -> alias.keywords().stream())
+                .anyMatch(attraction::matchesAnyTagOrFeature);
+    }
+
+    private boolean isWithinConfiguredNightWindow(String value) {
+        if (value == null || value.isBlank()) return false;
+        Matcher time = Pattern.compile("(\\d{1,2})[:：](\\d{2})").matcher(value);
+        while (time.find()) {
+            int minute = Integer.parseInt(time.group(1)) * 60 + Integer.parseInt(time.group(2));
+            for (String window : taxonomy.getHints("plannerNightTimeWindow")) {
+                String[] bounds = window.split("\\|", 2);
+                if (bounds.length == 2 && minute >= Integer.parseInt(bounds[0]) && minute < Integer.parseInt(bounds[1])) return true;
+            }
+        }
+        return false;
+    }
 
     private boolean isDistantDistrict(String district) {
         if (district == null || district.isBlank()) return false;
-        for (String central : CENTRAL_URBAN_DISTRICTS) {
+        for (String central : taxonomy.getHints("centralUrbanDistricts")) {
             if (district.contains(central) || district.contains(central.replace("区", ""))) {
                 return false;
             }

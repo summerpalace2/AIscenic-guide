@@ -6,9 +6,10 @@ import static org.junit.jupiter.api.Assertions.*;
 class CompoundSharedContextTest {
     @Test void sharedDayConstraintsAndPinsSurviveBothActions() {
         var page=PlanPageContext.builder().activeDay(1).pinnedStopIds(List.of("pin")).build();
-        var intent=new ConversationIntentClassifier().classify("第2天，把解放碑换成三峡博物馆，添加重庆大剧院，保留洪崖洞，少走路，下雨",page);
+        var classifier=com.ai.guide.testing.PlannerTaxonomyFixtures.classifier();
+        var intent=classifier.classify("第2天，把解放碑换成三峡博物馆，添加重庆大剧院，保留洪崖洞，少走路，下雨",page);
         intent.setTargetStartMinute(1080);intent.setTargetEndMinute(1260);intent.setTimeScopeResolved(true);
-        var store=new PendingIntentContinuations();var pending=store.remember("s",1,intent);
+        var store=new PendingIntentContinuations(classifier);var pending=store.remember("s",1,intent);
         var first=store.resume("s",1,pending.intentId(),"执行第一个",page);
         assertContext(first);store.afterApply("s",2);
         var second=store.resume("s",2,store.pending("s").intentId(),"执行下一个",page);
@@ -21,8 +22,9 @@ class CompoundSharedContextTest {
     }
     @Test void explicitActionDayOverridesSharedDay() {
         var page=PlanPageContext.builder().activeDay(1).build();
-        var intent=new ConversationIntentClassifier().classify("第2天，添加三峡博物馆，第3天删除洪崖洞，少走路",page);
-        var store=new PendingIntentContinuations();var pending=store.remember("s",1,intent);
+        var classifier=com.ai.guide.testing.PlannerTaxonomyFixtures.classifier();
+        var intent=classifier.classify("第2天，添加三峡博物馆，第3天删除洪崖洞，少走路",page);
+        var store=new PendingIntentContinuations(classifier);var pending=store.remember("s",1,intent);
         var answer=store.resume("s",1,pending.intentId(),"执行第二个",page);
         assertEquals(3,answer.getDayNumber());assertTrue(answer.getPreferences().contains("LOW_WALKING"));
     }

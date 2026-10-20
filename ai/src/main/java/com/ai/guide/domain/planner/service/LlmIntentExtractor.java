@@ -1,16 +1,18 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.language.IntentLanguagePolicy;
+
 import com.ai.guide.domain.trip.model.Trip;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.PlanPageContext;
+import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +39,12 @@ import java.util.regex.Pattern;
 public class LlmIntentExtractor {
 
     private static final Logger log = LoggerFactory.getLogger(LlmIntentExtractor.class);
+    @Autowired(required = false)
+    private DiningCategoryGrounder diningCategoryGrounder;
+
+    public void setDiningCategoryGrounder(DiningCategoryGrounder diningCategoryGrounder) {
+        if (diningCategoryGrounder != null) this.diningCategoryGrounder = diningCategoryGrounder;
+    }
     private static final Pattern JSON_OBJECT = Pattern.compile("\\{.*}", Pattern.DOTALL);
     private static final Pattern ORDINAL_PATTERN = Pattern.compile("(?:第\\s*)?([一二两三四五12345])\\s*(?:个|项|号|方案)?");
     private static final Pattern EXPLICIT_DAY_PATTERN = Pattern.compile("(第[一二三四五六七八九十0-9]+天|day\\s*[0-9]+|今天|明天|后天|首日|第一天|末日|最后一天)", Pattern.CASE_INSENSITIVE);
@@ -53,16 +61,16 @@ public class LlmIntentExtractor {
               "operation": "PLAN | REPLACE_STOP | ADD_STOP | REMOVE_STOP | REPLAN_DAY | REDUCE_DENSITY | APPLY_REPLACEMENT | QA | UNKNOWN",
               "intentType": "同 operation 映射值，如 PLAN, SUGGEST_REPLACEMENTS, ADD_STOP, REMOVE_STOP, REPLAN_DAY, REDUCE_DAY_DENSITY, PLACE_QUESTION, CLARIFICATION, UNKNOWN",
               "scope": "STOP | DAY | TRIP",
-              "startPlace": "用户明确提到的出发地点或当前所在位置(如 重庆邮电大学、重庆江津、南山、解放碑)或 null",
-              "timeBudgetMinutes": 整数(如3小时填180，半天填240，2小时填120，6小时填360)或 null,
+              "startPlace": "用户明确提到的出发地点或当前所在位置（保留用户原文中的地点名称）或 null",
+              "timeBudgetMinutes": 用户明确提供的时长换算为分钟后的整数，未提供则为 null,
               "durationDays": 整数(如两天填2，三日游填3)或 null,
-              "targetPlace": "用户提到的目标目的地或片区(如 江津、武隆、南岸区)或 null",
+              "targetPlace": "用户提到的目标目的地或片区原文或 null",
               "targetDayReference": "第二天/明天/首日/8月30日 等原始词或 null",
               "targetDay": 整数(如1, 2, 3)或 null,
-              "targetStopReference": "李子坝/这个景点/三峡博物馆 等原始词或 null",
+              "targetStopReference": "用户原文中的目标站点引用或 null",
               "targetStopId": "若能从上下文站点列表中明确匹配到具体stopId则填入(如 day2-liziba)否则null",
-              "requestedVenueName": "用户想要加入或提问的具体景点或餐厅/美食名称(如 北仓、陈胖子火锅(总店))或 null",
-              "replacementPlaceName": "用户明确指定的替换目标景点或餐厅/美食名称(如 重庆大剧院外围广场、陈胖子火锅(总店)、佩姐老火锅)或 null",
+              "requestedVenueName": "用户想要加入或提问的具体景点或餐饮名称，完整保留用户原文或 null",
+              "replacementPlaceName": "用户明确指定的替换目标景点或餐饮名称，完整保留用户原文或 null",
               "replacementPlaceId": "若上下文或景点目录中能明确匹配替换目标ID则填入，否则null",
               "cuisineOrPlace": "餐饮请求中的纯菜系/菜名或具体餐厅全名；移除预算、口味、距离等修饰，不截断名称；非餐饮请求填 null",
               "genericDiningCraving": "true 表示菜系/菜名泛需求，false 表示具体餐厅或品牌，无法判断/非餐饮填 null；必须使用 JSON 布尔值",
@@ -81,17 +89,17 @@ public class LlmIntentExtractor {
             }
 
             意图分类指南：
-            0. PLAN：用户请求生成一份新旅行规划或推荐路线（例如：“我在重庆邮电大学，给我3小时的旅游规划”、“我在江津，给我2小时的旅游规划”、“周末去重庆玩两天，喜欢城市夜景”、“下午想在附近逛逛”）。
-               - 若用户明确表达了在某个地点（如“在重邮”、“人在重庆北站”、“位于解放碑”、“我在江津”），提取 startPlace（如果用户提到的是简称如“重邮”，可标准化为“重庆邮电大学”或保留“重邮”）。注意：startPlace 仅包含纯地点名称，严禁混入后面的时间范围（如“重庆邮电大学 10点到17点”必须提取 startPlace 为“重庆邮电大学”）。
-               - 若用户提供了时间限制（如“3小时”、“半天”、“120分钟”、“6小时”）或时间区间（如“10点到17点”、“9:00-18:00”、“从上午10点至下午5点”），换算为总分钟数填入 timeBudgetMinutes（例如“10点到17点”换算为420分钟），并同时将 durationDays 填入 1。
+            0. PLAN：用户请求生成一份新旅行规划或推荐路线（例如：“我在某个车站，给我3小时的旅游规划”、“周末去某城市玩两天，喜欢城市夜景”、“下午想在附近逛逛”）。
+               - 若用户明确表达了在某个地点，提取 startPlace（若用户使用简称，优先保留原文简称）。注意：startPlace 仅包含纯地点名称，严禁混入后面的时间范围。
+               - 若用户提供了时间限制或时间区间，将其换算为总分钟数填入 timeBudgetMinutes，并设置与请求相符的 durationDays；不要从示例或默认值推断用户未提供的时段。
                - 若用户提供了多日时间（如“玩两天”、“3日游”），填入 durationDays。
                - 若用户想要周边规划但完全没有提供出发地点（如“下午想在附近逛逛”、“给我推荐几个附近的景点”），请将 requiresClarification 设为 true，并在 clarificationQuestion 中引导用户提供当前所在位置（如“请问您当前在哪个位置？告诉我您的出发点，我来为您规划附近路线。”）。
-            1. REPLACE_STOP (SUGGEST_REPLACEMENTS)：用户想替换、更换某个景点或餐饮节点（如“换掉李子坝”、“把午餐改成【陈胖子火锅(总店)】”、“晚餐换成防空洞老火锅”、“把午餐改成肯德基”、“把晚餐换成外婆家”）。无论目标是景区还是任意具体餐厅/商户，均须完整提取 replacementPlaceName 为该具体商户或景点的完整名称。
-            2. ADD_STOP：用户想在某天添加或增加景点或餐饮节点（如“第二天加上北仓”、“第1天加个室内景点”、“在行程中加个午餐【陈胖子火锅(总店)】”、“加个外婆家”）。若指定了具体商户或景点，提取 requestedVenueName 或 replacementPlaceName。
+            1. REPLACE_STOP (SUGGEST_REPLACEMENTS)：用户想替换、更换某个景点或餐饮节点（如“换掉这个景点”、“把午餐换成某家餐厅”）。无论目标类型为何，均须完整提取 replacementPlaceName。
+            2. ADD_STOP：用户想在某天添加或增加景点或餐饮节点（如“第二天加上一个博物馆”、“加入一家指定餐厅”）。若指定了具体地点，提取 requestedVenueName 或 replacementPlaceName。
             3. REMOVE_STOP：用户想删除或移除某个景点（如“删除李子坝”、“把这个景点去掉”）。
             4. REPLAN_DAY：用户想对某一天进行整体重排或条件重排（如“重新规划第二天，少走路”、“第二天下雨”、“改一下第二天全部行程”）。
             5. REDUCE_DENSITY (REDUCE_DAY_DENSITY)：用户觉得太赶、太累或想少安排景点（如“今天太赶了，少推荐一个”、“第二天太累了”）。
-            6. QA (PLACE_QUESTION)：用户只是询问关于某个景点或行程的问题（如“为什么推荐洪崖洞？”、“三峡博物馆几点开门”），不想修改行程。
+            6. QA (PLACE_QUESTION)：用户只是询问关于某个景点或行程的问题（如“为什么推荐这个景点？”、“博物馆几点开门”），不想修改行程。
             7. APPLY_REPLACEMENT：用户要求应用候选方案（如“换成第一个”、“选方案二”）。
             8. UNKNOWN：无法识别的请求，或要求生成非本旅行领域的内容。
 
@@ -99,7 +107,7 @@ public class LlmIntentExtractor {
             - 明确数字时段必须完整返回开始和结束；仅调整指定时段，其余站点保留。不要猜测单边或不合法的范围。
             - 否定或要求保留的实体不能成为新增、删除、替换目标；候选序号只能取用户明确肯定选择的序号，无法确定时澄清。
 
-            - 餐饮语义由 cuisineOrPlace 与 genericDiningCraving 表达，不因菜名不在词表而拒绝；例如驴肉火烧、螺蛳粉是泛需求，具体门店则保留全名。清淡/不辣等口味只作为 preferences 补充，不替换用户指定菜系。
+            - 餐饮语义由 cuisineOrPlace 与 genericDiningCraving 表达，不因菜名不在词表而拒绝；具体门店则保留完整名称。清淡/不辣等口味只作为 preferences 补充，不替换用户指定菜系。
             - 对泛餐饮请求忽略句尾语气词和数量修饰，cuisineOrPlace 只保留食物需求；不要将口语片段当作店名。对具体餐厅必须完整保留专名中的“的”等文字。
             - 若用户说“把第二天景点改一下”或“改第二天”，目标天数明确但未说明具体诉求，请设置 requiresClarification=true，并在 clarificationQuestion 中给出清晰选项。
             - 若用户说“换掉这个景点”且上下文中有 selectedStopId，信息完整，无需追问。
@@ -114,9 +122,9 @@ public class LlmIntentExtractor {
     private final long timeoutMs;
     private final Executor modelExecutor;
 
-    /** Production constructor: reuse the existing Spring AI OpenAI-compatible ChatClient. */
+    /** Production constructor: use the provider-neutral model capability. */
     @Autowired
-    public LlmIntentExtractor(ChatClient.Builder builder,
+    public LlmIntentExtractor(LanguageModelPort modelGateway,
                               ObjectMapper objectMapper,
                               ConversationIntentClassifier fallbackClassifier,
                               @Value("${planner.llm.intent.enabled:false}") boolean enabled,
@@ -124,11 +132,9 @@ public class LlmIntentExtractor {
                               @Value("${planner.llm.intent.timeout-ms:3500}") long timeoutMs,
                               @Value("${spring.ai.openai.api-key:}") String apiKey,
                               @Qualifier("plannerLlmExecutor") Executor modelExecutor) {
-        ChatClient chatClient = builder.build();
-        this.modelClient = (systemPrompt, userPrompt) -> chatClient.prompt()
-                .messages(new SystemMessage(systemPrompt), new UserMessage(userPrompt))
-                .call()
-                .content();
+        this.modelClient = (systemPrompt, userPrompt) -> modelGateway.completeText(List.of(
+                new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, systemPrompt),
+                new LanguageModelMessage(LanguageModelMessage.Role.USER, userPrompt)));
         this.objectMapper = objectMapper;
         this.fallbackClassifier = fallbackClassifier;
         this.enabled = enabled;
@@ -519,7 +525,7 @@ public class LlmIntentExtractor {
                 targetAttraction = null;
                 replacementPlace = null;
             }
-        } else if (PlanAdjustmentService.isGenericDiningCraving(requestedVenue)) {
+        } else if (diningCategoryGrounder != null && diningCategoryGrounder.isGenericDiningCraving(requestedVenue)) {
             requestedVenue = null;
         }
         String targetStopReference = safeText(deterministic.getTargetStopReference()) != null
@@ -578,8 +584,9 @@ public class LlmIntentExtractor {
             condition = "RAIN";
         }
 
-        boolean isOpenDiningExploration = text != null && text.matches(".*(附近|周边|有没有|有什么).*(吃|餐|饭|店|烧烤|火锅|小吃|美食|茶|茶馆|茶室|盖碗茶|品茗|甜品|甜食|糖水|冰粉|凉糕).*");
-        boolean mentionsMealSlot = text != null && text.matches(".*(午餐|午饭|中餐|中午|早餐|早饭|早点|晚餐|晚饭|夜宵|宵夜).*");
+        boolean isOpenDiningExploration = diningCategoryGrounder != null
+                && diningCategoryGrounder.isOpenDiningExploration(text);
+        boolean mentionsMealSlot = diningCategoryGrounder != null && diningCategoryGrounder.hasMealSlotReference(text);
 
         String targetStop = ((type == ConversationIntentType.ADD_STOP && safeText(targetAttraction) != null && safeText(deterministic.getTargetStopId()) == null && safeText(llm.getTargetStopId()) == null)
                 || isOpenDiningExploration || mentionsMealSlot)
@@ -730,7 +737,7 @@ public class LlmIntentExtractor {
 
         if (trip != null) {
             sb.append("\n当前行程结构：\n");
-            sb.append("行程标题：").append(trip.getOrDefault("title", "重庆行程")).append("\n");
+            sb.append("行程标题：").append(trip.getOrDefault("title", "旅行行程")).append("\n");
             Object daysObj = trip.get("days");
             if (daysObj instanceof List<?> daysList) {
                 for (Object d : daysList) {

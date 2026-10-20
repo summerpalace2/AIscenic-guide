@@ -2,8 +2,7 @@ package com.ai.guide.application.user;
 
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
-import com.ai.guide.common.security.JwtRevocationService;
-import com.ai.guide.common.security.JwtUtil;
+import com.ai.guide.domain.user.gateway.JwtSessionTokenPort;
 import com.ai.guide.domain.user.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,16 +19,13 @@ public class UserApplicationServiceImpl implements UserApplicationService {
     private static final Logger log = LoggerFactory.getLogger(UserApplicationServiceImpl.class);
 
     private final UserService userService;
-    private final JwtUtil jwtUtil;
-    private final JwtRevocationService revocationService;
+    private final JwtSessionTokenPort sessionTokens;
 
     @Autowired
     public UserApplicationServiceImpl(UserService userService,
-                                      JwtUtil jwtUtil,
-                                      JwtRevocationService revocationService) {
+                                      JwtSessionTokenPort sessionTokens) {
         this.userService = userService;
-        this.jwtUtil = jwtUtil;
-        this.revocationService = revocationService;
+        this.sessionTokens = sessionTokens;
     }
 
     @Override
@@ -80,9 +76,8 @@ public class UserApplicationServiceImpl implements UserApplicationService {
             return Result.error(401, "请提供有效的登录凭据");
         }
         String token = authorization.substring("Bearer ".length()).trim();
-        var claims = jwtUtil.parse(token);
-        if (claims == null) return Result.error(401, "登录凭据无效或已过期");
-        if (!revocationService.revoke(token, claims)) {
+        if (!sessionTokens.isValid(token)) return Result.error(401, "登录凭据无效或已过期");
+        if (!sessionTokens.revoke(token)) {
             return Result.error(503, "退出登录暂不可用，请稍后重试");
         }
         return Result.success("退出成功", null);

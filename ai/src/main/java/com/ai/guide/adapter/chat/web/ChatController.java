@@ -2,10 +2,12 @@ package com.ai.guide.adapter.chat.web;
 
 import com.ai.guide.application.chat.ChatApplicationService;
 import com.ai.guide.application.chat.dto.ChatStreamCommand;
+import com.ai.guide.application.chat.dto.ChatStreamEvent;
 import com.ai.guide.application.chat.dto.ChatStructuredCommand;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.chat.model.ScenicResponse;
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -54,7 +56,7 @@ public class ChatController {
                 userId, username, role
         );
 
-        return chatApplicationService.streamChat(command);
+        return toSse(chatApplicationService.streamChat(command));
     }
 
     public record ChatStreamRequest(
@@ -94,7 +96,17 @@ public class ChatController {
                 userId, username, role
         );
 
-        return chatApplicationService.streamChat(command);
+        return toSse(chatApplicationService.streamChat(command));
+    }
+
+    private Flux<ServerSentEvent<String>> toSse(Flux<ChatStreamEvent> events) {
+        return events.map(event -> ServerSentEvent.<String>builder()
+                .event(event.event())
+                // JSON protects leading whitespace and newlines in individual model tokens from SSE framing.
+                .data("text".equals(event.event()) && event.data() != null
+                        ? "\"" + new String(JsonStringEncoder.getInstance().quoteAsString(event.data())) + "\""
+                        : event.data())
+                .build());
     }
 
     /**

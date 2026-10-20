@@ -108,7 +108,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 "/ai/planner/v1/shadow".equals(path)
                         || "/ai/planner/v1/shadow/replan".equals(path)
                         || "/ai/planner/v1/shadow/stops".equals(path))) return true;
-        if ("POST".equals(method) && "/ai/rag/retrieve".equals(path)) return true;
         if ("POST".equals(method) && "/ai/memories/candidate".equals(path)) return true;
         return ("GET".equals(method) || "POST".equals(method)) &&
                 path.startsWith("/ai/planner/v1/sessions/");

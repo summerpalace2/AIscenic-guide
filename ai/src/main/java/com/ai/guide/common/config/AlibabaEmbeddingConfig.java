@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 阿里云 DashScope Embedding 配置类
@@ -31,21 +32,31 @@ public class AlibabaEmbeddingConfig {
 
     private static final Logger log = LoggerFactory.getLogger(AlibabaEmbeddingConfig.class);
 
-    @Value("${alibabacloud.dashscope.api-key:}")
-    private String apiKey;
-
+    private final String apiKey;
+    private final String embeddingUrl;
     private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
 
-    {
+    @org.springframework.beans.factory.annotation.Autowired
+    public AlibabaEmbeddingConfig(
+            @Value("${alibabacloud.dashscope.api-key:}") String apiKey,
+            @Value("${alibabacloud.dashscope.embedding-url:${DASHSCOPE_EMBEDDING_URL:https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding}}") String embeddingUrl) {
+        this(apiKey, embeddingUrl, createRestTemplate(), new ObjectMapper());
+    }
+
+    AlibabaEmbeddingConfig(String apiKey, String embeddingUrl, RestTemplate restTemplate, ObjectMapper objectMapper) {
+        this.apiKey = apiKey;
+        this.embeddingUrl = embeddingUrl;
+        this.restTemplate = Objects.requireNonNull(restTemplate);
+        this.objectMapper = Objects.requireNonNull(objectMapper);
+    }
+
+    private static RestTemplate createRestTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(3000);
         factory.setReadTimeout(3000);
-        restTemplate = new RestTemplate(factory);
+        return new RestTemplate(factory);
     }
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${alibabacloud.dashscope.embedding-url:${DASHSCOPE_EMBEDDING_URL:https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding}}")
-    private String embeddingUrl;
 
     @Bean
     public EmbeddingModel embeddingModel() {
@@ -92,6 +103,9 @@ public class AlibabaEmbeddingConfig {
         }
 
         private float[] embedText(String text) {
+            if (apiKey == null || apiKey.isBlank()) {
+                throw new IllegalStateException("Embedding provider unavailable: API key is not configured");
+            }
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", "Bearer " + apiKey);

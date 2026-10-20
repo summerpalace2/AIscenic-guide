@@ -1,47 +1,45 @@
 package com.ai.guide.domain.user.service;
 
-
-import com.ai.guide.common.security.JwtUtil;
+import com.ai.guide.domain.user.gateway.JwtTokenIssuerPort;
+import com.ai.guide.domain.user.gateway.UserAccountRepositoryPort;
+import com.ai.guide.domain.user.gateway.PasswordEncoderPort;
 import com.ai.guide.domain.user.model.User;
+import com.ai.guide.infrastructure.user.security.BcryptPasswordEncoderAdapter;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import java.util.List;
-import java.util.Map;
+
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class UserServicePasswordMetadataTest {
-
     @Test
-    void registrationWritesExplicitBcryptMetadata() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        JwtUtil jwtUtil = mock(JwtUtil.class);
+    void registrationCreatesExplicitBcryptAccountThroughRepository() {
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        JwtTokenIssuerPort tokenIssuer = mock(JwtTokenIssuerPort.class);
         String username = "metadata-user";
-        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq(username))).thenReturn(0);
-        when(jwtUtil.generateToken(anyString(), eq(username), eq("USER"))).thenReturn("test-token");
-        UserService service = new UserService(jdbcTemplate, jwtUtil);
+        when(repository.usernameExists(username)).thenReturn(false);
+        when(tokenIssuer.issue(anyString(), org.mockito.ArgumentMatchers.eq(username), org.mockito.ArgumentMatchers.eq("USER")))
+                .thenReturn("test-token");
+        UserService service = new UserService(repository, new BcryptPasswordEncoderAdapter(), tokenIssuer, null);
 
-        Map<String, Object> result = service.register(username, "test-password");
+        var result = service.register(username, "test-password");
 
-        verify(jdbcTemplate).update(contains("password_scheme"), any(Object[].class));
+        verify(repository).create(anyString(), org.mockito.ArgumentMatchers.eq(username), anyString(), anyString());
         assertEquals("USER", result.get("role"));
         assertEquals("test-token", result.get("token"));
     }
 
     @Test
     void unsupportedLegacySchemeFailsClosedBeforePasswordVerification() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        JwtUtil jwtUtil = mock(JwtUtil.class);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        JwtTokenIssuerPort tokenIssuer = mock(JwtTokenIssuerPort.class);
         String username = "legacy-user";
         User legacy = new User();
         legacy.setId("legacy-id");
@@ -53,14 +51,14 @@ class UserServicePasswordMetadataTest {
         legacy.setResetRequired(false);
         legacy.setRole("USER");
         legacy.setStatus("active");
-        when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(username)))
-                .thenReturn(List.of(legacy));
-        UserService service = new UserService(jdbcTemplate, jwtUtil);
+        when(repository.findByUsername(username)).thenReturn(Optional.of(legacy));
+        UserService service = new UserService(repository, mock(PasswordEncoderPort.class), tokenIssuer, null);
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> service.login(username, "test-password"));
 
         assertTrue(error.getMessage().contains("重置"));
-        verify(jwtUtil, never()).generateToken(anyString(), anyString(), anyString());
+        verify(repository, never()).upgradeLegacyCredentials(org.mockito.ArgumentMatchers.any(), anyString(), anyString());
+        verify(tokenIssuer, never()).issue(anyString(), anyString(), anyString());
     }
 }

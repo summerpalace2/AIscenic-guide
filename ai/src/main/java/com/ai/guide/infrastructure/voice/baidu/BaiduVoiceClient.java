@@ -1,12 +1,14 @@
 package com.ai.guide.infrastructure.voice.baidu;
 
-import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.voice.gateway.VoiceGatewayPort;
+import com.ai.guide.domain.voice.model.VoiceSynthesisResult;
+import com.ai.guide.domain.voice.model.VoiceTranscriptionResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -15,9 +17,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.util.LinkedMultiValueMap;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,10 +36,6 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
 
     private static final Logger log = LoggerFactory.getLogger(BaiduVoiceClient.class);
 
-    private static final String ASR_URL = "https://vop.baidu.com/server_api";
-    private static final String TTS_URL = "https://tsn.baidu.com/text2audio";
-    private static final String TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token";
-
     @Value("${baidu.api-key:}")
     private String apiKey;
 
@@ -44,20 +44,35 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final String asrUrl;
+    private final String ttsUrl;
+    private final String tokenUrl;
 
-    public BaiduVoiceClient() {
-        var factory=new org.springframework.http.client.SimpleClientHttpRequestFactory();factory.setConnectTimeout(5000);factory.setReadTimeout(15000);
+    @Autowired
+    public BaiduVoiceClient(@Value("${baidu.connect-timeout-ms:5000}") int connectTimeoutMs,
+                            @Value("${baidu.read-timeout-ms:15000}") int readTimeoutMs,
+                            @Value("${baidu.voice.asr-url}") String asrUrl,
+                            @Value("${baidu.voice.tts-url}") String ttsUrl,
+                            @Value("${baidu.voice.token-url}") String tokenUrl) {
+        var factory=new org.springframework.http.client.SimpleClientHttpRequestFactory();factory.setConnectTimeout(connectTimeoutMs);factory.setReadTimeout(readTimeoutMs);
         this.restTemplate = new RestTemplate(factory);
         this.objectMapper = new ObjectMapper();
+        this.asrUrl = requireUrl(asrUrl);
+        this.ttsUrl = requireUrl(ttsUrl);
+        this.tokenUrl = requireUrl(tokenUrl);
     }
 
-    public BaiduVoiceClient(RestTemplate restTemplate, ObjectMapper objectMapper) {
+    public BaiduVoiceClient(RestTemplate restTemplate, ObjectMapper objectMapper,
+                            String asrUrl, String ttsUrl, String tokenUrl) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.asrUrl = requireUrl(asrUrl);
+        this.ttsUrl = requireUrl(ttsUrl);
+        this.tokenUrl = requireUrl(tokenUrl);
     }
 
     @Override
-    public Result<String> transcribe(byte[] audioBytes, String base64Audio, int devPid) {
+    public VoiceTranscriptionResult transcribe(byte[] audioBytes, String base64Audio, int devPid) {
         try {
             String token = getAccessToken();
             String cuid = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
@@ -66,18 +81,19 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
                     "{\"format\":\"wav\",\"rate\":16000,\"channel\":1,\"token\":\"%s\",\"cuid\":\"%s\",\"dev_pid\":%d,\"len\":%d,\"speech\":\"%s\"}",
                     token, cuid, devPid, audioBytes.length, base64Audio);
 
-            log.info("[ASR] POST " + ASR_URL + " | audio_len=" + audioBytes.length + " | dev_pid=" + devPid);
+            log.info("[ASR] POST " + asrUrl + " | audio_len=" + audioBytes.length + " | dev_pid=" + devPid);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(ASR_URL, entity, String.class);
+            ResponseEntity<String> response = restTemplate.postForEntity(asrUrl, entity, String.class);
             String responseBody = response.getBody();
 
-            log.info("[ASR] Response: " + (responseBody != null ? responseBody.substring(0, Math.min(500, responseBody.length())) : "null"));
+            log.info("[ASR] Response status={} bytes={}", response.getStatusCode().value(),
+                    responseBody == null ? 0 : responseBody.length());
 
             if (responseBody == null || responseBody.isEmpty()) {
-                return Result.error(500, "语音识别返回空结果");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PROVIDER_FAILURE, "语音识别返回空结果");
             }
 
             JsonNode json = objectMapper.readTree(responseBody);
@@ -85,7 +101,7 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
 
             if (errNo != 0) {
                 String errMsg = json.path("err_msg").asText("unknown");
-                log.error("[ASR] Baidu error: " + errNo + " - " + errMsg);
+                log.warn("[ASR] Provider error code={}", errNo);
                 return handleBaiduError(errNo, errMsg);
             }
 
@@ -93,53 +109,61 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
             if (resultNode.isArray() && resultNode.size() > 0) {
                 String text = resultNode.get(0).asText().trim();
                 if (!text.isEmpty()) {
-                    return Result.success("识别成功", text);
+                    return VoiceTranscriptionResult.success("识别成功", text);
                 }
             }
-            return Result.error(500, "未识别到内容，请重新录制");
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PROVIDER_FAILURE, "未识别到内容，请重新录制");
 
         } catch (HttpClientErrorException e) {
-            log.error("[ASR] HTTP Error: " + e.getStatusCode() + " " + e.getResponseBodyAsString());
-            return Result.error(e.getStatusCode().value(), "语音识别服务异常（HTTP " + e.getStatusCode().value() + "）");
+            log.warn("[ASR] HTTP error status={}", e.getStatusCode().value());
+            return VoiceTranscriptionResult.failure(statusForHttp(e.getStatusCode().value()), "语音识别服务异常（HTTP " + e.getStatusCode().value() + "）");
         } catch (Exception e) {
-            log.error("[ASR] Error: " + e.getMessage());
-            return Result.error(500, "转写失败，请稍后重试");
+            // HTTP exception messages may contain token URLs or provider response text.
+            log.warn("[ASR] Request failed type={}", e.getClass().getSimpleName());
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PROVIDER_FAILURE, "转写失败，请稍后重试");
         }
     }
 
     @Override
-    public ResponseEntity<byte[]> synthesize(String text, String per, String lang) {
+    public VoiceSynthesisResult synthesize(String text, String per, String lang) {
+        // Baidu's short-text endpoint limits the original text, not its URL-encoded representation.
+        if (text.getBytes(Charset.forName("GBK")).length >= 1024) {
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.PAYLOAD_TOO_LARGE,
+                    "朗读文本过长，请选择较短内容（少于1024 GBK字节）");
+        }
         try {
             String token = getAccessToken();
-            String encodedText = URLEncoder.encode(text, StandardCharsets.UTF_8.name());
-            String url = TTS_URL
-                    + "?tex=" + encodedText
-                    + "&tok=" + token
-                    + "&cuid=scenic_guide_tts"
-                    + "&ctp=1"
-                    + "&lan=" + lang
-                    + "&spd=5"
-                    + "&pit=5"
-                    + "&vol=5"
-                    + "&per=" + per
-                    + "&aue=3";
+            var form = new LinkedMultiValueMap<String, String>();
+            // Baidu recommends two URL encodings for tex, including '+' and '%'.
+            // The form converter performs the second encoding when writing the request body.
+            form.add("tex", URLEncoder.encode(text, StandardCharsets.UTF_8));
+            form.add("tok", token);
+            form.add("cuid", "scenic_guide_tts");
+            form.add("ctp", "1");
+            form.add("lan", lang);
+            form.add("spd", "5");
+            form.add("pit", "5");
+            form.add("vol", "5");
+            form.add("per", per);
+            form.add("aue", "3");
+            var headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
             log.info("[TTS] lang=" + lang + ", voice=" + per + ", text_len=" + text.length());
-            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, null, byte[].class);
+            ResponseEntity<byte[]> response = restTemplate.exchange(ttsUrl, HttpMethod.POST,
+                    new HttpEntity<>(form, headers), byte[].class);
             byte[] audio=response.getBody();MediaType contentType=response.getHeaders().getContentType();
             boolean jsonType=contentType!=null&&(MediaType.APPLICATION_JSON.isCompatibleWith(contentType)||contentType.getSubtype().endsWith("+json"));
             String prefix=audio==null?"":new String(audio,0,Math.min(audio.length,64),StandardCharsets.UTF_8).stripLeading();
             boolean mp3=audio!=null&&audio.length>=3&&((audio[0]=='I'&&audio[1]=='D'&&audio[2]=='3')||((audio[0]&0xff)==0xff&&(audio[1]&0xe0)==0xe0));
             if(!response.getStatusCode().is2xxSuccessful()||jsonType||prefix.startsWith("{")||!mp3) {
                 log.warn("[TTS] provider returned a non-audio or unsuccessful response");
-                return ResponseEntity.status(502).contentType(MediaType.APPLICATION_JSON).body("{\"code\":502,\"message\":\"语音供应商未返回有效音频\"}".getBytes(StandardCharsets.UTF_8));
+                return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.UPSTREAM_FAILURE, "语音供应商未返回有效音频");
             }
-            HttpHeaders headers = new HttpHeaders();headers.setContentType(MediaType.parseMediaType("audio/mpeg"));
-            headers.set("Content-Disposition", "attachment; filename=tts.mp3");
-            return new ResponseEntity<>(audio,headers,response.getStatusCode());
+            return VoiceSynthesisResult.success(audio);
         } catch (Exception e) {
-            log.error("[TTS] Error: " + e.getMessage());
-            return ResponseEntity.status(502).build();
+            log.warn("[TTS] Request failed type={}", e.getClass().getSimpleName());
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.UPSTREAM_FAILURE, "语音服务暂不可用");
         }
     }
 
@@ -147,8 +171,8 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
      * 获取百度 Access Token
      */
     public String getAccessToken() throws Exception {
-        String tokenUrl = TOKEN_URL + "?grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
-        ResponseEntity<Map> resp = restTemplate.getForEntity(tokenUrl, Map.class);
+        String requestUrl = tokenUrl + "?grant_type=client_credentials&client_id=" + apiKey + "&client_secret=" + secretKey;
+        ResponseEntity<Map> resp = restTemplate.getForEntity(requestUrl, Map.class);
         Map<String, Object> b = resp.getBody();
         if (b != null && b.containsKey("access_token")) {
             return (String) b.get("access_token");
@@ -159,30 +183,44 @@ public class BaiduVoiceClient implements VoiceGatewayPort {
     /**
      * 百度错误码 → 友好中文提示
      */
-    public Result<String> handleBaiduError(int errNo, String errMsg) {
+    public VoiceTranscriptionResult handleBaiduError(int errNo, String errMsg) {
         switch (errNo) {
             case 3001:
-                return Result.error(400, "音频质量过差，请重新录制（靠近麦克风、减少噪音）");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频质量过差，请重新录制（靠近麦克风、减少噪音）");
             case 3002:
-                return Result.error(401, "鉴权失败，百度 API Key 无效");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.UNAUTHORIZED, "鉴权失败，百度 API Key 无效");
             case 3003:
             case 3005:
-                return Result.error(429, "请求超限，请稍后再试");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.RATE_LIMITED, "请求超限，请稍后再试");
             case 3100:
             case 3102:
-                return Result.error(401, "鉴权失败，请检查 API Key 配置");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.UNAUTHORIZED, "鉴权失败，请检查 API Key 配置");
             case 3101:
-                return Result.error(400, "音频格式不支持，请使用中文普通话录制");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频格式不支持，请使用中文普通话录制");
             case 3301:
-                return Result.error(400, "未识别到语音内容（环境太安静或未说话）");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "未识别到语音内容（环境太安静或未说话）");
             case 3303:
-                return Result.error(429, "请求频率过快，请稍后再试");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.RATE_LIMITED, "请求频率过快，请稍后再试");
             case 3307:
-                return Result.error(400, "音频数据为空，请重新录制");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频数据为空，请重新录制");
             case 3312:
-                return Result.error(400, "音频格式参数异常，请重新录制");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频格式参数异常，请重新录制");
             default:
-                return Result.error(500, "语音识别失败，请稍后重试");
+                return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PROVIDER_FAILURE, "语音识别失败，请稍后重试");
         }
+    }
+
+    private static VoiceTranscriptionResult.Status statusForHttp(int statusCode) {
+        if (statusCode == 401) return VoiceTranscriptionResult.Status.UNAUTHORIZED;
+        if (statusCode == 403) return VoiceTranscriptionResult.Status.FORBIDDEN;
+        if (statusCode == 429) return VoiceTranscriptionResult.Status.RATE_LIMITED;
+        if (statusCode == 413) return VoiceTranscriptionResult.Status.PAYLOAD_TOO_LARGE;
+        if (statusCode == 400 || statusCode == 415) return VoiceTranscriptionResult.Status.INVALID_REQUEST;
+        return VoiceTranscriptionResult.Status.PROVIDER_FAILURE;
+    }
+
+    private static String requireUrl(String value) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException("Baidu voice endpoint must be configured");
+        return value.trim();
     }
 }

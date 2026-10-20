@@ -4,12 +4,13 @@ import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.rag.model.KnowledgeDocument;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
+import com.ai.guide.domain.rag.model.KnowledgeDocumentUpload;
 import com.ai.guide.domain.rag.service.RagRetrievalService;
 import com.ai.guide.domain.rag.service.RerankService;
-import com.ai.guide.domain.rag.service.ScenicDataImportService;
+import com.ai.guide.domain.rag.gateway.ScenicKnowledgePort;
+import com.ai.guide.domain.taxonomy.gateway.RagTaxonomyPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -20,27 +21,31 @@ import java.util.Map;
 @Service
 public class RagApplicationServiceImpl implements RagApplicationService {
 
-    private final ScenicDataImportService scenicDataImportService;
+    private final ScenicKnowledgePort scenicDataImportService;
     private final RerankService rerankService;
     private final RagRetrievalService ragRetrievalService;
     private final KnowledgeDocumentService knowledgeDocumentService;
+    private final RagTaxonomyPort taxonomy;
 
     @Autowired
-    public RagApplicationServiceImpl(ScenicDataImportService scenicDataImportService,
+    public RagApplicationServiceImpl(ScenicKnowledgePort scenicDataImportService,
                                      RerankService rerankService,
                                      RagRetrievalService ragRetrievalService,
-                                     KnowledgeDocumentService knowledgeDocumentService) {
+                                     KnowledgeDocumentService knowledgeDocumentService,
+                                     RagTaxonomyPort taxonomy) {
         this.scenicDataImportService = scenicDataImportService;
         this.rerankService = rerankService;
         this.ragRetrievalService = ragRetrievalService;
         this.knowledgeDocumentService = knowledgeDocumentService;
+        this.taxonomy = taxonomy;
     }
 
     @Override
     public Result<Map<String, Object>> retrieve(Map<String, Object> body) {
         Map<String, Object> input = body == null ? Map.of() : body;
         String query = String.valueOf(input.getOrDefault("query", input.getOrDefault("prompt", "")));
-        String city = String.valueOf(input.getOrDefault("city", "重庆"));
+        String requestedCity = String.valueOf(input.getOrDefault("city", "")).trim();
+        String city = requestedCity;
         boolean deep = Boolean.parseBoolean(String.valueOf(input.getOrDefault("deep", false)));
         Map<String, Object> constraints = new LinkedHashMap<>();
         Object rawConstraints = input.get("constraints");
@@ -79,11 +84,13 @@ public class RagApplicationServiceImpl implements RagApplicationService {
                     input.get("title") == null ? null : String.valueOf(input.get("title")),
                     input.get("category") == null ? null : String.valueOf(input.get("category")),
                     input.get("content") == null ? null : String.valueOf(input.get("content")),
-                    input.get("tags") == null ? null : String.valueOf(input.get("tags"))
+                    input.get("tags") == null ? null : String.valueOf(input.get("tags")),
+                    input.get("scope") == null ? null : String.valueOf(input.get("scope")),
+                    input.get("city") == null ? null : String.valueOf(input.get("city"))
             );
             return Result.success("更新成功", knowledgeDocumentService.toResponse(document, true));
         } catch (IllegalArgumentException e) {
-            return Result.error(404, e.getMessage());
+            return Result.error(e instanceof com.ai.guide.domain.rag.model.KnowledgeDocumentNotFoundException ? 404 : 400, e.getMessage());
         } catch (Exception e) {
             return Result.error(500, "更新知识文档失败，请稍后重试");
         }
@@ -148,15 +155,15 @@ public class RagApplicationServiceImpl implements RagApplicationService {
     }
 
     @Override
-    public Result<String> importFile(MultipartFile file) {
+    public Result<String> importFile(KnowledgeDocumentUpload file) {
         if (!UserContext.isAdmin()) {
             return Result.error(403, "需要管理员权限");
         }
         try {
-            if (file == null || file.isEmpty()) {
+            if (file == null || file.size() <= 0) {
                 return Result.error(400, "上传失败：文件为空");
             }
-            String filename = file.getOriginalFilename();
+            String filename = file.originalFilename();
             String title = filename == null || filename.isBlank() ? "未命名文档" : filename;
             knowledgeDocumentService.createDocument(
                     title,

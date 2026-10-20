@@ -1,0 +1,66 @@
+{
+  "checkpoint": "CP4.3-R2-candidate",
+  "capturedAt": "2026-10-09",
+  "repository": "D:\\scenic-guide",
+  "head": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+  "previousCandidate": "docs/refactor/CP4_3_R1_CANDIDATE.json",
+  "previousCandidateSha256": "42b3d72954847ef2b6d273ff54b563a4eb68c00cfc48dc6f435d63e9fe829a7c",
+  "startingCandidate": "docs/refactor/CP4_3_STARTING_CANDIDATE.json",
+  "startingCandidateSha256": "c01fab8959d0d5a3f80520ac75f1cbc3ea7acb0e25e291d20f25e80860d87abe",
+  "fullTrackedDirtyPatchSha256": "9b55fb55dff29d86dc371c9bee66a1353b74572424fe352d229c150bd57bf0ac",
+  "trackedPatch": {
+    "path": "docs/refactor/CP4_3_R2_TRACKED_PATCH.patch",
+    "sha256": "04da05079482732a9442494ea9af910d95ebab4a4810640a0c3ff475e2e156d2",
+    "generationCommand": "git diff --binary HEAD -- <trackedPaths from CP4_3_R2_CANDIDATE.json>",
+    "trackedPaths": [
+      "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java",
+      "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java",
+      "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java",
+      "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java",
+      "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java",
+      "ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java"
+    ]
+  },
+  "untrackedScopePaths": [
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerRestoreApplicationService.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerRestoreUseCasePort.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreActor.java",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreResult.java",
+    "ai/src/test/java/com/ai/guide/application/planner/PlannerRestoreApplicationServiceTest.java",
+    "ai/src/test/java/com/ai/guide/domain/planner/service/PlannerDraftRestoreTest.java"
+  ],
+  "fileSha256": {
+    "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java": "622580896fc8487a2de64f798939511bde498b66b90625f2d6cecc3da8600777",
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java": "16afe2298077475656f4471bb381efaff9bd44f711d77e1aaaef1a59eda91288",
+    "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java": "1576d681c14d63859ad8c33b4a9217edd3933233f28af225df357b1f0bf72219",
+    "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java": "fbcc9cac7a8fa415e3388e499bc6908b8a1a4810b93fba27365c45b2f9e736d6",
+    "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java": "e42d0d8ae772198e4f97451903a6a315d80878d7a8a7f1cde488af7d4bc68971",
+    "ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java": "6ad26ce16bb591b796351163e1ab3ddcec2c76123cc60aa81a8d9bf9b33c142f",
+    "ai/src/main/java/com/ai/guide/application/planner/PlannerRestoreApplicationService.java": "db1a06bac0801e9905088d065b6b261bc2ec0dcbbe88c0ea044b2060f97a5ff2",
+    "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerRestoreUseCasePort.java": "a8cfbea1e95a2cba48c7bd3331b5e352312c4e8f60a301c213a1ba4c5e697fd4",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreActor.java": "58c6aeb1d54a6908e04a800502654b24b67222d48bf4acb056b182b26e6d57fd",
+    "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerRestoreResult.java": "5d5039bb270643232592290f128ff458bbe87db47cb1e9fefcb7e146a1d6968f",
+    "ai/src/test/java/com/ai/guide/application/planner/PlannerRestoreApplicationServiceTest.java": "74afcb1d7f07bd3260bee66628714338d6340be509507e7085cbef8e1414bfd3",
+    "ai/src/test/java/com/ai/guide/domain/planner/service/PlannerDraftRestoreTest.java": "0c649f38d7782bb9c03378c47e76bd7e70d8b8b8348b9715b7be4d53efd0be84"
+  },
+  "implementationReport": {
+    "path": "docs/refactor/CP4_3_R2_IMPLEMENTATION_REPORT.md",
+    "sha256": "eee5df37244a8d2a4f81208233bb7e1b8ec911c59f635ffc0fc7393234343f2b"
+  },
+  "test": {
+    "command": ".\\mvnw.cmd -B '-Dtest=PlannerRestoreApplicationServiceTest,PlannerOpenApplicationServiceTest,PlannerSaveApplicationServiceTest,PlannerDraftRestoreTest,PlannerSaveConsistencyTest,TripSaveCapacityRegressionTest,PlannerControllerTest,PlannerServiceTest,ColaArchitectureGuardTest' clean test",
+    "workingDirectory": "D:\\scenic-cp4_3-r2b-0ff7c5d6ef2048ac9df8c61f00dfb029\\ai",
+    "result": "74 tests, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS",
+    "rawLog": {
+      "path": "docs/refactor/CP4_3_R2_TEST.log",
+      "sha256": "d9ce3c82da7d9fc05e14bb556845a04db079edd8863022079dfaac9825483213"
+    }
+  },
+  "isolatedCopyRecord": "docs/refactor/CP4_3_R2_ISOLATED_COPY.txt",
+  "priorR1ArtifactsPreserved": true,
+  "stagedOrCommitted": false,
+  "limitations": [
+    "formal Trip read and planner session CAS remain separate operations; cross-aggregate race not changed or barrier-tested",
+    "Mockito and isolated suite do not prove live PostgreSQL/HTTP/BFF/browser behavior"
+  ]
+}

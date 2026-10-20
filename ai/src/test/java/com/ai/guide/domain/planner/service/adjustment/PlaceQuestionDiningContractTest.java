@@ -22,6 +22,7 @@ class PlaceQuestionDiningContractTest {
         var dining = mock(DiningVenueService.class);
         var strategy = new PlaceQuestionAdjustmentStrategy(mock(AttractionService.class));
         strategy.setDiningVenueService(dining);
+        strategy.setTaxonomy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         var intent = PlanAdjustmentIntent.builder().type(ConversationIntentType.PLACE_QUESTION)
                 .targetStopId("museum").rawMessage("这个建筑有什么特色？").build();
         assertTrue(strategy.answerPlaceQuestion(intent,trip()).contains("科研建筑介绍"));
@@ -53,6 +54,7 @@ class PlaceQuestionDiningContractTest {
         var dining = mock(DiningVenueService.class);
         var strategy = new PlaceQuestionAdjustmentStrategy(mock(AttractionService.class));
         strategy.setDiningVenueService(dining);
+        strategy.setTaxonomy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         var intent = PlanAdjustmentIntent.builder().type(ConversationIntentType.PLACE_QUESTION)
                 .rawMessage("未收录新城区附近有没有茶馆").build();
         strategy.answerPlaceQuestion(intent,trip());

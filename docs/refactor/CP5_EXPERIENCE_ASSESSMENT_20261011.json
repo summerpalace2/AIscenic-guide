@@ -1,0 +1,23 @@
+{
+  "outcome": "benefited",
+  "reason": "采用 C2–C6 的项目限定审查原则：结构化餐饮意图贯穿到 taxonomy 搜索策略、动态地理回退显式降级、整段时间窗口校验、taxonomy 校验后热更新且错误时保留旧快照，以及静态扫描需要调用链回归配合。C1 因高德分类码版本敏感仅作 considered，未当作现行规范或在线验证。",
+  "effect": "聊天附近 POI 的前缀/后缀从生产 Java 移入必需 taxonomy 配置，缺键更新拒绝且保留旧快照；测试覆盖真实搜索调用。最终 clean Maven suite 为 1127 项、0 失败、0 错误、10 跳过；121 个 production Java 文件的 13 类硬编码扫描为 0 命中。未验证真实数据库、Redis、多实例、Qdrant 实网或所有城市的实际搜索质量。",
+  "evidence": [
+    {
+      "path": "D:/scenic-guide/ai/src/main/java/com/ai/guide/application/chat/ChatRetrievalCoordinator.java",
+      "role": "change"
+    },
+    {
+      "path": "D:/scenic-guide/ai/target/surefire-reports/TEST-com.ai.guide.application.chat.ChatContextRecoverySafetyTest.xml",
+      "role": "verification"
+    },
+    {
+      "path": "D:/scenic-guide/ai/target/surefire-reports/TEST-com.ai.guide.architecture.ColaArchitectureGuardTest.xml",
+      "role": "verification"
+    },
+    {
+      "path": "D:/scenic-guide/docs/refactor/CP5_FINAL_ACCEPTANCE_REPORT_20261011.md",
+      "role": "source"
+    }
+  ]
+}

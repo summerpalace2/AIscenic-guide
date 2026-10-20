@@ -1,0 +1,798 @@
+{
+  "schemaVersion": "ai-evaluation-v1",
+  "annotationPolicy": "Agent-authored provisional labels, peer reviewed before first execution; no human ground-truth claim. Template families are correlated. Labels freeze before execution; future corrections need a new version and explicit reason.",
+  "sourcePolicy": {
+    "source": "manually authored synthetic user requests, not real user data",
+    "labels": "agent-authored, peer-reviewed provisional task interpretation; no output-derived labels",
+    "network": "no external calls; deterministic production components only"
+  },
+  "datasetVersion": "2026-10-17-v1",
+  "suite": "intent",
+  "cases": [
+    {
+      "id": "intent-001",
+      "city": "重庆",
+      "query": "去重庆，第一天加上三峡博物馆",
+      "family": "explicit-add",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 1,
+        "requestedVenueNameContains": "三峡博物馆"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "explicit-add"
+    },
+    {
+      "id": "intent-002",
+      "city": "重庆",
+      "query": "重庆第二天把选中的这个站删掉",
+      "family": "selected-delete",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REMOVE_STOP",
+        "dayNumber": 2,
+        "targetStopId": "selected-stop"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-delete"
+    },
+    {
+      "id": "intent-003",
+      "city": "重庆",
+      "query": "重庆第三天把这个地方换成洪崖洞",
+      "family": "selected-replace",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REPLACE_STOP",
+        "dayNumber": 3,
+        "replacementPlaceNameContains": "洪崖洞"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-replace"
+    },
+    {
+      "id": "intent-004",
+      "city": "重庆",
+      "query": "重庆第一天少安排两个景点，别太赶",
+      "family": "density-colloquial",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "REDUCE_DENSITY",
+        "dayNumber": 1,
+        "reduceCount": 2
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "density-colloquial"
+    },
+    {
+      "id": "intent-005",
+      "city": "重庆",
+      "query": "重庆三峡博物馆怎么走？",
+      "family": "place-question",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "QA"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "place-question"
+    },
+    {
+      "id": "intent-006",
+      "city": "重庆",
+      "query": "重庆第二天我想吃点甜食的",
+      "family": "colloquial-food",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 2,
+        "cuisineOrPlaceContains": "甜"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "colloquial-food"
+    },
+    {
+      "id": "intent-007",
+      "city": "重庆",
+      "query": "重庆暂时不要添加洪崖洞，保持原行程",
+      "family": "negated-operation",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "mutationAllowed": false
+      },
+      "annotationReason": "Explicit refusal must not produce a mutating operation.",
+      "familyId": "negated-operation"
+    },
+    {
+      "id": "intent-008",
+      "city": "重庆",
+      "query": "重庆第二天删除这个景点，然后添加三峡博物馆",
+      "family": "compound-order",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "CLARIFICATION",
+        "requiresClarification": true
+      },
+      "annotationReason": "Current product supports one operation per preview; multi-action order must be confirmed. This measures product-policy compliance, not universal intent correctness.",
+      "familyId": "compound-order",
+      "productPolicyCase": true
+    },
+    {
+      "id": "intent-009",
+      "city": "重庆",
+      "query": "重庆这个馆怎么走，顺便加到明天下午",
+      "family": "mixed-question-action-ambiguous-target",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "requiresClarification": true
+      },
+      "annotationReason": "No selected stop or concrete museum identity; resolve reference before mutation.",
+      "familyId": "mixed-question-action-ambiguous-target"
+    },
+    {
+      "id": "intent-010",
+      "city": "重庆",
+      "query": "重庆删除这个景点",
+      "family": "followup-incomplete-target",
+      "context": {
+        "activeDay": 1,
+        "followUp": "第二天"
+      },
+      "expected": {
+        "dayNumber": 2,
+        "requiresClarification": true
+      },
+      "annotationReason": "Day reply resolves only day, not missing stop identity.",
+      "familyId": "followup-incomplete-target"
+    },
+    {
+      "id": "intent-011",
+      "city": "北京",
+      "query": "北京行程第一天，帮我添加中国国家博物馆这一站",
+      "family": "explicit-add",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 1,
+        "requestedVenueNameContains": "中国国家博物馆"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "explicit-add"
+    },
+    {
+      "id": "intent-012",
+      "city": "北京",
+      "query": "北京的第二天，这个站不要了，帮我删除",
+      "family": "selected-delete",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REMOVE_STOP",
+        "dayNumber": 2,
+        "targetStopId": "selected-stop"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-delete"
+    },
+    {
+      "id": "intent-013",
+      "city": "北京",
+      "query": "北京第三天，用故宫博物院替换当前景点",
+      "family": "selected-replace",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REPLACE_STOP",
+        "dayNumber": 3,
+        "replacementPlaceNameContains": "故宫博物院"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-replace"
+    },
+    {
+      "id": "intent-014",
+      "city": "北京",
+      "query": "北京第一天减掉两个景点，我要慢慢逛",
+      "family": "density-colloquial",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "REDUCE_DENSITY",
+        "dayNumber": 1,
+        "reduceCount": 2
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "density-colloquial"
+    },
+    {
+      "id": "intent-015",
+      "city": "北京",
+      "query": "去北京中国国家博物馆坐什么车？",
+      "family": "place-question",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "QA"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "place-question"
+    },
+    {
+      "id": "intent-016",
+      "city": "北京",
+      "query": "北京第二天给我加一家甜品店",
+      "family": "colloquial-food",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 2,
+        "cuisineOrPlaceContains": "甜"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "colloquial-food"
+    },
+    {
+      "id": "intent-017",
+      "city": "北京",
+      "query": "北京不要执行添加故宫博物院的操作，行程保持不变",
+      "family": "negated-operation",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "mutationAllowed": false
+      },
+      "annotationReason": "Explicit refusal must not produce a mutating operation.",
+      "familyId": "negated-operation"
+    },
+    {
+      "id": "intent-018",
+      "city": "北京",
+      "query": "北京第二天先删除选中的站，再加入中国国家博物馆",
+      "family": "compound-order",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "CLARIFICATION",
+        "requiresClarification": true
+      },
+      "annotationReason": "Current product supports one operation per preview; multi-action order must be confirmed. This measures product-policy compliance, not universal intent correctness.",
+      "familyId": "compound-order",
+      "productPolicyCase": true
+    },
+    {
+      "id": "intent-019",
+      "city": "北京",
+      "query": "北京那家博物馆在哪，能不能顺手放进明天下午的路线",
+      "family": "mixed-question-action-ambiguous-target",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "requiresClarification": true
+      },
+      "annotationReason": "No selected stop or concrete museum identity; resolve reference before mutation.",
+      "familyId": "mixed-question-action-ambiguous-target"
+    },
+    {
+      "id": "intent-020",
+      "city": "北京",
+      "query": "北京把当前景点删掉",
+      "family": "followup-incomplete-target",
+      "context": {
+        "activeDay": 1,
+        "followUp": "第2天吧"
+      },
+      "expected": {
+        "dayNumber": 2,
+        "requiresClarification": true
+      },
+      "annotationReason": "Day reply resolves only day, not missing stop identity.",
+      "familyId": "followup-incomplete-target"
+    },
+    {
+      "id": "intent-021",
+      "city": "杭州",
+      "query": "第一天去杭州，请把中国丝绸博物馆加入行程",
+      "family": "explicit-add",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 1,
+        "requestedVenueNameContains": "中国丝绸博物馆"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "explicit-add"
+    },
+    {
+      "id": "intent-022",
+      "city": "杭州",
+      "query": "杭州第二天移除当前景点，其他先留着",
+      "family": "selected-delete",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REMOVE_STOP",
+        "dayNumber": 2,
+        "targetStopId": "selected-stop"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-delete"
+    },
+    {
+      "id": "intent-023",
+      "city": "杭州",
+      "query": "杭州第三天这个站改成西湖",
+      "family": "selected-replace",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REPLACE_STOP",
+        "dayNumber": 3,
+        "replacementPlaceNameContains": "西湖"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-replace"
+    },
+    {
+      "id": "intent-024",
+      "city": "杭州",
+      "query": "杭州第一天少推荐2个景点吧",
+      "family": "density-colloquial",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "REDUCE_DENSITY",
+        "dayNumber": 1,
+        "reduceCount": 2
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "density-colloquial"
+    },
+    {
+      "id": "intent-025",
+      "city": "杭州",
+      "query": "杭州中国丝绸博物馆在哪里呀？",
+      "family": "place-question",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "QA"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "place-question"
+    },
+    {
+      "id": "intent-026",
+      "city": "杭州",
+      "query": "杭州第二天想吃点甜的，安排个甜品店吧",
+      "family": "colloquial-food",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 2,
+        "cuisineOrPlaceContains": "甜"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "colloquial-food"
+    },
+    {
+      "id": "intent-027",
+      "city": "杭州",
+      "query": "杭州先别加西湖，维持现在的安排",
+      "family": "negated-operation",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "mutationAllowed": false
+      },
+      "annotationReason": "Explicit refusal must not produce a mutating operation.",
+      "familyId": "negated-operation"
+    },
+    {
+      "id": "intent-028",
+      "city": "杭州",
+      "query": "杭州第二天删除当前景点，同时添加中国丝绸博物馆",
+      "family": "compound-order",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "CLARIFICATION",
+        "requiresClarification": true
+      },
+      "annotationReason": "Current product supports one operation per preview; multi-action order must be confirmed. This measures product-policy compliance, not universal intent correctness.",
+      "familyId": "compound-order",
+      "productPolicyCase": true
+    },
+    {
+      "id": "intent-029",
+      "city": "杭州",
+      "query": "杭州这个馆要预约吗，也帮我加入明天下午吧",
+      "family": "mixed-question-action-ambiguous-target",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "requiresClarification": true
+      },
+      "annotationReason": "No selected stop or concrete museum identity; resolve reference before mutation.",
+      "familyId": "mixed-question-action-ambiguous-target"
+    },
+    {
+      "id": "intent-030",
+      "city": "杭州",
+      "query": "杭州移除这站",
+      "family": "followup-incomplete-target",
+      "context": {
+        "activeDay": 1,
+        "followUp": "改到第二天"
+      },
+      "expected": {
+        "dayNumber": 2,
+        "requiresClarification": true
+      },
+      "annotationReason": "Day reply resolves only day, not missing stop identity.",
+      "familyId": "followup-incomplete-target"
+    },
+    {
+      "id": "intent-031",
+      "city": "西安",
+      "query": "西安第一天我还想去陕西历史博物馆，添加一下",
+      "family": "explicit-add",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 1,
+        "requestedVenueNameContains": "陕西历史博物馆"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "explicit-add"
+    },
+    {
+      "id": "intent-032",
+      "city": "西安",
+      "query": "在西安第二天，把我选中的这个景点删了吧",
+      "family": "selected-delete",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REMOVE_STOP",
+        "dayNumber": 2,
+        "targetStopId": "selected-stop"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-delete"
+    },
+    {
+      "id": "intent-033",
+      "city": "西安",
+      "query": "西安第三天把选中的景点替换为西安城墙",
+      "family": "selected-replace",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REPLACE_STOP",
+        "dayNumber": 3,
+        "replacementPlaceNameContains": "西安城墙"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-replace"
+    },
+    {
+      "id": "intent-034",
+      "city": "西安",
+      "query": "西安第一天行程太密了，少安排两个景点",
+      "family": "density-colloquial",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "REDUCE_DENSITY",
+        "dayNumber": 1,
+        "reduceCount": 2
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "density-colloquial"
+    },
+    {
+      "id": "intent-035",
+      "city": "西安",
+      "query": "西安陕西历史博物馆交通方便吗？",
+      "family": "place-question",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "QA"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "place-question"
+    },
+    {
+      "id": "intent-036",
+      "city": "西安",
+      "query": "西安第二天我想吃甜点",
+      "family": "colloquial-food",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 2,
+        "cuisineOrPlaceContains": "甜"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "colloquial-food"
+    },
+    {
+      "id": "intent-037",
+      "city": "西安",
+      "query": "西安取消添加西安城墙的想法，现在不用改行程",
+      "family": "negated-operation",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "mutationAllowed": false
+      },
+      "annotationReason": "Explicit refusal must not produce a mutating operation.",
+      "familyId": "negated-operation"
+    },
+    {
+      "id": "intent-038",
+      "city": "西安",
+      "query": "西安第二天帮我移除这站，接着添加陕西历史博物馆",
+      "family": "compound-order",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "CLARIFICATION",
+        "requiresClarification": true
+      },
+      "annotationReason": "Current product supports one operation per preview; multi-action order must be confirmed. This measures product-policy compliance, not universal intent correctness.",
+      "familyId": "compound-order",
+      "productPolicyCase": true
+    },
+    {
+      "id": "intent-039",
+      "city": "西安",
+      "query": "西安刚才那个馆怎么去，顺便帮我加到明天下午",
+      "family": "mixed-question-action-ambiguous-target",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "requiresClarification": true
+      },
+      "annotationReason": "No selected stop or concrete museum identity; resolve reference before mutation.",
+      "familyId": "mixed-question-action-ambiguous-target"
+    },
+    {
+      "id": "intent-040",
+      "city": "西安",
+      "query": "西安删除选中的这个地方",
+      "family": "followup-incomplete-target",
+      "context": {
+        "activeDay": 1,
+        "followUp": "第二天处理"
+      },
+      "expected": {
+        "dayNumber": 2,
+        "requiresClarification": true
+      },
+      "annotationReason": "Day reply resolves only day, not missing stop identity.",
+      "familyId": "followup-incomplete-target"
+    },
+    {
+      "id": "intent-041",
+      "city": "武汉",
+      "query": "武汉第一天加一站湖北省博物馆，好不好",
+      "family": "explicit-add",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 1,
+        "requestedVenueNameContains": "湖北省博物馆"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "explicit-add"
+    },
+    {
+      "id": "intent-042",
+      "city": "武汉",
+      "query": "武汉第二天删除此站，我想留点休息时间",
+      "family": "selected-delete",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REMOVE_STOP",
+        "dayNumber": 2,
+        "targetStopId": "selected-stop"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-delete"
+    },
+    {
+      "id": "intent-043",
+      "city": "武汉",
+      "query": "武汉第三天这站不合适，换成黄鹤楼",
+      "family": "selected-replace",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "REPLACE_STOP",
+        "dayNumber": 3,
+        "replacementPlaceNameContains": "黄鹤楼"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "selected-replace"
+    },
+    {
+      "id": "intent-044",
+      "city": "武汉",
+      "query": "武汉第一天少去两个景点，想轻松点",
+      "family": "density-colloquial",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "REDUCE_DENSITY",
+        "dayNumber": 1,
+        "reduceCount": 2
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "density-colloquial"
+    },
+    {
+      "id": "intent-045",
+      "city": "武汉",
+      "query": "武汉湖北省博物馆要不要预约？",
+      "family": "place-question",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "QA"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "place-question"
+    },
+    {
+      "id": "intent-046",
+      "city": "武汉",
+      "query": "武汉第二天加一个糖水甜品店",
+      "family": "colloquial-food",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "operation": "ADD_STOP",
+        "dayNumber": 2,
+        "cuisineOrPlaceContains": "甜"
+      },
+      "annotationReason": "Explicit request with stated operation/target/day; only annotated fields are scored.",
+      "familyId": "colloquial-food"
+    },
+    {
+      "id": "intent-047",
+      "city": "武汉",
+      "query": "武汉不需要添加黄鹤楼，原来的路线就行",
+      "family": "negated-operation",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "mutationAllowed": false
+      },
+      "annotationReason": "Explicit refusal must not produce a mutating operation.",
+      "familyId": "negated-operation"
+    },
+    {
+      "id": "intent-048",
+      "city": "武汉",
+      "query": "武汉第二天删除此站，然后加入湖北省博物馆",
+      "family": "compound-order",
+      "context": {
+        "activeDay": 1,
+        "selectedStopId": "selected-stop"
+      },
+      "expected": {
+        "operation": "CLARIFICATION",
+        "requiresClarification": true
+      },
+      "annotationReason": "Current product supports one operation per preview; multi-action order must be confirmed. This measures product-policy compliance, not universal intent correctness.",
+      "familyId": "compound-order",
+      "productPolicyCase": true
+    },
+    {
+      "id": "intent-049",
+      "city": "武汉",
+      "query": "武汉这个博物馆几点开门，明天下午帮我安排进去",
+      "family": "mixed-question-action-ambiguous-target",
+      "context": {
+        "activeDay": 1
+      },
+      "expected": {
+        "requiresClarification": true
+      },
+      "annotationReason": "No selected stop or concrete museum identity; resolve reference before mutation.",
+      "familyId": "mixed-question-action-ambiguous-target"
+    },
+    {
+      "id": "intent-050",
+      "city": "武汉",
+      "query": "武汉这站删一下",
+      "family": "followup-incomplete-target",
+      "context": {
+        "activeDay": 1,
+        "followUp": "就第二天"
+      },
+      "expected": {
+        "dayNumber": 2,
+        "requiresClarification": true
+      },
+      "annotationReason": "Day reply resolves only day, not missing stop identity.",
+      "familyId": "followup-incomplete-target"
+    }
+  ]
+}

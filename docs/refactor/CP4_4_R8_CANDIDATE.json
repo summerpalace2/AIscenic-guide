@@ -1,0 +1,75 @@
+{
+  "checkpoint": "CP4.4-R8-atomic-planner-open-state",
+  "capturedAt": "2026-10-10",
+  "status": "frozen pending independent B/C review; not accepted",
+  "parentCandidate": {
+    "id": "CP4.4-R7-staged-planner-persistence",
+    "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R7_CANDIDATE.json",
+    "sha256": "dda695dae6f286b44dee18c3e83c124ce3e553bdd34dcd6f6a404d79012971eb"
+  },
+  "repository": {
+    "root": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+    "head": "6eb2a07a98fc55eb51c051b57934badddc828bd6",
+    "scopedTrackedPatch": {
+      "command": "git diff --binary HEAD -- server/index.mjs server/persistent-store.mjs",
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_BFF_TRACKED_PATCH.patch",
+      "sha256": "C0B660E88DFCC03FB2BF63F95BBA5EA2164FAAF94AF2B3ECFCEE5D9564A55308"
+    },
+    "files": {
+      "server/index.mjs": "1C87DFD4EC08ABE2E3AB20CF6FD0C69D8C23D30D4598DC7D66F984DCDD9FF047",
+      "server/persistent-store.mjs": "41F7E137558249A796D308486CFC4E3BDB0BDC23535B0C9F452944F7483A5F40",
+      "server/formal-trip-bff-contract.test.mjs": "A4A414EF7694344290B66CC694E81D39E96E0C385F6E1FF3BC4EA3A1928676F1",
+      "server/persistent-store-open-rollback.test.mjs": "417B7481723FC44B58A97A4B78FDE35B55BA2BBE7537261AD31D3D7207EE8AC4"
+    },
+    "unrelatedDirtyFilesPreserved": true
+  },
+  "scope": {
+    "production": [
+      "Stage draft and workspace for formal Open together and commit both maps only after a single persisted JSON rename",
+      "Validate session/workspace ownership correspondence before atomic persistence",
+      "Register Open session only after atomic persistence returns both draft and workspace"
+    ],
+    "tests": [
+      "Concurrent session GET while atomic Open persistence is paused returns 404 and cannot register candidate session",
+      "Failure preserves pre-existing draft/workspace and leaves candidate unregistered",
+      "Rename-gated getters retain old draft/workspace until joint commit",
+      "Real temporary-directory rename failure rolls back both maps; queued writes recover"
+    ],
+    "noBffJavaFrontendSchemaChanges": true,
+    "noStageOrCommit": true
+  },
+  "tests": {
+    "command": "node --test server/formal-trip-bff-contract.test.mjs server/draft-restore-route.test.mjs server/planner-bridge-contract.test.mjs server/trip-delete-version.test.mjs server/persistent-store-open-rollback.test.mjs",
+    "nodeVersion": "v24.14.0",
+    "result": "32 tests; 32 pass; 0 fail; 0 skipped",
+    "rawLog": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_BFF_TEST.log",
+    "rawLogSha256": "D2AB0C7570C1A707853E65FA9BA5E4432F52C140283DA7F59C73524A5CAA72B6",
+    "additional": [
+      "node --check server/index.mjs",
+      "node --check server/persistent-store.mjs",
+      "node --check server/formal-trip-bff-contract.test.mjs",
+      "node --check server/persistent-store-open-rollback.test.mjs",
+      "git diff --check"
+    ]
+  },
+  "verificationLimits": [
+    "Route race is exercised with a controlled persistence fake; the real store is separately tested with an imported rename gate and real temporary-directory rename failure.",
+    "No live BFF/Java service was run.",
+    "Java Open can create its remote Planner Session before BFF persistence; no delete-session compensation endpoint exists, so a remote orphan remains possible."
+  ],
+  "artifacts": {
+    "report": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_OPEN_PERSISTENCE_REPORT.md",
+      "sha256": "7916F68E90C056FD77DB00ABCB78307E9C564A6FE4E74C2606642B4B6509B9AC"
+    },
+    "testLog": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_BFF_TEST.log",
+      "sha256": "D2AB0C7570C1A707853E65FA9BA5E4432F52C140283DA7F59C73524A5CAA72B6"
+    },
+    "trackedPatch": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_BFF_TRACKED_PATCH.patch",
+      "sha256": "C0B660E88DFCC03FB2BF63F95BBA5EA2164FAAF94AF2B3ECFCEE5D9564A55308"
+    }
+  },
+  "stagedOrCommitted": false
+}

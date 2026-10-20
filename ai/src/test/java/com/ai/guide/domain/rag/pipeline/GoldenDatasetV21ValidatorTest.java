@@ -1,4 +1,4 @@
-package com.ai.guide.domain.rag.pipeline;
+package com.ai.guide.infrastructure.rag.importer;
 
 
 import org.junit.jupiter.api.Test;

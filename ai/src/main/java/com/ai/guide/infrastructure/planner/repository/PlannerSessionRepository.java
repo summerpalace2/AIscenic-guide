@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,13 +29,58 @@ import java.util.UUID;
  * 核心职责：基于本地 SQLite 表与事务模板提供规划会话草稿的高效读写、版本原子更新与访问令牌鉴权。
  */
 @Repository
-public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
+public class PlannerSessionRepository implements PlannerSessionRepositoryPort, com.ai.guide.domain.planner.gateway.PlannerConversationStatePort {
 
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() { };
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String SELECT_SESSION = "SELECT session_id, owner_type, owner_id, access_token_hash, "
+            + "request_fingerprint, prompt, constraints_json, applied_preferences_json, current_trip_json, "
+            + "current_version, sync_revision, status, created_at, updated_at FROM planner_session";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+
+    @Override
+    public <T> T withSessionLock(String sessionId, java.util.function.Supplier<T> operation) {
+        return new org.springframework.transaction.support.TransactionTemplate(
+                new org.springframework.jdbc.datasource.DataSourceTransactionManager(jdbcTemplate.getDataSource()))
+                .execute(status -> {
+                    // Acquire the write lock before reading; works for PostgreSQL rows and SQLite writers.
+                    jdbcTemplate.update("UPDATE planner_session SET status = status WHERE session_id = ?", sessionId);
+                    return operation.get();
+                });
+    }
+
+    @Override public Map<String,Object> continuationState(String sessionId) {
+        List<String> rows = jdbcTemplate.query("SELECT continuation_state_json FROM planner_session WHERE session_id = ?",
+                (rs,n) -> rs.getString(1),sessionId);
+        return rows.isEmpty() ? Map.of() : readTrip(rows.getFirst(),sessionId);
+    }
+
+    @Override public void saveContinuationState(String sessionId,Map<String,Object> state) {
+        jdbcTemplate.update("UPDATE planner_session SET continuation_state_json = ? WHERE session_id = ?",write(state),sessionId);
+    }
+
+    @Override public ApplyReceipt applyReceipt(String sessionId,String key) {
+        List<ApplyReceipt> rows = jdbcTemplate.query("SELECT request_fingerprint,http_status,response_json FROM planner_apply_receipt "
+                        + "WHERE session_id = ? AND idempotency_key = ?",
+                (rs,n) -> new ApplyReceipt(rs.getString(1),rs.getInt(2),readTrip(rs.getString(3),sessionId)),sessionId,key);
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    @Override public void saveApplyReceipt(String sessionId,String key,ApplyReceipt receipt) {
+        jdbcTemplate.update("INSERT INTO planner_apply_receipt(session_id,idempotency_key,request_fingerprint,http_status,response_json,created_at) "
+                        + "VALUES (?,?,?,?,?,?)",sessionId,key,receipt.fingerprint(),receipt.status(),write(receipt.body()),System.currentTimeMillis());
+    }
+
+    @Override public void afterCommit(Runnable action) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override public void afterCommit() { action.run(); }
+                    });
+        } else action.run();
+    }
 
     public PlannerSessionRepository(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbcTemplate,
                                     ObjectMapper objectMapper) {
@@ -42,6 +89,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     }
 
     /** Compatibility overload for callers that have not adopted structured snapshots. */
+    @Transactional
     public CreateResult create(String ownerType, String ownerId, String prompt,
                                Map<String, Object> constraints, List<String> ignoredPreferences,
                                Map<String, Object> trip, String idempotencyKey,
@@ -51,6 +99,7 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     }
 
     @Override
+    @Transactional
     public CreateResult create(String ownerType, String ownerId, String prompt,
                                Map<String, Object> constraints,
                                AppliedPreferencesSnapshot appliedPreferences,
@@ -81,14 +130,16 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         }
         long now = System.currentTimeMillis();
         try {
-            jdbcTemplate.update("INSERT INTO planner_session (session_id, owner_type, owner_id, access_token_hash, " +
+            int inserted = jdbcTemplate.update("INSERT INTO planner_session (session_id, owner_type, owner_id, access_token_hash, " +
                             "idempotency_key, request_fingerprint, prompt, constraints_json, applied_preferences_json, " +
                             "current_trip_json, current_version, sync_revision, status, created_at, updated_at) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                            + "ON CONFLICT (owner_type, owner_id, idempotency_key) DO NOTHING",
                     sessionId, ownerType, ownerId, tokenHash,
                     blankToNull(idempotencyKey), requestFingerprint, prompt == null ? "" : prompt,
                     write(constraints), write(snapshot.asMap()), write(trip),
-                    1, 1, "ACTIVE", now, now);
+                    1, 1, isPendingFormalOpen(trip) ? "OPEN_PENDING" : "ACTIVE", now, now);
+            if (inserted==0) throw new DuplicateKeyException("Planner create idempotency reservation already exists");
             jdbcTemplate.update("INSERT INTO planner_plan_revision (session_id, version, mutation_type, label, reason, " +
                             "changed_segments_json, trip_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     sessionId, 1, "CREATE", "初始规划", "", "[]", write(trip), now);
@@ -107,13 +158,8 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     @Override
     public StoredSession find(String sessionId, String ownerType, String ownerId, String accessToken) {
         List<StoredSession> rows = jdbcTemplate.query(
-                "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
-                        "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE session_id = ? AND owner_type = ? AND owner_id = ?",
-                (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
-                        rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
-                        rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
-                        rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
+                SELECT_SESSION + " WHERE session_id = ? AND owner_type = ? AND owner_id = ?",
+                this::mapRow,
                 sessionId, ownerType, ownerId);
         if (rows.isEmpty()) return null;
         StoredSession row = rows.get(0);
@@ -126,13 +172,8 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     public StoredSession findAnonymousByAccessToken(String accessToken) {
         if (accessToken == null || accessToken.isBlank()) return null;
         List<StoredSession> rows = jdbcTemplate.query(
-                "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
-                        "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE owner_type = 'ANONYMOUS' AND access_token_hash = ?",
-                (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
-                        rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
-                        rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
-                        rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
+                SELECT_SESSION + " WHERE owner_type = 'ANONYMOUS' AND access_token_hash = ?",
+                this::mapRow,
                 sha256(accessToken));
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -151,13 +192,8 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     public StoredSession findByIdempotency(String ownerType, String ownerId, String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) return null;
         List<StoredSession> rows = jdbcTemplate.query(
-                "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
-                        "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE owner_type = ? AND owner_id = ? AND (idempotency_key = ? OR claimed_idempotency_key = ?)",
-                (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
-                        rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
-                        rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
-                        rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
+                SELECT_SESSION + " WHERE owner_type = ? AND owner_id = ? AND (idempotency_key = ? OR claimed_idempotency_key = ?)",
+                this::mapRow,
                 ownerType, ownerId, idempotencyKey, idempotencyKey);
         if (rows.size() > 1) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "该幂等键在认领前后对应多个草稿，请恢复指定会话或使用新键。");
         return rows.isEmpty() ? null : rows.get(0);
@@ -166,14 +202,54 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
     @Override
     public List<StoredSession> list(String ownerType, String ownerId) {
         return jdbcTemplate.query(
-                "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
-                        "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE owner_type = ? AND owner_id = ? ORDER BY updated_at DESC",
-                (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
-                        rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
-                        rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
-                        rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
+                SELECT_SESSION + " WHERE owner_type = ? AND owner_id = ? ORDER BY updated_at DESC",
+                this::mapRow,
                 ownerType, ownerId);
+    }
+
+    @Override
+    @Transactional
+    public boolean deleteUnchangedUserSession(String sessionId, String ownerId, int expectedVersion) {
+        int deleted = jdbcTemplate.update("DELETE FROM planner_session WHERE session_id = ? AND owner_type = 'USER' "
+                        + "AND owner_id = ? AND status = 'OPEN_PENDING' AND current_version = ? AND sync_revision = 1",
+                sessionId, ownerId, expectedVersion);
+        if (deleted == 0) return false;
+        jdbcTemplate.update("DELETE FROM planner_plan_revision WHERE session_id = ?", sessionId);
+        jdbcTemplate.update("DELETE FROM planner_apply_receipt WHERE session_id = ?",sessionId);
+        return true;
+    }
+
+    @Override
+    public boolean activatePendingFormalOpen(String sessionId, String ownerId) {
+        int updated = jdbcTemplate.update("UPDATE planner_session SET status = 'ACTIVE', updated_at = ? "
+                        + "WHERE session_id = ? AND owner_type = 'USER' AND owner_id = ? "
+                        + "AND status = 'OPEN_PENDING' AND current_version = 1 AND sync_revision = 1",
+                System.currentTimeMillis(), sessionId, ownerId);
+        if (updated > 0) return true;
+        StoredSession existing = find(sessionId, "USER", ownerId, "");
+        return existing != null && "ACTIVE".equals(existing.status()) && isPendingFormalOpen(existing.trip());
+    }
+
+    @Override
+    @Transactional
+    public int deleteExpiredPendingFormalOpens(long cutoffEpochMillis) {
+        List<String> candidates = jdbcTemplate.query(
+                "SELECT session_id FROM planner_session WHERE owner_type = 'USER' AND status = 'OPEN_PENDING' "
+                        + "AND current_version = 1 AND sync_revision = 1 AND updated_at < ?",
+                (rs, rowNum) -> rs.getString(1), cutoffEpochMillis);
+        int deletedCount = 0;
+        for (String sessionId : candidates) {
+            int deleted = jdbcTemplate.update("DELETE FROM planner_session WHERE session_id = ? "
+                            + "AND owner_type = 'USER' AND status = 'OPEN_PENDING' AND current_version = 1 "
+                            + "AND sync_revision = 1 AND updated_at < ?",
+                    sessionId, cutoffEpochMillis);
+            if (deleted > 0) {
+                jdbcTemplate.update("DELETE FROM planner_plan_revision WHERE session_id = ?", sessionId);
+                jdbcTemplate.update("DELETE FROM planner_apply_receipt WHERE session_id = ?",sessionId);
+                deletedCount++;
+            }
+        }
+        return deletedCount;
     }
 
     @Override
@@ -184,8 +260,9 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         int nextVersion = current.currentVersion() + 1;
         long now = System.currentTimeMillis();
         int updated = jdbcTemplate.update("UPDATE planner_session SET current_trip_json = ?, current_version = ?, " +
-                        "sync_revision = sync_revision + 1, updated_at = ? WHERE session_id = ? AND current_version = ?",
-                write(trip), nextVersion, now, current.sessionId(), expectedVersion);
+                        "sync_revision = sync_revision + 1, updated_at = ? WHERE session_id = ? " +
+                        "AND owner_type = ? AND owner_id = ? AND current_version = ?",
+                write(trip), nextVersion, now, current.sessionId(), current.ownerType(), current.ownerId(), expectedVersion);
         if (updated == 0) {
             StoredSession latest = findInternal(current.sessionId(), current.ownerType(), current.ownerId());
             return MutationResult.conflict(latest);
@@ -200,13 +277,8 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
 
     private StoredSession findInternal(String sessionId, String ownerType, String ownerId) {
         List<StoredSession> rows = jdbcTemplate.query(
-                "SELECT session_id, owner_type, owner_id, access_token_hash, request_fingerprint, prompt, " +
-                        "constraints_json, applied_preferences_json, current_trip_json, current_version, sync_revision, status, created_at, updated_at " +
-                        "FROM planner_session WHERE session_id = ? AND owner_type = ? AND owner_id = ?",
-                (rs, rowNum) -> mapRow(rs.getString("session_id"), rs.getString("owner_type"), rs.getString("owner_id"),
-                        rs.getString("access_token_hash"), rs.getString("request_fingerprint"), rs.getString("prompt"),
-                        rs.getString("constraints_json"), rs.getString("applied_preferences_json"), rs.getString("current_trip_json"), rs.getInt("current_version"),
-                        rs.getInt("sync_revision"), rs.getString("status"), rs.getLong("created_at"), rs.getLong("updated_at")),
+                SELECT_SESSION + " WHERE session_id = ? AND owner_type = ? AND owner_id = ?",
+                this::mapRow,
                 sessionId, ownerType, ownerId);
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -237,15 +309,16 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
                 session.appliedPreferences(), rawToken);
     }
 
-    private StoredSession mapRow(String sessionId, String ownerType, String ownerId, String accessTokenHash,
-                                 String requestFingerprint, String prompt, String constraintsJson,
-                                 String appliedPreferencesJson, String tripJson, int currentVersion,
-                                 int syncRevision, String status, long createdAt, long updatedAt) {
-        return new StoredSession(sessionId, ownerType, ownerId, accessTokenHash == null ? "" : accessTokenHash,
-                requestFingerprint == null ? "" : requestFingerprint, prompt == null ? "" : prompt,
-                readMap(constraintsJson), AppliedPreferencesSnapshot.fromJson(appliedPreferencesJson, objectMapper),
-                readMap(tripJson), currentVersion, syncRevision,
-                status == null ? "ACTIVE" : status, createdAt, updatedAt);
+    private StoredSession mapRow(ResultSet rs, int rowNum) throws SQLException {
+        String sessionId = rs.getString("session_id");
+        return new StoredSession(sessionId, rs.getString("owner_type"), rs.getString("owner_id"),
+                orEmpty(rs.getString("access_token_hash")), orEmpty(rs.getString("request_fingerprint")),
+                orEmpty(rs.getString("prompt")),
+                readMap(rs.getString("constraints_json")),
+                AppliedPreferencesSnapshot.fromJson(rs.getString("applied_preferences_json"), objectMapper),
+                readTrip(rs.getString("current_trip_json"), sessionId), rs.getInt("current_version"),
+                rs.getInt("sync_revision"), rs.getString("status") == null ? "ACTIVE" : rs.getString("status"),
+                rs.getLong("created_at"), rs.getLong("updated_at"));
     }
 
     private Map<String, Object> readMap(String json) {
@@ -256,12 +329,31 @@ public class PlannerSessionRepository implements PlannerSessionRepositoryPort {
         }
     }
 
+    private Map<String, Object> readTrip(String json, String sessionId) {
+        try {
+            if (json == null || json.isBlank()) throw new IllegalArgumentException("empty trip snapshot");
+            Map<String, Object> trip = objectMapper.readValue(json, MAP_TYPE);
+            if (trip == null) throw new IllegalArgumentException("null trip snapshot");
+            return trip;
+        } catch (Exception e) {
+            throw new IllegalStateException("规划会话快照已损坏: " + sessionId, e);
+        }
+    }
+
+    private static String orEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
     private String write(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception e) {
             throw new IllegalArgumentException("Planner JSON 数据无效", e);
         }
+    }
+
+    private boolean isPendingFormalOpen(Map<String, Object> trip) {
+        return trip != null && "RESTORED_FROM_TRIP".equals(String.valueOf(trip.get("plannerSessionRestoreSource")));
     }
 
     private static String blankToNull(String value) {

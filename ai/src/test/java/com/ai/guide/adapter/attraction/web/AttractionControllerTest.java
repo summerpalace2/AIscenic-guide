@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -33,7 +34,7 @@ class AttractionControllerTest {
         attraction.setDistrict("渝中区");
         attraction.setCategory("核心地标");
 
-        when(applicationService.list(eq("渝中区"), eq("核心地标")))
+        when(applicationService.list(isNull(String.class), eq("渝中区"), eq("核心地标")))
                 .thenReturn(Result.success("查询成功", List.of(attraction)));
 
         mockMvc.perform(get("/ai/attractions")
@@ -44,6 +45,21 @@ class AttractionControllerTest {
                 .andExpect(jsonPath("$.message").value("查询成功"))
                 .andExpect(jsonPath("$.data[0].id").value("cq-hongyadong"))
                 .andExpect(jsonPath("$.data[0].name").value("洪崖洞"));
+    }
+
+    @Test
+    @DisplayName("GET /ai/attractions?city - 将显式城市范围传到应用层")
+    void testListAttractionsByCity() throws Exception {
+        Attraction attraction = Attraction.builder().id("cq-hongyadong").name("洪崖洞").city("重庆").build();
+        when(applicationService.list(eq("重庆市"), eq("渝中区"), eq("夜景")))
+                .thenReturn(Result.success("查询成功", List.of(attraction)));
+
+        mockMvc.perform(get("/ai/attractions")
+                        .param("city", "重庆市")
+                        .param("district", "渝中区")
+                        .param("category", "夜景"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].city").value("重庆"));
     }
 
     @Test

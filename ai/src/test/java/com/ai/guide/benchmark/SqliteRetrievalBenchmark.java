@@ -81,7 +81,7 @@ public final class SqliteRetrievalBenchmark {
                     + missingFromSqlite + "; missingFromQdrant=" + missingFromQdrant);
         }
 
-        KnowledgeDocumentService service = new KnowledgeDocumentService(jdbcTemplate, null);
+        KnowledgeDocumentService service = com.ai.guide.testing.KnowledgeTestPorts.service(new com.ai.guide.infrastructure.rag.repository.JdbcKnowledgeDocumentStoreAdapter(jdbcTemplate), com.ai.guide.testing.KnowledgeTestPorts.noIndex());
         List<Map<String, Object>> queryResults = new ArrayList<>();
         for (String query : QUERIES) {
             List<Map<String, Object>> rows = service.searchLocalKnowledge(query, 5);
@@ -145,6 +145,7 @@ public final class SqliteRetrievalBenchmark {
                 + "file_url TEXT DEFAULT '',"
                 + "file_md5 VARCHAR(64) DEFAULT '',"
                 + "source_name VARCHAR(255) DEFAULT '',"
+                + "source_url TEXT NOT NULL DEFAULT '',"
                 + "status VARCHAR(255) NOT NULL DEFAULT 'active',"
                 + "vector_status VARCHAR(255) NOT NULL DEFAULT 'pending',"
                 + "chunk_count INTEGER DEFAULT 0,"

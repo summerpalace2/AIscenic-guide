@@ -1,0 +1,8 @@
+{
+  "outcome": "not_used",
+  "reason": "已检索请求超时预算经验，仅命中异步结果顺序主题；与本次供应商排队及批次等待预算不匹配，未采用其结论。依据当前源码与离线任务等待探针实施。",
+  "evidence": [
+    {"role": "change", "path": "D:/scenic-guide/ai/src/main/java/com/ai/guide/infrastructure/planner/amap/AmapRouteService.java"},
+    {"role": "verification", "path": "D:/scenic-guide/cp6-route-wait-budget.log"}
+  ]
+}

@@ -10,7 +10,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TravelConstraintParserTest {
 
-    private final TravelConstraintParser parser = new TravelConstraintParser();
+    private final TravelConstraintParser parser = parserWithTaxonomy();
+
+    @Test
+    void missingCityAndTripLengthAreNotSilentlyReplacedWithASeedCityOrDuration() {
+        TravelConstraints constraints = parser.parse("帮我规划一个行程");
+        assertTrue(constraints.getDestination() == null || constraints.getDestination().isBlank());
+        assertEquals(2, constraints.getDurationDays(), "the configured provisional duration is available for preview generation");
+        assertTrue(constraints.isNeedsClarification());
+        assertTrue(constraints.getCriticalMissingFields().contains("destination"));
+        assertTrue(constraints.getCriticalMissingFields().contains("durationDays"));
+    }
+
+    private static TravelConstraintParser parserWithTaxonomy() {
+        TravelConstraintParser parser = new TravelConstraintParser();
+        parser.setTaxonomy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        return parser;
+    }
 
     @Test
     void separatesUnpunctuatedDepartureClockFromExplicitStartPlace() {
@@ -55,6 +71,25 @@ class TravelConstraintParserTest {
         assertTrue(constraints.isNeedsClarification());
         assertTrue(constraints.getCriticalMissingFields().contains("arrivalAt"));
         assertTrue(constraints.getCriticalMissingFields().contains("departureAt"));
+        assertTrue(constraints.getCriticalMissingFields().contains("durationDays"));
+        assertEquals("default", ((Map<?, ?>) constraints.asMap().getOrDefault("constraintProvenance", Map.of())).get("durationDays"));
+    }
+
+    @Test
+    void oneKnownClockTimeDoesNotPretendTripDurationWasProvided() {
+        TravelConstraints constraints = parser.parse("帮我规划重庆旅游，上午9点到");
+
+        assertTrue(constraints.isNeedsClarification());
+        assertTrue(constraints.getCriticalMissingFields().contains("durationDays"));
+        assertEquals("default", ((Map<?, ?>) constraints.asMap().getOrDefault("constraintProvenance", Map.of())).get("durationDays"));
+    }
+
+    @Test
+    void durationInsideFilteredPreferenceProfileIsNotTreatedAsCurrentRequest() {
+        TravelConstraints constraints = parser.parse("【用户专属旅行偏好画像】\n• 上次旅行持续2天\n\n帮我规划重庆");
+
+        assertEquals(2, constraints.getDurationDays(), "only the configured provisional duration should remain");
+        assertTrue(constraints.isNeedsClarification());
         assertTrue(constraints.getCriticalMissingFields().contains("durationDays"));
         assertEquals("default", ((Map<?, ?>) constraints.asMap().getOrDefault("constraintProvenance", Map.of())).get("durationDays"));
     }

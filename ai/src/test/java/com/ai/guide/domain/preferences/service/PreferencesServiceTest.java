@@ -23,6 +23,19 @@ import static org.mockito.Mockito.when;
 class PreferencesServiceTest {
 
     @Test
+    void unknownInputNeverReachesPreferencePersistenceOrAudit() {
+        var repository = mock(PreferencesRepositoryPort.class);
+        var audit = mock(PreferenceAuditRepositoryPort.class);
+        var service = new PreferencesService(repository, audit);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper()
+                .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        for (String json : List.of("{\"unexpected\":true}", "{\"interests\":[\"夜景\"],\"unexpected\":true}"))
+            assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+                    () -> service.merge("java-user", mapper.readValue(json, UserPreferencesPatch.class), null));
+        org.mockito.Mockito.verifyNoInteractions(repository, audit);
+    }
+
+    @Test
     void mergeCreatesTypedOwnerBoundPreferenceAndAudit() {
         PreferencesRepositoryPort repository = mock(PreferencesRepositoryPort.class);
         PreferenceAuditRepositoryPort audit = mock(PreferenceAuditRepositoryPort.class);

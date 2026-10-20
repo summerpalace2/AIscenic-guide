@@ -4,6 +4,8 @@ import com.ai.guide.domain.planner.engine.LocalPlanRepairer;
 import com.ai.guide.domain.planner.engine.PlanVerifier;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.chat.service.SlotTrackingService;
+import com.ai.guide.testing.InMemoryUserPreferenceStore;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ai.guide.domain.trip.model.Trip;
 import com.ai.guide.domain.trip.service.TripService;
 import com.ai.guide.infrastructure.trip.pdf.TripPlanPdfService;
@@ -11,8 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.HashOperations;
-import org.springframework.data.redis.core.RedisTemplate;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,11 +31,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.when;
 
 /**
  * B+C 联合极限边界与混沌工程自动化验收套件 (Boundary Stress & Chaos Acceptance Suite)
@@ -53,28 +48,22 @@ public class BoundaryStressChaosTest {
     @Test
     @DisplayName("维度一：Unicode 零宽空格穿透与长跨度修饰否定滑窗拦截验证")
     void testDimension1_UnicodeZeroWidthSpaceAndNegationWindow() {
-        @SuppressWarnings("unchecked")
-        RedisTemplate<String, String> redisTemplate = mock(RedisTemplate.class);
-        @SuppressWarnings("rawtypes")
-        HashOperations hashOps = mock(HashOperations.class);
-        when(redisTemplate.opsForHash()).thenReturn(hashOps);
-
-        SlotTrackingService slotService = new SlotTrackingService(redisTemplate);
+        SlotTrackingService slotService = new SlotTrackingService(new InMemoryUserPreferenceStore(), new ObjectMapper(), new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
 
         // 1. 注入不可见零宽字符：\u200B 尝试绕过 String.trim()
         slotService.extractAndSave("user-chaos-1", "我们这次不带\u200B老人，年轻人自己玩");
         // 断言：由于前置 NFKC 与零宽字符剥离，否定前缀成功生效，严禁写入 crowd=老人
-        org.mockito.Mockito.verify(hashOps, never()).put(anyString(), eq("crowd"), eq("老人"));
+        assertFalse(slotService.getSlots("user-chaos-1").getOrDefault("crowd", List.of()).contains("老人"));
 
         // 2. 长跨度修饰语：前缀跨度达到 12 字符，超越旧版 8 字符限制
         slotService.extractAndSave("user-chaos-2", "这次旅行千万坚决不要给我们全家安排老人行程");
         // 断言：扩展后的 16 字符滑窗与正则前缀感知生效，严禁写入 crowd=老人
-        org.mockito.Mockito.verify(hashOps, never()).put(anyString(), eq("crowd"), eq("老人"));
+        assertFalse(slotService.getSlots("user-chaos-2").getOrDefault("crowd", List.of()).contains("老人"));
 
         // 3. 兴趣槽位零宽空格与自愈剔除
         slotService.extractAndSave("user-chaos-3", "不要\u200B景点，多吃点好吃的");
         // 断言：不会向 interest 槽位错误追加“景点”
-        org.mockito.Mockito.verify(hashOps, never()).put(anyString(), eq("interest"), eq("景点"));
+        assertFalse(slotService.getSlots("user-chaos-3").getOrDefault("interest", List.of()).contains("景点"));
     }
 
     // =========================================================================
@@ -83,7 +72,9 @@ public class BoundaryStressChaosTest {
     @Test
     @DisplayName("维度二：全保护站点超限保留时长并报告不可行")
     void testDimension2_AllPinnedStopsOverflowPreservesDurationAndRemainsInfeasible() {
-        LocalPlanRepairer repairer = new LocalPlanRepairer();
+        LocalPlanRepairer repairer = com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer();
+        var taxonomy = new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter();
+        repairer.setTaxonomy(taxonomy);
 
         List<Map<String, Object>> days = new ArrayList<>();
         Map<String, Object> day = new LinkedHashMap<>();
@@ -117,7 +108,7 @@ public class BoundaryStressChaosTest {
         // Protected durations are immutable: an impossible schedule must remain explicit.
         assertEquals(List.of("约 300 分钟", "约 240 分钟", "约 180 分钟"),
                 repairedStops.stream().map(stop -> stop.get("duration")).toList());
-        assertFalse(new PlanVerifier().verify(repaired, constraints).feasible());
+        assertFalse(new PlanVerifier(taxonomy, taxonomy).verify(repaired, constraints).feasible());
     }
 
     // =========================================================================

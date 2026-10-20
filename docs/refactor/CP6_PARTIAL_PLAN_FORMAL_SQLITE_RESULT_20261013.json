@@ -1,0 +1,11 @@
+[
+  {
+    "formalVersion": 1,
+    "stopCount": 2,
+    "degraded": true,
+    "reasons": [
+      "PLANNING_DEADLINE_EXCEEDED"
+    ],
+    "spatialStatus": "PARTIAL_TIMEOUT"
+  }
+]

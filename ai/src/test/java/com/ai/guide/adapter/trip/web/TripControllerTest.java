@@ -84,7 +84,9 @@ class TripControllerTest {
         mockMvc.perform(get("/ai/trips/trip-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("trip-1"))
-                .andExpect(jsonPath("$.data.currentVersion").value(2));
+                .andExpect(jsonPath("$.data.currentVersion").value(2))
+                .andExpect(jsonPath("$.data.sessionAccessToken").doesNotExist())
+                .andExpect(jsonPath("$.data.plan.sessionAccessToken").doesNotExist());
     }
 
     @Test

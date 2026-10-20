@@ -6,8 +6,8 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionMediaService;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
-import com.ai.guide.domain.rag.service.ProductionV2FactQueryService;
-import com.ai.guide.domain.trip.service.TripPlanService;
+import com.ai.guide.domain.rag.gateway.ProductionV2FactQueryPort;
+import com.ai.guide.domain.trip.gateway.TripPlanStorePort;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,14 +24,14 @@ public class AttractionApplicationServiceImpl implements AttractionApplicationSe
 
     private final AttractionService attractionService;
     private final AttractionMediaService attractionMediaService;
-    private final TripPlanService tripPlanService;
-    private final ProductionV2FactQueryService productionV2FactQueryService;
+    private final TripPlanStorePort tripPlanService;
+    private final ProductionV2FactQueryPort productionV2FactQueryService;
     private final RuntimeAttractionDetailService runtimeAttractionDetailService;
 
     public AttractionApplicationServiceImpl(AttractionService attractionService,
                                             AttractionMediaService attractionMediaService,
-                                            TripPlanService tripPlanService,
-                                            ProductionV2FactQueryService productionV2FactQueryService,
+                                            TripPlanStorePort tripPlanService,
+                                            ProductionV2FactQueryPort productionV2FactQueryService,
                                             RuntimeAttractionDetailService runtimeAttractionDetailService) {
         this.attractionService = attractionService;
         this.attractionMediaService = attractionMediaService;
@@ -43,6 +43,12 @@ public class AttractionApplicationServiceImpl implements AttractionApplicationSe
     @Override
     public Result<List<Attraction>> list(String district, String category) {
         List<Attraction> list = attractionService.list(district, category);
+        return Result.success("查询成功", list);
+    }
+
+    @Override
+    public Result<List<Attraction>> list(String city, String district, String category) {
+        List<Attraction> list = attractionService.list(city, district, category);
         return Result.success("查询成功", list);
     }
 

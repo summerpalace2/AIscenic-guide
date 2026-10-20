@@ -1,15 +1,22 @@
 package com.ai.guide.domain.planner.service;
 
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
 import com.ai.guide.domain.planner.model.category.PoiDomainType;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import org.junit.jupiter.api.Test;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 class PoiClassificationRegressionTest {
-    private final RuntimeLocationPlanner planner = new RuntimeLocationPlanner(mock(GeoRouteGatewayPort.class));
+    private final RuntimeLocationPlanner planner;
+
+    PoiClassificationRegressionTest() {
+        var gateway = mock(GeoRouteGatewayPort.class);
+        var taxonomy = new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter();
+        planner = new RuntimeLocationPlanner(gateway, new com.fasterxml.jackson.databind.ObjectMapper(), 6000, 40,
+                new com.ai.guide.domain.dining.service.DiningVenueService(null, gateway, taxonomy), taxonomy);
+    }
 
     @Test
     void admitsCulturalVenuesButRejectsTeachingBuildingsAndInteriorFacilities() {
@@ -25,7 +32,7 @@ class PoiClassificationRegressionTest {
     @Test
     void keepsDiningOutOfScenicPoolWithoutCallingItInvalidForDining() {
         assertTrue(planner.isNoisePoi(poi("教学楼咖啡馆", "餐饮服务;咖啡厅", "050500")));
-        PoiCategoryPolicyRegistry policies = new PoiCategoryPolicyRegistry();
+        PoiCategoryPolicyRegistry policies = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         assertEquals(PoiDomainType.DINING, policies.resolveCategory(Map.of("name", "教学楼咖啡馆", "typecode", "050500")));
         assertEquals(PoiDomainType.SCENIC, policies.resolveCategory(Map.of("name", "餐厅旧址公园", "typecode", "110101")));
         assertEquals(PoiDomainType.TRANSIT, policies.resolveCategory(Map.of("name", "客运码头", "typecode", "150301")));
@@ -45,8 +52,8 @@ class PoiClassificationRegressionTest {
         assertTrue(planner.isNoisePoi(poi("任意店名", "餐饮服务", null)));
     }
 
-    private AmapResponseNormalizer.PoiCandidate poi(String name, String type, String code) {
-        return new AmapResponseNormalizer.PoiCandidate("p", name, new AmapResponseNormalizer.Coordinate(116.4,39.9),
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate poi(String name, String type, String code) {
+        return new com.ai.guide.domain.geo.model.GeoPoiCandidate("p", name, new com.ai.guide.domain.geo.model.GeoCoordinate(116.4,39.9),
                 "北京市", type, null, null, "p", null, null, null, null, code, null);
     }
 }

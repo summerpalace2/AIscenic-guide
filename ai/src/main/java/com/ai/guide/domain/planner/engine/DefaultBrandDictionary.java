@@ -1,13 +1,11 @@
 package com.ai.guide.domain.planner.engine;
 
-import com.ai.guide.domain.planner.gateway.BrandDictionaryPort;
+import com.ai.guide.domain.taxonomy.gateway.BrandDictionaryPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -19,20 +17,17 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class DefaultBrandDictionary implements BrandDictionaryPort {
 
-    private final Set<String> knownBrands = ConcurrentHashMap.newKeySet();
+    private final PlannerTaxonomyPort taxonomy;
+    private final java.util.Set<String> registeredBrands = ConcurrentHashMap.newKeySet();
 
-    public DefaultBrandDictionary() {
-        loadBrandsFromResource();
-    }
-
-    private void loadBrandsFromResource() {
-        knownBrands.addAll(new com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider().getBrands());
+    public DefaultBrandDictionary(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = Objects.requireNonNull(taxonomy);
     }
 
     @Override
     public boolean isKnownBrand(String brandName) {
         if (brandName == null || brandName.isBlank()) return false;
-        return knownBrands.contains(brandName.trim());
+        return taxonomy.isKnownBrand(brandName) || registeredBrands.contains(brandName.trim());
     }
 
     /**
@@ -42,7 +37,7 @@ public class DefaultBrandDictionary implements BrandDictionaryPort {
         if (brandName != null && !brandName.isBlank()) {
             String trimmed = brandName.trim();
             if (!trimmed.startsWith("#")) {
-                knownBrands.add(trimmed);
+                registeredBrands.add(trimmed);
             }
         }
     }

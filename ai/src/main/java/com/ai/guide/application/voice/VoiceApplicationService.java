@@ -1,7 +1,7 @@
 package com.ai.guide.application.voice;
 
-import com.ai.guide.common.model.Result;
-import org.springframework.http.ResponseEntity;
+import com.ai.guide.domain.voice.model.VoiceSynthesisResult;
+import com.ai.guide.domain.voice.model.VoiceTranscriptionResult;
 
 import java.util.Map;
 
@@ -19,13 +19,13 @@ public interface VoiceApplicationService {
      * @param body 请求体，包含 audio（音频 base64 / dataUrl）与可选 dev_pid
      * @return 识别结果字符串或友好错误提示
      */
-    Result<String> transcribe(Map<String, String> body);
+    VoiceTranscriptionResult transcribe(Map<String, String> body);
 
     /**
      * 语音合成
      *
      * @param body 请求体，包含 text（待合成文本）、voice（音色编号）、lang（语言代码）
-     * @return MP3 二进制流响应
+     * @return 与 HTTP 传输无关的合成结果
      */
-    ResponseEntity<byte[]> synthesize(Map<String, String> body);
+    VoiceSynthesisResult synthesize(Map<String, String> body);
 }

@@ -23,6 +23,9 @@ public interface AttractionApplicationService {
      */
     Result<List<Attraction>> list(String district, String category);
 
+    /** Lists only the requested city when supplied. */
+    Result<List<Attraction>> list(String city, String district, String category);
+
     /**
      * 查询指定景点的完整结构化数据（普通受控地标富媒体或高德动态景点详情）
      *

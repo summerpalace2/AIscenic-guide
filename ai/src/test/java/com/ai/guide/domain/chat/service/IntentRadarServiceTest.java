@@ -12,7 +12,7 @@ class IntentRadarServiceTest {
 
     @BeforeEach
     void setUp() {
-        radar = new IntentRadarService();
+        radar = new IntentRadarService(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
     }
 
     @Test

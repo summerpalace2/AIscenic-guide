@@ -1,6 +1,8 @@
 package com.ai.guide.domain.planner.service;
+
+import com.ai.guide.domain.language.IntentLanguagePolicy;
 import com.ai.guide.domain.planner.model.*;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import org.junit.jupiter.api.Test;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -26,7 +28,7 @@ class ConversationContinuationRegressionTest {
         assertFalse(IntentLanguagePolicy.positiveText("不要想吃火锅").contains("火锅"));
     }
     @Test void boundedTimesPreserveOriginalScopeAndRejectPartialModelOutput() {
-        var taxonomy=new TaxonomyProvider();var i=PlanAdjustmentIntent.builder().type(ConversationIntentType.REPLAN_DAY).operation("REPLAN_DAY").rawMessage("傍晚保持不动，只优化20:00至21:00").build();
+        var taxonomy=new JsonTaxonomyAdapter();var i=PlanAdjustmentIntent.builder().type(ConversationIntentType.REPLAN_DAY).operation("REPLAN_DAY").rawMessage("傍晚保持不动，只优化20:00至21:00").build();
         AdjustmentTimeScopeResolver.resolve(i,taxonomy);assertEquals(1200,i.getTargetStartMinute());assertEquals(1260,i.getTargetEndMinute());assertTrue(AdjustmentTimeScopeResolver.preserves(Map.of("name","旧站点","time","17:30"),i,taxonomy));
         i.setRawMessage("优化当天行程");i.setTargetEndMinute(null);AdjustmentTimeScopeResolver.resolve(i,taxonomy);assertTrue(i.isRequiresClarification());
     }

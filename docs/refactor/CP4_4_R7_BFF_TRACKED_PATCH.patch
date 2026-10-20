@@ -1,0 +1,495 @@
+diff --git a/proxy-snippet2.js b/proxy-snippet2.js
+deleted file mode 100644
+index 99cf59e..0000000
+--- a/proxy-snippet2.js
++++ /dev/null
+@@ -1 +0,0 @@
+-// Find `async function api(req, res, url) {` in server/index.mjs and insert our proxy logic.
+diff --git a/server/index.mjs b/server/index.mjs
+index cbbe1de..936957c 100644
+--- a/server/index.mjs
++++ b/server/index.mjs
+@@ -691,7 +691,7 @@ function formalTripHistoryProjection(formalTrip) {
+   };
+ }
+ 
+-function openFormalTripSession(formalTrip, { userId, deviceId } = {}) {
++function openFormalTripSession(formalTrip, { userId, deviceId, register = true } = {}) {
+   const saved = savedTripProjection(formalTrip);
+   const trip = clone(saved.trip);
+   const now = new Date().toISOString();
+@@ -718,7 +718,7 @@ function openFormalTripSession(formalTrip, { userId, deviceId } = {}) {
+     legacyMode: true,
+     adjustmentCapability: 'LEGACY'
+   };
+-  sessions.set(session.id, session);
++  if (register) sessions.set(session.id, session);
+   return session;
+ }
+ 
+@@ -2409,28 +2409,121 @@ async function api(req, res, url, requestSignal) {
+   // Opening a formal Java Trip creates only a process-local draft session so
+   // subsequent edits remain Java candidates. The formal Trip is never copied
+   // to Node persistent storage.
++  if (req.method === 'POST' && /^\/api\/trips\/[^/]+\/draft\/restore$/.test(url.pathname)) {
++    const user = await authUser(req);
++    if (!user) return json(res, 401, { ok: false, message: '请登录后恢复草稿。' });
++    const tripId = decodeURIComponent(url.pathname.split('/')[3]);
++    const input = await body(req);
++    const session = await restorePlannerSession(String(input.sessionId || ''), req);
++    if (!session || session.userId !== user.id || String(session.formalTripId || '') !== tripId
++        || !session.javaSessionId) {
++      return json(res, 404, { ok: false, message: '行程会话已失效，请重新打开正式行程。' });
++    }
++    const startingSyncRevision = Number(session.syncRevision || 1);
++    const startingTripVersion = Number(session.trip?.version || 1);
++    const startingTripSnapshot = JSON.stringify(session.trip || null);
++    try {
++      const restored = await javaCore.restorePlannerDraft(session.javaSessionId, {
++        trip: input.trip, expectedVersion: input.expectedVersion,
++        sessionAccessToken: session.sessionAccessToken || ''
++      }, javaTokenFor(req), requestSignal);
++      const currentSyncRevision = Number(session.syncRevision || 1);
++      const currentTripVersion = Number(session.trip?.version || 1);
++      if (currentSyncRevision > startingSyncRevision || currentTripVersion > startingTripVersion
++          || JSON.stringify(session.trip || null) !== startingTripSnapshot) {
++        return json(res, 409, { ok: false, code: 'PLANNER_REVISION_CONFLICT',
++          message: '规划版本已更新，请刷新后重试。' });
++      }
++      const restoredSyncRevision = restored.syncRevision;
++      const restoredTripVersion = restored.trip?.version;
++      if (typeof restoredSyncRevision !== 'number' || !Number.isSafeInteger(restoredSyncRevision) || restoredSyncRevision < 1
++          || typeof restoredTripVersion !== 'number' || !Number.isSafeInteger(restoredTripVersion) || restoredTripVersion < 1) {
++        return json(res, 502, { ok: false, code: 'PLANNER_RESTORE_CONTRACT_INVALID',
++          message: 'Java Core Backend 未返回有效的规划版本。' });
++      }
++      if (restoredSyncRevision < currentSyncRevision || restoredTripVersion < currentTripVersion) {
++        return json(res, 409, { ok: false, code: 'PLANNER_REVISION_CONFLICT',
++          message: '规划版本已更新，请刷新后重试。' });
++      }
++      if (restoredSyncRevision <= startingSyncRevision || restoredTripVersion <= startingTripVersion) {
++        return json(res, 502, { ok: false, code: 'PLANNER_RESTORE_CONTRACT_INVALID',
++          message: 'Java Core Backend 返回的规划版本没有推进。' });
++      }
++      session.trip = clone(restored.trip);
++      session.syncRevision = restoredSyncRevision;
++      session.updatedAt = new Date().toISOString();
++      // Java has already committed the revision. The previously saved BFF
++      // session still identifies it and rehydrates from Java after a restart.
++      try { await persistentStore.savePlannerDraft?.(session); }
++      catch (error) { void writeBffDiagnostic('planner-draft-persist-error', diagnosticError(error)); }
++      return json(res, 200, { ok: true, sessionId: session.id, trip: clone(session.trip),
++        message: '草稿已恢复，可继续编辑。' });
++    } catch (error) {
++      return javaErrorResponse(res, error, '恢复草稿失败。');
++    }
++  }
+   if (req.method === 'POST' && /^\/api\/trips\/[^/]+\/open$/.test(url.pathname)) {
+     const user = await authUser(req);
+     if (!user) return json(res, 401, { ok: false, message: '请登录后打开已保存行程。' });
+     const tripId = decodeURIComponent(url.pathname.split('/')[3]);
+     try {
+       const restored = await javaCore.openPlannerTrip(tripId, javaTokenFor(req), requestSignal);
+-      const formal = await javaCore.getTrip(javaTokenFor(req), tripId);
+-      const session = openFormalTripSession(formal, {
++      const sourceTrip = restored?.trip;
++      const formalTripVersion = restored?.formalTripVersion;
++      const syncRevision = restored?.syncRevision;
++      const validOpenSnapshot = restored?.ok === true
++        && typeof restored.sessionId === 'string' && Boolean(restored.sessionId.trim())
++        && (!Object.prototype.hasOwnProperty.call(restored, 'sessionAccessToken')
++          || typeof restored.sessionAccessToken === 'string')
++        && restored.formalTripId === tripId
++        && Number.isSafeInteger(formalTripVersion) && formalTripVersion > 0
++        && Number.isSafeInteger(syncRevision) && syncRevision > 0
++        && sourceTrip && typeof sourceTrip === 'object' && !Array.isArray(sourceTrip)
++        && Number.isSafeInteger(sourceTrip.version) && sourceTrip.version > 0
++        && sourceTrip.formalTripId === tripId
++        && sourceTrip.sourceTripId === tripId
++        && Number.isSafeInteger(sourceTrip.sourceTripVersion)
++        && sourceTrip.sourceTripVersion === formalTripVersion;
++      if (!validOpenSnapshot) return json(res, 502, {
++        ok: false, code: 'PLANNER_OPEN_CONTRACT_INVALID', message: 'Java Core Backend 未返回有效规划会话。'
++      });
++      const session = openFormalTripSession({
++        id: tripId,
++        title: String(sourceTrip.title || '未命名行程'),
++        currentVersion: formalTripVersion,
++        plan: sourceTrip
++      }, {
+         userId: user.id,
+-        deviceId: requestDeviceId(req)
++        deviceId: requestDeviceId(req),
++        register: false
+       });
+-      session.javaSessionId = String(restored.sessionId || '');
+-      session.sessionAccessToken = String(restored.sessionAccessToken || '');
+-      session.trip = clone(restored.trip || formal.plan || session.trip);
++      session.javaSessionId = restored.sessionId.trim();
++      session.sessionAccessToken = typeof restored.sessionAccessToken === 'string'
++        ? restored.sessionAccessToken.trim() : '';
++      session.trip = clone(sourceTrip);
+       session.trip.formalTripId = tripId;
+       session.trip.savedTripId = tripId;
+-      session.syncRevision = Number(restored.syncRevision || 1);
++      session.syncRevision = syncRevision;
+       session.legacyMode = false;
+       session.adjustmentCapability = 'V1_PROPOSAL';
+       hydrateFormalTripWorkspace(session);
+-      const workspace = await persistFormalTripWorkspace(session);
+-      await persistentStore.savePlannerDraft?.(session);
++      let workspace;
++      try {
++        await persistentStore.savePlannerDraft?.(session);
++        // Write the workspace only after the draft is durable. If workspace
++        // persistence fails, saveTripWorkspace restores its own prior Map
++        // entry and the draft is removed below on a best-effort basis.
++        workspace = await persistFormalTripWorkspace(session);
++      } catch (error) {
++        try {
++          await persistentStore.deletePlannerDraft?.(session.id);
++        } catch (cleanupError) {
++          await writeBffDiagnostic('planner-open-draft-cleanup-error', diagnosticError(cleanupError));
++        }
++        await writeBffDiagnostic('planner-open-local-persist-error', diagnosticError(error));
++        throw error;
++      }
++      sessions.set(session.id, session);
+       return json(res, 200, {
+         ok: true,
+         sessionId: session.id,
+diff --git a/server/java-core-client.mjs b/server/java-core-client.mjs
+index 8467224..516e557 100644
+--- a/server/java-core-client.mjs
++++ b/server/java-core-client.mjs
+@@ -1076,6 +1076,7 @@ function createTestStub() {
+       restoredTrip.sourceTripId = trip.id;
+       restoredTrip.sourceTripVersion = trip.currentVersion;
+       restoredTrip.plannerSessionRestoreSource = 'RESTORED_FROM_TRIP';
++      restoredTrip.version = 1;
+       plannerSessions.set(sessionId, { sessionId, trip: restoredTrip, currentVersion: 1, sessionAccessToken });
+       return {
+         ok: true,
+@@ -1122,6 +1123,19 @@ function createHttpClient() {
+         if (page.length < limit) return memories;
+       }
+     },
++    async restorePlannerDraft(sessionId, { trip, expectedVersion } = {}, token) {
++      const session = plannerSessions.get(String(sessionId || ''));
++      if (!session) throw new JavaCoreError(404, 'PLANNER_SESSION_NOT_FOUND', '规划会话不存在。');
++      if (Number(expectedVersion) !== session.currentVersion) throw new JavaCoreError(409, 'PLANNER_VERSION_CONFLICT', '规划版本冲突。');
++      const formalId = String(session.trip.sourceTripId || '');
++      const { trip: formal } = ownedTrip(token, formalId);
++      if (Number(trip?.sourceTripVersion) !== formal.currentVersion) throw new JavaCoreError(409, 'TRIP_VERSION_CONFLICT', '正式行程已更新。');
++      if (!Array.isArray(trip?.days)) throw new JavaCoreError(400, 'INVALID_TRIP', '备份缺少行程日期。');
++      session.currentVersion += 1;
++      session.trip = { ...clone(trip), sourceTripId: formalId, formalTripId: formalId,
++        sourceTripVersion: formal.currentVersion, version: session.currentVersion };
++      return { ok: true, sessionId, trip: clone(session.trip), currentVersion: session.currentVersion };
++    },
+     captureTravelMemoryObservation: (input = {}, token, signal) => requestJava('/ai/memories/observations', { method: 'POST', token, signal, body: input }),
+     listTravelMemoryCandidates: (token, signal) => requestJava('/ai/memories/candidates', { token, signal }),
+     confirmTravelMemoryCandidate: (id, token, signal) => requestJava(`/ai/memories/candidates/${encodeURIComponent(id)}/confirm`, { method: 'POST', token, signal }),
+@@ -1245,6 +1259,12 @@ function createHttpClient() {
+       signal,
+       headers: sessionAccessToken ? { 'x-plan-session-token': sessionAccessToken } : {}
+     }),
++    restorePlannerDraft: (sessionId, { trip, expectedVersion, sessionAccessToken } = {}, token, signal) =>
++      requestJava(`/ai/planner/v1/sessions/${encodeURIComponent(sessionId)}/restore-draft`, {
++        method: 'POST', token, signal,
++        headers: sessionAccessToken ? { 'x-plan-session-token': sessionAccessToken } : {},
++        body: { trip, expectedVersion }
++      }),
+     shadowPlan: ({ prompt = '', constraints = {}, usePreferences = false, signal } = {}, token) => requestJava('/ai/planner/v1/shadow', {
+       method: 'POST', token, signal, body: { prompt, constraints, usePreferences }
+     }),
+diff --git a/server/persistent-store.mjs b/server/persistent-store.mjs
+index fea7961..31bbf7d 100644
+--- a/server/persistent-store.mjs
++++ b/server/persistent-store.mjs
+@@ -101,8 +101,8 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+     await rename(tempPath, absolutePath);
+   }
+ 
+-  async function writeNow() {
+-    await writeState({
++  function persistedState(draftState = plannerDrafts, workspaceState = tripWorkspaces) {
++    return {
+       version: STORE_VERSION,
+       nextTripId: 1,
+       // These fields are retained as an explicit migration-compatible shape,
+@@ -113,16 +113,42 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+       preferencesByUser: {},
+       preferenceHistoryByUser: {},
+       feedbackByUser: Object.fromEntries(feedbackByUser),
+-      plannerDrafts: Object.fromEntries(plannerDrafts),
+-      tripWorkspaces: Object.fromEntries(tripWorkspaces)
+-    });
++      plannerDrafts: Object.fromEntries(draftState),
++      tripWorkspaces: Object.fromEntries(workspaceState)
++    };
+   }
+ 
+-  function persist() {
+-    writeQueue = writeQueue.then(writeNow);
++  async function writeNow() {
++    await writeState(persistedState());
++  }
++
++  function enqueueWrite(operation) {
++    // Keep surfacing this write's error to its caller, but let a later write
++    // recover the queue instead of inheriting a permanently rejected promise.
++    writeQueue = writeQueue.catch(() => {}).then(operation);
+     return writeQueue;
+   }
+ 
++  function persist() {
++    return enqueueWrite(writeNow);
++  }
++
++  function mutatePlannerStateAndPersist(mutate) {
++    return enqueueWrite(async () => {
++      const draftState = new Map(plannerDrafts);
++      const workspaceState = new Map(tripWorkspaces);
++      const result = mutate(draftState, workspaceState);
++      // Getters continue reading committed Maps while this candidate snapshot
++      // is written. Commit both maps only after the atomic rename succeeds.
++      await writeState(persistedState(draftState, workspaceState));
++      plannerDrafts.clear();
++      for (const [key, value] of draftState) plannerDrafts.set(key, value);
++      tripWorkspaces.clear();
++      for (const [key, value] of workspaceState) tripWorkspaces.set(key, value);
++      return result;
++    });
++  }
++
+   if (enabled && hasLegacyAuthSecret) {
+     // Remove only the forbidden embedded signing key while preserving the
+     // read-only legacy migration payload until an explicit migration writes it.
+@@ -151,54 +177,60 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+       const owner = String(userId || '').trim();
+       const tripId = String(formalTripId || '').trim();
+       if (!owner || !tripId) return Promise.resolve(null);
+-      const source = workspace && typeof workspace === 'object' ? workspace : {};
+-      const previous = tripWorkspaces.get(`${owner}:${tripId}`) || {};
+-      const revision = Number(previous.workspaceRevision || 0);
+-      if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision)
+-          || expectedRevision !== revision || !expectedEpoch || expectedEpoch !== previous.chatEpoch)) {
+-        const error = new Error('对话工作区已更新，请重新打开行程后再保存。');
+-        error.status = 409; error.code = 'TRIP_WORKSPACE_CONFLICT';
+-        error.workspace = Object.keys(previous).length ? structuredClone(previous) : null;
+-        throw error;
+-      }
+-      const messages = reset ? [] : Array.isArray(source.chatMessages)
+-        ? source.chatMessages.slice(-160).map((message) => ({
+-          role: message?.role === 'user' ? 'user' : 'assistant',
+-          content: String(message?.content || '').slice(0, 12000),
+-          pending: false,
+-          error: message?.error ? String(message.error).slice(0, 500) : undefined
+-        })).filter((message) => message.content || message.error)
+-        : (Array.isArray(previous.chatMessages) ? previous.chatMessages : []);
+-      const value = {
+-        ownerUserId: owner,
+-        formalTripId: tripId,
+-        workspaceRevision: revision + (reset || source.chatMessages !== undefined || source.chatMode !== undefined || !previous.chatEpoch ? 1 : 0),
+-        chatMessages: messages,
+-        chatMode: source.chatMode === undefined
+-          ? (previous.chatMode === 'planner' ? 'planner' : 'chat')
+-          : (source.chatMode === 'planner' ? 'planner' : 'chat'),
+-        chatEpoch: source.chatEpoch === undefined ? (previous.chatEpoch || null) : (String(source.chatEpoch || '').slice(0,64) || null),
+-        plannerConversationContext: source.plannerConversationContext === undefined
+-          ? (previous.plannerConversationContext || null)
+-          : (source.plannerConversationContext && typeof source.plannerConversationContext === 'object'
+-            ? structuredClone(source.plannerConversationContext)
+-            : null),
+-        itineraryMemorySnapshot: source.itineraryMemorySnapshot === undefined
+-          ? (previous.itineraryMemorySnapshot || null)
+-          : (source.itineraryMemorySnapshot && typeof source.itineraryMemorySnapshot === 'object'
+-            ? structuredClone(source.itineraryMemorySnapshot)
+-            : null),
+-        updatedAt: new Date().toISOString()
+-      };
+-      tripWorkspaces.set(`${owner}:${tripId}`, value);
+-      return persist().then(() => structuredClone(value));
++      const source = workspace && typeof workspace === 'object' ? structuredClone(workspace) : {};
++      const key = `${owner}:${tripId}`;
++      return mutatePlannerStateAndPersist((_drafts, workspaces) => {
++        const previous = workspaces.get(key);
++        const current = previous || {};
++        const revision = Number(current.workspaceRevision || 0);
++        if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision)
++            || expectedRevision !== revision || !expectedEpoch || expectedEpoch !== current.chatEpoch)) {
++          const error = new Error('对话工作区已更新，请重新打开行程后再保存。');
++          error.status = 409; error.code = 'TRIP_WORKSPACE_CONFLICT';
++          error.workspace = Object.keys(current).length ? structuredClone(current) : null;
++          throw error;
++        }
++        const messages = reset ? [] : Array.isArray(source.chatMessages)
++          ? source.chatMessages.slice(-160).map((message) => ({
++            role: message?.role === 'user' ? 'user' : 'assistant',
++            content: String(message?.content || '').slice(0, 12000),
++            pending: false,
++            error: message?.error ? String(message.error).slice(0, 500) : undefined
++          })).filter((message) => message.content || message.error)
++          : (Array.isArray(current.chatMessages) ? current.chatMessages : []);
++        const value = {
++          ownerUserId: owner,
++          formalTripId: tripId,
++          workspaceRevision: revision + (reset || source.chatMessages !== undefined || source.chatMode !== undefined || !current.chatEpoch ? 1 : 0),
++          chatMessages: messages,
++          chatMode: source.chatMode === undefined
++            ? (current.chatMode === 'planner' ? 'planner' : 'chat')
++            : (source.chatMode === 'planner' ? 'planner' : 'chat'),
++          chatEpoch: source.chatEpoch === undefined ? (current.chatEpoch || null) : (String(source.chatEpoch || '').slice(0,64) || null),
++          plannerConversationContext: source.plannerConversationContext === undefined
++            ? (current.plannerConversationContext || null)
++            : (source.plannerConversationContext && typeof source.plannerConversationContext === 'object'
++              ? structuredClone(source.plannerConversationContext)
++              : null),
++          itineraryMemorySnapshot: source.itineraryMemorySnapshot === undefined
++            ? (current.itineraryMemorySnapshot || null)
++            : (source.itineraryMemorySnapshot && typeof source.itineraryMemorySnapshot === 'object'
++              ? structuredClone(source.itineraryMemorySnapshot)
++              : null),
++          updatedAt: new Date().toISOString()
++        };
++        workspaces.set(key, value);
++        return structuredClone(value);
++      });
+     },
+     deleteTripWorkspace(userId, formalTripId) {
+       const owner = String(userId || '').trim();
+       const tripId = String(formalTripId || '').trim();
+       if (!owner || !tripId) return Promise.resolve();
+-      tripWorkspaces.delete(`${owner}:${tripId}`);
+-      return persist();
++      const key = `${owner}:${tripId}`;
++      return mutatePlannerStateAndPersist((_drafts, workspaces) => {
++        workspaces.delete(key);
++      });
+     },
+     getPlannerDraft(sessionId) {
+       const value = plannerDrafts.get(String(sessionId || ''));
+@@ -211,7 +243,7 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+     savePlannerDraft(session) {
+       const id = String(session?.id || '').trim();
+       if (!id) return Promise.resolve();
+-      plannerDrafts.set(id, structuredClone({
++      const draft = structuredClone({
+         id,
+         input: session.input || '',
+         trip: session.trip || null,
+@@ -245,16 +277,21 @@ export async function createPersistentStore({ rootDir, filePath, enabled = true
+         explanationSource: session.explanationSource || null,
+         degraded: Boolean(session.degraded),
+         degradationReasons: session.degradationReasons || []
+-      }));
+-      return persist();
++      });
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.set(id, draft);
++      });
+     },
+     deletePlannerDraft(sessionId) {
+-      plannerDrafts.delete(String(sessionId || ''));
+-      return persist();
++      const id = String(sessionId || '');
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.delete(id);
++      });
+     },
+     clearPlannerDrafts() {
+-      plannerDrafts.clear();
+-      return persist();
++      return mutatePlannerStateAndPersist((draftState) => {
++        draftState.clear();
++      });
+     },
+     persist,
+     async flush() { await writeQueue; }
+diff --git a/start-local.ps1 b/start-local.ps1
+index 7edad63..f2b1cd1 100644
+--- a/start-local.ps1
++++ b/start-local.ps1
+@@ -5,8 +5,29 @@ param(
+ 
+ $ErrorActionPreference = 'Stop'
+ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+-$JavaRoot = 'D:\scenic-guide\ai'
+-$Config = Join-Path $JavaRoot '.env'
++
++if ($env:SCENIC_GUIDE_JAVA_DIR -and (Test-Path -LiteralPath $env:SCENIC_GUIDE_JAVA_DIR)) {
++    $JavaRoot = $env:SCENIC_GUIDE_JAVA_DIR
++} elseif (Test-Path -LiteralPath (Join-Path $Root '..\backend')) {
++    $JavaRoot = (Resolve-Path (Join-Path $Root '..\backend')).Path
++} elseif (Test-Path -LiteralPath (Join-Path $Root 'backend')) {
++    $JavaRoot = (Resolve-Path (Join-Path $Root 'backend')).Path
++} elseif (Test-Path -LiteralPath 'D:\scenic-guide\ai') {
++    $JavaRoot = 'D:\scenic-guide\ai'
++} else {
++    $JavaRoot = Join-Path $Root 'backend'
++}
++
++$Config = if (Test-Path -LiteralPath (Join-Path $JavaRoot '.env')) {
++    Join-Path $JavaRoot '.env'
++} elseif (Test-Path -LiteralPath (Join-Path $Root '.env')) {
++    Join-Path $Root '.env'
++} elseif (Test-Path -LiteralPath (Join-Path $Root '..\.env')) {
++    Join-Path $Root '..\.env'
++} else {
++    Join-Path $JavaRoot '.env'
++}
++
+ $Template = Join-Path $JavaRoot '.env.example'
+ $LogRoot = Join-Path $env:TEMP 'yuyouzhice-local-logs'
+ $JavaLog = Join-Path $LogRoot 'java-runtime.log'
+@@ -15,7 +36,9 @@ $NodeLog = Join-Path $LogRoot 'bff-runtime.stdout.log'
+ $NodeErrorLog = Join-Path $LogRoot 'bff-runtime.stderr.log'
+ 
+ if (-not (Test-Path -LiteralPath $Config)) {
+-    & (Join-Path $Root 'init-local-config.ps1') -JavaRoot $JavaRoot
++    if (Test-Path -LiteralPath (Join-Path $Root 'init-local-config.ps1')) {
++        & (Join-Path $Root 'init-local-config.ps1') -JavaRoot $JavaRoot
++    }
+ }
+ if (-not (Test-Path -LiteralPath $Config)) {
+     throw ("Canonical environment file is missing: {0}" -f $Config)
+@@ -229,14 +252,36 @@ if (Test-Path -LiteralPath (Join-Path $Root 'server\index.mjs')) {
+     $nodeStarted = $true
+ }
+ 
++$frontendStarted = $false
++$FrontendDir = Join-Path $Root 'frontend'
++if (Test-Path -LiteralPath (Join-Path $FrontendDir 'package.json')) {
++    if (Wait-ForPort -Port 5173 -TimeoutSeconds 1) {
++        Write-Host 'Frontend Web :5173          ALREADY READY (reuse existing process)'
++        $frontendStarted = $true
++    } else {
++        $FrontendLog = Join-Path $LogRoot 'frontend-runtime.stdout.log'
++        $FrontendErrorLog = Join-Path $LogRoot 'frontend-runtime.stderr.log'
++        Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm', 'run', 'dev') -WorkingDirectory $FrontendDir -RedirectStandardOutput $FrontendLog -RedirectStandardError $FrontendErrorLog -WindowStyle Hidden | Out-Null
++        $frontendStarted = $true
++    }
++}
++
+ $javaReady = $javaStarted -and (Wait-ForPort -Port 8080 -TimeoutSeconds 180)
+ $nodeReady = $nodeStarted -and (Wait-ForPort -Port 3000 -TimeoutSeconds 45)
++$frontendReady = if ($frontendStarted) { Wait-ForPort -Port 5173 -TimeoutSeconds 45 } else { $false }
+ 
+ Write-Host ''
+ Write-Host ('Java Core Backend :8080     ' + $(if ($javaReady) { 'READY' } else { 'FAILED' }))
+ Write-Host ('Web BFF :3000               ' + $(if ($nodeReady) { 'READY' } else { 'FAILED' }))
++if ($frontendStarted) {
++    Write-Host ('Frontend Web :5173          ' + $(if ($frontendReady) { 'READY' } else { 'FAILED' }))
++}
+ 
+-if (-not $NoBrowser -and $nodeReady) {
+-    Start-Process 'http://localhost:3000'
++if (-not $NoBrowser) {
++    if ($frontendReady) {
++        Start-Process 'http://localhost:5173'
++    } elseif ($nodeReady) {
++        Start-Process 'http://localhost:3000'
++    }
+ }
+ if (-not ($javaReady -and $nodeReady)) { exit 1 }

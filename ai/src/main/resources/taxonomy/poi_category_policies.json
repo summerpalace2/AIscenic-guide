@@ -1,0 +1,49 @@
+{
+  "categories": {
+    "SCENIC": {
+      "minDurationMinutes": 45, "maxDurationMinutes": 240, "defaultDurationMinutes": 120,
+      "preferredTimeWindows": [{"startMinute": 510, "endMinute": 1290, "label": "全天适宜游览"}],
+      "allowedAsFirstStop": true, "allowedAsLastStop": true, "maxOccurrencesPerDay": 4,
+      "minIntervalMinutesBetweenSameCategory": 0
+    },
+    "DINING": {
+      "minDurationMinutes": 40, "maxDurationMinutes": 100, "defaultDurationMinutes": 75,
+      "preferredTimeWindows": [
+        {"startMinute": 450, "endMinute": 570, "label": "早餐"},
+        {"startMinute": 690, "endMinute": 810, "label": "午餐"},
+        {"startMinute": 870, "endMinute": 990, "label": "下午茶歇"},
+        {"startMinute": 1050, "endMinute": 1230, "label": "晚餐"},
+        {"startMinute": 1260, "endMinute": 1410, "label": "夜市宵夜"}
+      ],
+      "allowedAsFirstStop": false, "allowedAsLastStop": true, "maxOccurrencesPerDay": 3,
+      "minIntervalMinutesBetweenSameCategory": 180
+    },
+    "THEATER": {
+      "minDurationMinutes": 70, "maxDurationMinutes": 150, "defaultDurationMinutes": 100,
+      "preferredTimeWindows": [
+        {"startMinute": 840, "endMinute": 990, "label": "下午专场"},
+        {"startMinute": 1140, "endMinute": 1320, "label": "晚间黄金档"}
+      ],
+      "allowedAsFirstStop": false, "allowedAsLastStop": true, "maxOccurrencesPerDay": 1,
+      "minIntervalMinutesBetweenSameCategory": 300
+    },
+    "SHOPPING": {
+      "minDurationMinutes": 45, "maxDurationMinutes": 150, "defaultDurationMinutes": 90,
+      "preferredTimeWindows": [{"startMinute": 600, "endMinute": 1320, "label": "商圈营业时间"}],
+      "allowedAsFirstStop": false, "allowedAsLastStop": true, "maxOccurrencesPerDay": 2,
+      "minIntervalMinutesBetweenSameCategory": 120
+    },
+    "HOTEL": {
+      "minDurationMinutes": 30, "maxDurationMinutes": 90, "defaultDurationMinutes": 60,
+      "preferredTimeWindows": [{"startMinute": 840, "endMinute": 1439, "label": "入住与休憩"}],
+      "allowedAsFirstStop": false, "allowedAsLastStop": true, "maxOccurrencesPerDay": 1,
+      "minIntervalMinutesBetweenSameCategory": 0
+    },
+    "TRANSIT": {
+      "minDurationMinutes": 15, "maxDurationMinutes": 60, "defaultDurationMinutes": 30,
+      "preferredTimeWindows": [{"startMinute": 420, "endMinute": 1350, "label": "交通运营时段"}],
+      "allowedAsFirstStop": true, "allowedAsLastStop": true, "maxOccurrencesPerDay": 3,
+      "minIntervalMinutesBetweenSameCategory": 60
+    }
+  }
+}

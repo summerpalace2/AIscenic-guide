@@ -1,5 +1,7 @@
 package com.ai.guide.domain.rag.service;
 
+import com.ai.guide.domain.rag.gateway.ScenicKnowledgePort;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -15,7 +17,7 @@ class ParallelRagServiceTest {
 
     @Test
     void searchUsesDedicatedExecutorBoundaryAndKeepsMergedResult() {
-        ScenicDataImportService dataImportService = mock(ScenicDataImportService.class);
+        ScenicKnowledgePort dataImportService = mock(ScenicKnowledgePort.class);
         AtomicReference<String> threadName = new AtomicReference<>();
         when(dataImportService.searchFragmentsDeep("重庆博物馆", 25, 15)).thenAnswer(invocation -> {
             threadName.set(Thread.currentThread().getName());

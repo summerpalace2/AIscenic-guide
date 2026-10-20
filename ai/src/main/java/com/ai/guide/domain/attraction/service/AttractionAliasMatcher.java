@@ -1,14 +1,11 @@
 package com.ai.guide.domain.attraction.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ai.guide.domain.attraction.gateway.AttractionAliasTaxonomyPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import java.io.InputStream;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 景点别名与口语化意图动态匹配器
@@ -21,48 +18,55 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Component
 public class AttractionAliasMatcher {
+    private record AliasIndex(Map<String, String> aliasToVenueId,
+                              Map<String, String> venueIdToCanonical,
+                              List<String> sortedAliases,
+                              long revision, long catalogRevision) {}
+    private volatile AliasIndex index = new AliasIndex(Map.of(), Map.of(), List.of(), Long.MIN_VALUE, Long.MIN_VALUE);
 
-    private final Map<String, String> aliasToVenueId = new ConcurrentHashMap<>();
-    private final Map<String, String> venueIdToCanonical = new ConcurrentHashMap<>();
-    private final List<String> sortedAliases = new ArrayList<>();
+    private final AttractionAliasTaxonomyPort aliasTaxonomy;
+    private volatile List<Attraction> catalogSnapshot = List.of();
+    private AttractionService attractionService;
 
     @Autowired
-    public AttractionAliasMatcher(@Autowired(required = false) AttractionService attractionService) {
+    public AttractionAliasMatcher(AttractionService attractionService,
+                                  AttractionAliasTaxonomyPort aliasTaxonomy) {
+        this.aliasTaxonomy = aliasTaxonomy;
         init(attractionService);
     }
 
+    /** Test/compatibility constructor; production wiring uses the taxonomy-backed constructor. */
+    public AttractionAliasMatcher(AttractionService attractionService) {
+        this(attractionService, null);
+    }
+
     public AttractionAliasMatcher() {
-        this(null);
+        this(null, null);
     }
 
     public synchronized void init(AttractionService attractionService) {
-        aliasToVenueId.clear();
-        venueIdToCanonical.clear();
-
-        List<Attraction> list = null;
-        if (attractionService != null) {
-            try {
-                list = attractionService.list(null, null);
-            } catch (Exception ignored) {}
-        }
-        if (list == null || list.isEmpty()) {
-            list = loadFromResource();
-        }
-
-        for (Attraction a : list) {
-            registerAttraction(a);
-        }
-
-        registerConfiguredAliases();
-
-        sortedAliases.clear();
-        sortedAliases.addAll(aliasToVenueId.keySet());
-        // 最长前缀优先匹配，避免子串先被截断
-        sortedAliases.sort((s1, s2) -> Integer.compare(s2.length(), s1.length()));
-        log.info("[AttractionAliasMatcher] 动态构建景点别名索引，共收录 {} 条别名映射", sortedAliases.size());
+        long catalogRevision = attractionService == null ? 0 : attractionService.revision();
+        List<Attraction> list = attractionService == null ? List.of()
+                : Objects.requireNonNull(attractionService.list(null, null), "景点目录加载结果不能为空");
+        this.attractionService = attractionService;
+        catalogSnapshot = List.copyOf(list);
+        index = buildIndex(catalogSnapshot, aliasTaxonomy == null ? 0 : aliasTaxonomy.revision(), catalogRevision);
+        log.info("[AttractionAliasMatcher] 动态构建景点别名索引，共收录 {} 条别名映射", index.sortedAliases().size());
     }
 
-    private void registerAttraction(Attraction a) {
+    private AliasIndex buildIndex(List<Attraction> catalog, long revision, long catalogRevision) {
+        Map<String, String> aliases = new LinkedHashMap<>();
+        Map<String, String> canonicalNames = new LinkedHashMap<>();
+        for (Attraction attraction : catalog) registerAttraction(attraction, aliases, canonicalNames);
+        registerConfiguredAliases(aliases, canonicalNames);
+        List<String> sorted = new ArrayList<>(aliases.keySet());
+        // 最长别名优先匹配，避免较短别名先截断。
+        sorted.sort((left, right) -> Integer.compare(right.length(), left.length()));
+        return new AliasIndex(Map.copyOf(aliases), Map.copyOf(canonicalNames), List.copyOf(sorted), revision, catalogRevision);
+    }
+
+    private void registerAttraction(Attraction a, Map<String, String> aliasToVenueId,
+                                   Map<String, String> venueIdToCanonical) {
         if (a == null || a.getId() == null) return;
         String id = a.getId();
         String name = a.getName();
@@ -103,23 +107,35 @@ public class AttractionAliasMatcher {
     }
 
     /** Load curated aliases only for entities present in the active catalog. */
-    private void registerConfiguredAliases() {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream("taxonomy/attraction_aliases.json")) {
-            if (is == null) return;
-            var root = new ObjectMapper().readTree(is);
-            root.path("aliases").fields().forEachRemaining(entry -> {
-                String venueId = entry.getValue().asText();
-                if (venueIdToCanonical.containsKey(venueId) && !entry.getKey().isBlank()) {
-                    aliasToVenueId.putIfAbsent(entry.getKey(), venueId);
-                }
-            });
-            root.path("canonicalNames").fields().forEachRemaining(entry -> {
-                if (venueIdToCanonical.containsKey(entry.getKey()) && !entry.getValue().asText().isBlank()) {
-                    venueIdToCanonical.put(entry.getKey(), entry.getValue().asText());
-                }
-            });
-        } catch (Exception e) {
-            log.warn("[AttractionAliasMatcher] 读取景点别名配置失败: {}", e.getMessage());
+    private void registerConfiguredAliases(Map<String, String> aliasToVenueId,
+                                           Map<String, String> venueIdToCanonical) {
+        if (aliasTaxonomy == null) return;
+        aliasTaxonomy.aliases().forEach((alias, venueId) -> {
+            if (venueIdToCanonical.containsKey(venueId) && alias != null && !alias.isBlank())
+                aliasToVenueId.putIfAbsent(alias, venueId);
+        });
+        aliasTaxonomy.canonicalNames().forEach((venueId, canonical) -> {
+            if (venueIdToCanonical.containsKey(venueId) && canonical != null && !canonical.isBlank())
+                venueIdToCanonical.put(venueId, canonical);
+        });
+    }
+
+    private AliasIndex refreshIfTaxonomyChanged() {
+        AliasIndex current = index;
+        long catalogRevision = attractionService == null ? 0 : attractionService.revision();
+        long taxonomyRevision = aliasTaxonomy == null ? 0 : aliasTaxonomy.revision();
+        if (taxonomyRevision == current.revision() && catalogRevision == current.catalogRevision()) return current;
+        synchronized (this) {
+            current = index;
+            long revision = aliasTaxonomy == null ? 0 : aliasTaxonomy.revision();
+            catalogRevision = attractionService == null ? 0 : attractionService.revision();
+            if (revision != current.revision() || catalogRevision != current.catalogRevision()) {
+                if (catalogRevision != current.catalogRevision() && attractionService != null)
+                    catalogSnapshot = List.copyOf(attractionService.list(null, null));
+                current = buildIndex(catalogSnapshot, revision, catalogRevision);
+                index = current;
+            }
+            return current;
         }
     }
 
@@ -129,37 +145,40 @@ public class AttractionAliasMatcher {
     }
 
     public String extractMentionedVenueId(String text) {
+        AliasIndex current = refreshIfTaxonomyChanged();
         String clean = sanitizeInput(text);
         if (clean == null || clean.isBlank()) return null;
-        for (String alias : sortedAliases) {
+        for (String alias : current.sortedAliases()) {
             if (clean.contains(alias)) {
-                return aliasToVenueId.get(alias);
+                return current.aliasToVenueId().get(alias);
             }
         }
         return null;
     }
 
     public String extractMentionedVenueAlias(String text) {
+        AliasIndex current = refreshIfTaxonomyChanged();
         String clean = sanitizeInput(text);
         if (clean == null || clean.isBlank()) return null;
-        for (String alias : sortedAliases) {
+        for (String alias : current.sortedAliases()) {
             if (clean.contains(alias)) {
-                String venueId = aliasToVenueId.get(alias);
-                return venueIdToCanonical.getOrDefault(venueId, alias);
+                String venueId = current.aliasToVenueId().get(alias);
+                return current.venueIdToCanonical().getOrDefault(venueId, alias);
             }
         }
         return null;
     }
 
     public boolean containsAnotherVenue(String text, String selectedStopId) {
+        AliasIndex current = refreshIfTaxonomyChanged();
         String clean = sanitizeInput(text);
         if (clean == null || clean.isBlank()) return false;
         String stop = selectedStopId == null ? "" : selectedStopId.toLowerCase(Locale.ROOT)
                 .replace("cq-", "").replace("day1-", "").replace("day2-", "").replace("day3-", "").trim();
 
-        for (String alias : sortedAliases) {
+        for (String alias : current.sortedAliases()) {
             if (clean.contains(alias)) {
-                String venueId = aliasToVenueId.get(alias);
+                String venueId = current.aliasToVenueId().get(alias);
                 String normalizedVenue = venueId != null ? venueId.toLowerCase(Locale.ROOT).replace("cq-", "") : "";
                 boolean isCurrent = (selectedStopId != null && selectedStopId.contains(alias))
                         || (selectedStopId != null && !selectedStopId.isBlank() && alias.contains(selectedStopId))
@@ -173,12 +192,13 @@ public class AttractionAliasMatcher {
     }
 
     public List<String> findExplicitAttractionIds(String prompt, Set<String> validIds) {
+        AliasIndex current = refreshIfTaxonomyChanged();
         String clean = sanitizeInput(prompt);
         if (clean == null || clean.isBlank()) return Collections.emptyList();
         Set<String> matched = new LinkedHashSet<>();
-        for (String alias : sortedAliases) {
+        for (String alias : current.sortedAliases()) {
             if (clean.contains(alias)) {
-                String venueId = aliasToVenueId.get(alias);
+                String venueId = current.aliasToVenueId().get(alias);
                 if (venueId != null && (validIds == null || validIds.contains(venueId))) {
                     matched.add(venueId);
                 }
@@ -188,15 +208,16 @@ public class AttractionAliasMatcher {
     }
 
     public List<String> findExplicitAttractionIdsInOrder(String prompt, Set<String> validIds) {
+        AliasIndex current = refreshIfTaxonomyChanged();
         String clean = sanitizeInput(prompt);
         if (clean == null || clean.isBlank()) return Collections.emptyList();
         record MatchPos(String venueId, int index) {}
         List<MatchPos> matches = new ArrayList<>();
         Set<String> seenVenues = new HashSet<>();
-        for (String alias : sortedAliases) {
+        for (String alias : current.sortedAliases()) {
             int idx = clean.indexOf(alias);
             if (idx >= 0) {
-                String venueId = aliasToVenueId.get(alias);
+                String venueId = current.aliasToVenueId().get(alias);
                 if (venueId != null && (validIds == null || validIds.contains(venueId))) {
                     if (seenVenues.add(venueId)) {
                         matches.add(new MatchPos(venueId, idx));
@@ -209,21 +230,11 @@ public class AttractionAliasMatcher {
     }
 
     public Map<String, String> getAliasToVenueIdMap() {
-        return Collections.unmodifiableMap(aliasToVenueId);
+        return refreshIfTaxonomyChanged().aliasToVenueId();
     }
 
     public Map<String, String> getVenueIdToCanonicalMap() {
-        return Collections.unmodifiableMap(venueIdToCanonical);
+        return refreshIfTaxonomyChanged().venueIdToCanonical();
     }
 
-    private List<Attraction> loadFromResource() {
-        try (InputStream is = getClass().getClassLoader().getResourceAsStream("attractions.json")) {
-            if (is == null) return Collections.emptyList();
-            ObjectMapper mapper = new ObjectMapper();
-            return mapper.readValue(is, new TypeReference<List<Attraction>>() {});
-        } catch (Exception e) {
-            log.warn("[AttractionAliasMatcher] 读取 attractions.json 异常: {}", e.getMessage());
-            return Collections.emptyList();
-        }
-    }
 }

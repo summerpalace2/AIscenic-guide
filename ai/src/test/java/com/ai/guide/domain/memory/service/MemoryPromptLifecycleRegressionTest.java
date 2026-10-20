@@ -2,6 +2,7 @@ package com.ai.guide.domain.memory.service;
 
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
+import com.ai.guide.infrastructure.memory.repository.JdbcMemoryRepository;
 import com.ai.guide.infrastructure.preferences.repository.PreferencesRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
@@ -21,7 +22,7 @@ class MemoryPromptLifecycleRegressionTest {
         jdbc.execute("CREATE TABLE travel_memory(id TEXT PRIMARY KEY,user_id TEXT,category TEXT,content TEXT,source_type TEXT,source_ref TEXT,status TEXT,confidence REAL,created_at INTEGER,updated_at INTEGER)");
         jdbc.execute("CREATE TABLE user_preferences(user_id TEXT PRIMARY KEY,schema_version INTEGER,revision INTEGER,interests_json TEXT,walking_tolerance TEXT,budget_json TEXT,companions TEXT,transport_preference TEXT,diet_preference TEXT,stay_area TEXT,legacy_metadata_json TEXT,created_at INTEGER,updated_at INTEGER)");
         preferences=new PreferencesService(new PreferencesRepository(jdbc,new ObjectMapper()),(u,b,a,o)->{});
-        memory=new TravelMemoryService(jdbc,preferences);
+        memory=com.ai.guide.testing.MemoryTestFixtures.service(new JdbcMemoryRepository(jdbc),preferences);
     }
     @AfterEach void close() throws Exception { connection.close(); }
     @Test void generatedCopyDoesNotReviveDeletedMemoryAndManualNoteSurvivesResynthesis() {

@@ -1,0 +1,125 @@
+[
+  {
+    "id": "wh-hubei-museum",
+    "name": "湖北省博物馆",
+    "displayName": "湖北省博物馆",
+    "city": "武汉",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于武汉东湖路，承担湖北文物收藏、保护、展览与公共教育。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "湖北省博物馆",
+      "matches": [
+        "湖北省博物馆"
+      ]
+    },
+    "intro": "位于武汉东湖路，承担湖北文物收藏、保护、展览与公共教育。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://wlt.hubei.gov.cn/zfxxgk/fdzdgknr/jgjj/zsdw/202008/t20200805_2740545.shtml",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "wh-yellow-crane-tower",
+    "name": "黄鹤楼公园",
+    "displayName": "黄鹤楼公园",
+    "city": "武汉",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "历史",
+      "园林"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于武汉武昌蛇山的文化景区，以黄鹤楼及相关历史文化景观为特色。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "黄鹤楼公园",
+      "matches": [
+        "黄鹤楼公园"
+      ]
+    },
+    "intro": "位于武汉武昌蛇山的文化景区，以黄鹤楼及相关历史文化景观为特色。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://ylj.wuhan.gov.cn/zwgk/zwxxgkzl_12298/jggk_12304/xsdwszjzz_12308/202001/t20200110_726398.shtml",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "wh-wuhan-museum",
+    "name": "武汉博物馆",
+    "displayName": "武汉博物馆",
+    "city": "武汉",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "展示武汉地区历史文化和相关文物的博物馆。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "武汉博物馆",
+      "matches": [
+        "武汉博物馆"
+      ]
+    },
+    "intro": "展示武汉地区历史文化和相关文物的博物馆。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://wlj.wuhan.gov.cn/zfxxgk/fdzdgknr/jgjj/zsdw/202008/t20200827_1437246.shtml",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  }
+]

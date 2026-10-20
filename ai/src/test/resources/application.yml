@@ -1,8 +1,30 @@
 # Test-only configuration; production must supply JWT_SECRET externally.
+knowledge:
+  database:
+    type: sqlite
+    # Each Spring test context gets its own temporary database, never the developer's data/knowledge.db.
+    url: "jdbc:sqlite:${java.io.tmpdir}/scenic-guide-tests-${random.uuid}.db"
 spring:
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
   ai:
     openai:
       api-key: phase5a-test-only-placeholder
+baidu:
+  voice:
+    asr-url: https://voice.test.invalid/asr
+    tts-url: https://voice.test.invalid/tts
+    token-url: https://voice.test.invalid/token
+web-search:
+  baidu:
+    search-url: https://search.test.invalid/s
+    favicon-url: https://search.test.invalid/favicon.ico
+amap:
+  web-service:
+    base-url: https://amap.test.invalid
+    key: ""
 jwt:
   secret: "phase5a-test-jwt-secret-0123456789"
   revocation:
@@ -10,3 +32,27 @@ jwt:
 admin:
   bootstrap:
     mode: disabled
+app:
+  settings:
+    default-site-name: Test Site
+    default-language: zh
+    tts-enabled: true
+    knowledge-sync-enabled: true
+    default-max-upload-size-mb: 50
+chat:
+  stream:
+    timeout-ms: 120000
+planner:
+  geo-centroid:
+    max-span-meters: 50000
+  runtime-location:
+    search-radius-meters: 6000
+    max-candidates: 40
+    medium-budget-minutes: 180
+    long-budget-minutes: 300
+    short-radius-meters: 4000
+    medium-radius-meters: 6000
+    long-radius-meters: 8000
+    short-page-count: 2
+    medium-page-count: 3
+    long-page-count: 3

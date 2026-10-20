@@ -8,7 +8,8 @@ import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.planner.service.PlannerService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -50,7 +51,7 @@ public class PlaceQuestionAdjustmentStrategy implements AdjustmentStrategy {
     }
 
     @Autowired(required = false)
-    public void setTaxonomy(TaxonomyPort taxonomy) {
+    public void setTaxonomy(PlannerTaxonomyPort taxonomy) {
         diningGrounder.setTaxonomy(taxonomy);
     }
 
@@ -163,7 +164,7 @@ public class PlaceQuestionAdjustmentStrategy implements AdjustmentStrategy {
     }
 
     public String answerDiningOrTeaQuestion(String rawText, PlanAdjustmentIntent intent, Map<String, Object> trip) {
-        if (diningVenueService == null) diningVenueService = new DiningVenueService();
+        if (diningVenueService == null) return "餐饮查询服务暂不可用，请稍后重试。";
         String city=resolveTripCity(trip, (com.ai.guide.domain.planner.model.TravelConstraints) null);
         Map<String,Object> anchor=null;
         if (intent != null && intent.getTargetStopId() != null) {

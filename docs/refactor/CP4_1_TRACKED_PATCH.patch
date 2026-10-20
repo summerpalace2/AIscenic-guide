@@ -1,0 +1,783 @@
+diff --git a/ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java b/ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java
+index 639356d..44e02fa 100644
+--- a/ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java
++++ b/ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java
+@@ -1,13 +1,19 @@
+ package com.ai.guide.adapter.planner.web;
+ 
+ import com.ai.guide.application.planner.PlanningApplicationService;
++import com.ai.guide.application.planner.ApplyAdjustmentResult;
++import com.ai.guide.application.planner.PlanningActor;
++import com.ai.guide.application.planner.PreviewAdjustmentResult;
++import com.ai.guide.common.context.UserContext;
+ import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+ import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+ import com.ai.guide.domain.planner.model.PlanRequest;
++import com.ai.guide.domain.planner.model.RestoreDraftRequest;
+ import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowPlanRequest;
+ import com.ai.guide.domain.planner.service.PlannerService;
++import com.ai.guide.domain.planner.model.PlannerSaveResult;
+ import org.springframework.http.ResponseEntity;
+ import org.springframework.web.bind.annotation.GetMapping;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -85,6 +91,17 @@ public class PlannerController {
+         return response(plannerService.openFormalTrip(tripId));
+     }
+ 
++    @PostMapping("/sessions/{sessionId}/restore-draft")
++    public ResponseEntity<?> restoreDraft(@PathVariable String sessionId,
++                                          @RequestBody RestoreDraftRequest request,
++                                          @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
++        RestoreDraftRequest effective = request == null ? null : new RestoreDraftRequest(
++                request.trip(), request.expectedVersion(),
++                request.sessionAccessToken() == null || request.sessionAccessToken().isBlank()
++                        ? token : request.sessionAccessToken());
++        return response(plannerService.restoreDraft(sessionId, effective));
++    }
++
+     @GetMapping("/sessions")
+     public ResponseEntity<?> list() {
+         return response(plannerService.list());
+@@ -123,7 +140,9 @@ public class PlannerController {
+     @PostMapping("/sessions/{sessionId}/save")
+     public ResponseEntity<?> save(@PathVariable String sessionId,
+                                   @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
+-        return response(plannerService.save(sessionId, token));
++        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
++        PlannerSaveResult result = plannerService.save(actor, sessionId, token);
++        return ResponseEntity.status(result.serviceStatus()).body(result.body());
+     }
+ 
+     @PostMapping("/sessions/{sessionId}/conversation")
+@@ -134,7 +153,9 @@ public class PlannerController {
+         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
+             effective.setSessionAccessToken(token == null ? "" : token);
+         }
+-        return response(plannerService.converse(sessionId, effective));
++        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
++        PreviewAdjustmentResult result = plannerService.converse(actor, sessionId, effective);
++        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
+     }
+ 
+     @PostMapping("/sessions/{sessionId}/adjust/preview")
+@@ -145,7 +166,9 @@ public class PlannerController {
+         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
+             effective.setSessionAccessToken(token == null ? "" : token);
+         }
+-        return response(plannerService.previewAdjustment(sessionId, effective));
++        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
++        PreviewAdjustmentResult result = plannerService.previewAdjustment(actor, sessionId, effective);
++        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
+     }
+ 
+     @PostMapping("/sessions/{sessionId}/adjust/apply")
+@@ -156,10 +179,39 @@ public class PlannerController {
+         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
+             effective.setSessionAccessToken(token == null ? "" : token);
+         }
+-        return response(plannerService.applyAdjustment(sessionId, effective));
++        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
++        ApplyAdjustmentResult result = plannerService.applyAdjustment(actor, sessionId, effective);
++        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
+     }
+ 
+     private ResponseEntity<?> response(PlannerService.ServiceResult result) {
+         return ResponseEntity.status(result.status()).body(result.body());
+     }
++
++    private int httpStatus(PreviewAdjustmentResult.Outcome outcome) {
++        return switch (outcome) {
++            case SUCCESS, CLARIFICATION, NO_CANDIDATE, PREVIEW_UNAPPLICABLE -> 200;
++            case BAD_REQUEST -> 400;
++            case UNAUTHORIZED -> 401;
++            case FORBIDDEN -> 403;
++            case NOT_FOUND -> 404;
++            case CONFLICT -> 409;
++            case UNPROCESSABLE -> 422;
++            case TOO_MANY_REQUESTS -> 429;
++            case SERVICE_UNAVAILABLE -> 503;
++            case INTERNAL_ERROR -> 500;
++        };
++    }
++
++    private int httpStatus(ApplyAdjustmentResult.Outcome outcome) {
++        return switch (outcome) {
++            case SUCCESS -> 200;
++            case BAD_REQUEST -> 400;
++            case UNAUTHORIZED -> 401;
++            case FORBIDDEN -> 403;
++            case NOT_FOUND -> 404;
++            case CONFLICT -> 409;
++            case INTERNAL_ERROR -> 500;
++        };
++    }
+ }
+diff --git a/ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java b/ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java
+index 5c61745..43dea96 100644
+--- a/ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java
++++ b/ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java
+@@ -3,12 +3,26 @@ package com.ai.guide.application.planner;
+ import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+ import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+ import com.ai.guide.domain.planner.model.PlanRequest;
++import com.ai.guide.domain.planner.model.RestoreDraftRequest;
+ import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowPlanRequest;
+ import com.ai.guide.domain.planner.service.PlannerService;
++import com.ai.guide.domain.planner.service.PlanAdjustmentService;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
++import com.ai.guide.domain.planner.gateway.ProposalRepositoryPort;
++import com.ai.guide.domain.planner.gateway.PlannerSaveUseCasePort;
++import com.ai.guide.domain.planner.model.AdjustmentPreviewExecution;
++import com.ai.guide.domain.planner.model.AdjustmentLifecycleExecution;
++import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
++import com.ai.guide.domain.planner.model.PlannerSaveActor;
++import com.ai.guide.domain.planner.model.PlannerSaveResult;
+ import org.springframework.stereotype.Service;
+ 
++import java.util.LinkedHashMap;
++import java.util.Map;
++
+ /**
+  * 智能排程规划应用服务 (Planner Application Service)
+  *
+@@ -21,9 +35,21 @@ import org.springframework.stereotype.Service;
+ public class PlannerApplicationService implements PlanningApplicationService {
+ 
+     private final PlannerService plannerService;
++    private final PlannerSaveUseCasePort plannerSaveUseCase;
++    private final PlannerSessionRepositoryPort sessionRepository;
++    private final PlanAdjustmentService planAdjustmentService;
++    private final ProposalRepositoryPort proposalRepository;
+ 
+-    public PlannerApplicationService(PlannerService plannerService) {
++    public PlannerApplicationService(PlannerService plannerService,
++                                     PlannerSaveUseCasePort plannerSaveUseCase,
++                                     PlannerSessionRepositoryPort sessionRepository,
++                                     PlanAdjustmentService planAdjustmentService,
++                                     ProposalRepositoryPort proposalRepository) {
+         this.plannerService = plannerService;
++        this.plannerSaveUseCase = plannerSaveUseCase;
++        this.sessionRepository = sessionRepository;
++        this.planAdjustmentService = planAdjustmentService;
++        this.proposalRepository = proposalRepository;
+     }
+ 
+     @Override
+@@ -76,19 +102,159 @@ public class PlannerApplicationService implements PlanningApplicationService {
+         return plannerService.save(sessionId, accessToken);
+     }
+ 
++    @Override
++    public PlannerSaveResult save(PlanningActor actor, String sessionId, String accessToken) {
++        PlannerSaveActor saveActor = actor == null ? null : new PlannerSaveActor(actor.userId(), actor.anonymous());
++        return plannerSaveUseCase.save(saveActor, sessionId, accessToken);
++    }
++
+     @Override
+     public PlannerService.ServiceResult openFormalTrip(String tripId) {
+         return plannerService.openFormalTrip(tripId);
+     }
+ 
+     @Override
+-    public PlannerService.ServiceResult converse(String sessionId, PlanConversationRequestDto request) {
+-        return plannerService.converse(sessionId, request);
++    public PlannerService.ServiceResult restoreDraft(String sessionId, RestoreDraftRequest request) {
++        return plannerService.restoreDraft(sessionId, request);
++    }
++
++    @Override
++    public PreviewAdjustmentResult converse(PlanningActor actor, String sessionId, PlanConversationRequestDto request) {
++        return previewAdjustment(actor, sessionId, request);
+     }
+ 
+     @Override
+-    public PlannerService.ServiceResult previewAdjustment(String sessionId, PlanConversationRequestDto request) {
+-        return plannerService.previewAdjustment(sessionId, request);
++    public PreviewAdjustmentResult previewAdjustment(PlanningActor actor, String sessionId, PlanConversationRequestDto request) {
++        if (!plannerService.isPlannerV1Enabled()) {
++            return PreviewAdjustmentResult.failure(PreviewAdjustmentResult.Outcome.BAD_REQUEST,
++                    "LEGACY_PLANNER_UNAVAILABLE: 详情页 AI 调整能力仅在 V1 规划器启用时可用。");
++        }
++
++        String token = request == null ? "" : safe(request.getSessionAccessToken());
++        boolean reset = request != null && request.getContext() != null && request.getContext().isResetConversation();
++        boolean cancelled = !reset && PlanAdjustmentService.isCancellationRequest(request == null ? "" : request.getMessage());
++        if (reset || cancelled) {
++            AdjustmentLifecycleExecution execution = planAdjustmentService.withSessionApplyLock(sessionId, () -> {
++                StoredSession latest = findAuthorized(actor, sessionId, token);
++                if (latest == null) return new AdjustmentLifecycleExecution(AdjustmentLifecycleExecution.Outcome.NOT_FOUND,
++                        Map.of("ok", false, "message", "规划会话不存在或无权访问。"));
++                if (request != null && request.getBaseRevision() != latest.currentVersion())
++                    return new AdjustmentLifecycleExecution(AdjustmentLifecycleExecution.Outcome.CONFLICT,
++                            planAdjustmentService.cancelRevisionConflictBody(latest));
++                planAdjustmentService.resetAuthorizedContinuation(latest);
++                return new AdjustmentLifecycleExecution(AdjustmentLifecycleExecution.Outcome.SUCCESS,
++                        Map.of("ok", true, "reset", true, "cancelled", cancelled, "modified", false,
++                                "message", cancelled ? "已取消本轮调整，当前行程未改变。" : "已结束上一轮对话上下文。"));
++            });
++            return PreviewAdjustmentResult.of(PreviewAdjustmentResult.Outcome.valueOf(execution.outcome().name()), execution.body());
++        }
++
++        PreviewAdmission admission = planAdjustmentService.withSessionApplyLock(sessionId, () -> {
++            StoredSession authorized = findAuthorized(actor, sessionId, token);
++            if (authorized == null) return new PreviewAdmission(null, null,
++                    PreviewAdjustmentResult.failure(PreviewAdjustmentResult.Outcome.NOT_FOUND, "规划会话不存在或无权访问。"));
++            if (request != null && request.getBaseRevision() != authorized.currentVersion()) {
++                return new PreviewAdmission(null, null, PreviewAdjustmentResult.of(PreviewAdjustmentResult.Outcome.CONFLICT,
++                        planAdjustmentService.cancelRevisionConflictBody(authorized)));
++            }
++            return new PreviewAdmission(authorized, planAdjustmentService.beginPreviewForApplication(authorized), null);
++        });
++        if (admission.failure() != null) return admission.failure();
++
++        AdjustmentPreviewExecution result = planAdjustmentService.previewForApplication(admission.session(), request,
++                proposalRepository::put, admission.ticket());
++        return PreviewAdjustmentResult.of(PreviewAdjustmentResult.Outcome.valueOf(result.outcome().name()), result.body());
++    }
++
++    private record PreviewAdmission(StoredSession session, PlanAdjustmentService.PreviewGenerationTicket ticket,
++                                   PreviewAdjustmentResult failure) {}
++
++    private StoredSession findAuthorized(PlanningActor actor, String sessionId, String token) {
++        if (actor == null || sessionId == null || sessionId.isBlank()) return null;
++        if (actor.anonymous()) {
++            StoredSession capabilitySession = sessionRepository.findAnonymousByAccessToken(token);
++            if (capabilitySession == null || !sessionId.equals(capabilitySession.sessionId())) return null;
++            return sessionRepository.find(sessionId, "ANONYMOUS", capabilitySession.ownerId(), token);
++        }
++        if (actor.userId() == null || actor.userId().isBlank()) return null;
++        StoredSession owned = sessionRepository.find(sessionId, "USER", actor.userId(), token);
++        return owned != null ? owned : sessionRepository.claimAnonymous(sessionId, token, actor.userId());
++    }
++
++    private String safe(String value) { return value == null ? "" : value; }
++
++    @Override
++    public ApplyAdjustmentResult applyAdjustment(PlanningActor actor, String sessionId, ApplyAdjustmentRequestDto request) {
++        if (!plannerService.isPlannerV1Enabled()) {
++            return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.BAD_REQUEST,
++                    Map.of("ok", false, "message", "LEGACY_PLANNER_UNAVAILABLE: 详情页 AI 调整能力仅在 V1 规划器启用时可用。"));
++        }
++        String token = request == null ? "" : safe(request.getSessionAccessToken());
++        StoredSession session = findAuthorized(actor, sessionId, token);
++        if (session == null) {
++            return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.NOT_FOUND,
++                    Map.of("ok", false, "message", "规划会话不存在或无权访问。"));
++        }
++        return planAdjustmentService.withSessionApplyLock(session.sessionId(), () -> {
++            StoredSession current = planAdjustmentService.refreshAuthorizedSessionForLifecycle(session, token);
++            if (current == null) return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.NOT_FOUND,
++                    Map.of("ok", false, "message", "规划会话不存在或无权访问。"));
++
++            PlanAdjustmentService.ApplyReplayDecision replay = planAdjustmentService.lookupApplyReplay(current, request);
++            if (replay.replayed() || replay.identityConflict())
++                return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.valueOf(replay.result().outcome().name()), replay.result().body());
++
++            PlanAdjustmentService.ApplyPreparation preparation = planAdjustmentService.prepareApply(current, request, replay);
++            if (preparation.rejected())
++                return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.valueOf(preparation.rejection().name()), preparation.rejectionBody());
++
++            PlanAdjustmentService.ApplyCommit commit = planAdjustmentService.commitPreparedApply(preparation);
++            if (!commit.committed())
++                return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.valueOf(commit.outcome().name()), commit.rejectionBody());
++
++            PlanAdjustmentService.ApplyCompletion completion = planAdjustmentService.completeCommittedApply(commit);
++            Map<String, Object> body = assembleApplyReceipt(current, preparation, completion);
++            ApplyAdjustmentResult result = ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.SUCCESS, body);
++            planAdjustmentService.recordApplyReplay(current, request, preparation.replayKey(), preparation.requestFingerprint(),
++                    new AdjustmentLifecycleExecution(AdjustmentLifecycleExecution.Outcome.SUCCESS, result.body()));
++            return result;
++        });
++    }
++
++    private Map<String, Object> assembleApplyReceipt(StoredSession current,
++                                                     PlanAdjustmentService.ApplyPreparation preparation,
++                                                     PlanAdjustmentService.ApplyCompletion completion) {
++        var proposal = preparation.proposal();
++        var trip = preparation.proposedTrip();
++        boolean forced = preparation.forceApply() && !proposal.isFeasible();
++        Map<String, Object> body = new LinkedHashMap<>();
++        body.put("ok", true);
++        body.put("applied", true);
++        body.put("sessionId", current.sessionId());
++        body.put("currentVersion", completion.currentVersion());
++        body.put("trip", trip);
++        body.put("changedSegments", proposal.getChangedSegments());
++        body.put("unchangedStops", proposal.getUnchangedStops());
++        body.put("appliedPreferences", completion.appliedPreferences());
++        String routeStatus = trip == null ? "ESTIMATED" : String.valueOf(trip.getOrDefault("routeDataStatus", "ESTIMATED"));
++        boolean degraded = trip == null || !"高德实时接口".equals(trip.get("sourceMode"));
++        PlannerVersionMetadata metadata = PlannerVersionMetadata.defaultV1(routeStatus, degraded,
++                degraded ? java.util.List.of("DEMO_OR_ESTIMATED_ROUTE_FALLBACK") : java.util.List.of());
++        body.put("plannerVersion", metadata.getPlannerVersion());
++        body.put("policyVersion", metadata.getPolicyVersion());
++        body.put("explanationSource", metadata.getExplanationSource());
++        body.put("routeDataStatus", metadata.getRouteDataStatus());
++        body.put("degraded", metadata.isDegraded());
++        body.put("degradationReasons", metadata.getDegradationReasons());
++        body.put("forced", forced);
++        if (!completion.pendingIntent().isEmpty()) {
++            body.put("pendingIntent", completion.pendingIntent());
++            body.put("nextActionPrompt", completion.nextActionPrompt());
++        }
++        body.put("message", forced
++                ? "已按你的选择应用这份调整；它可能让当天安排不够顺路，请结合实际情况安排行程。"
++                : "行程调整已成功应用并持久化。");
++        return body;
+     }
+ 
+     @Override
+diff --git a/ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java b/ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java
+index fe59280..5ca31e6 100644
+--- a/ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java
++++ b/ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java
+@@ -3,6 +3,8 @@ package com.ai.guide.application.planner;
+ import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+ import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+ import com.ai.guide.domain.planner.model.PlanRequest;
++import com.ai.guide.domain.planner.model.RestoreDraftRequest;
++import com.ai.guide.domain.planner.model.PlannerSaveResult;
+ import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowPlanRequest;
+@@ -36,11 +38,17 @@ public interface PlanningApplicationService {
+ 
+     PlannerService.ServiceResult save(String sessionId, String accessToken);
+ 
++    PlannerSaveResult save(PlanningActor actor, String sessionId, String accessToken);
++
+     PlannerService.ServiceResult openFormalTrip(String tripId);
++    PlannerService.ServiceResult restoreDraft(String sessionId, RestoreDraftRequest request);
++
++    PreviewAdjustmentResult converse(PlanningActor actor, String sessionId, PlanConversationRequestDto request);
+ 
+-    PlannerService.ServiceResult converse(String sessionId, PlanConversationRequestDto request);
++    PreviewAdjustmentResult previewAdjustment(PlanningActor actor, String sessionId, PlanConversationRequestDto request);
+ 
+-    PlannerService.ServiceResult previewAdjustment(String sessionId, PlanConversationRequestDto request);
++    ApplyAdjustmentResult applyAdjustment(PlanningActor actor, String sessionId, ApplyAdjustmentRequestDto request);
+ 
++    /** Compatibility facade for legacy callers; HTTP adapters use the explicit-actor use case above. */
+     PlannerService.ServiceResult applyAdjustment(String sessionId, ApplyAdjustmentRequestDto request);
+ }
+diff --git a/ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java b/ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java
+index c3c2e74..cc1ad66 100644
+--- a/ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java
++++ b/ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java
+@@ -7,6 +7,7 @@ import com.ai.guide.domain.attraction.model.Attraction;
+ import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+ import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+ import com.ai.guide.domain.planner.model.PlanRequest;
++import com.ai.guide.domain.planner.model.RestoreDraftRequest;
+ import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowPlanRequest;
+@@ -14,17 +15,20 @@ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.CreateResult;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.MutationResult;
++import com.ai.guide.domain.planner.gateway.PlannerSaveUseCasePort;
+ import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
+ import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
+ import com.ai.guide.domain.planner.model.HydrationResult;
+ import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
++import com.ai.guide.domain.planner.model.PlannerSaveActor;
++import com.ai.guide.domain.planner.model.PlannerSaveResult;
+ import com.ai.guide.domain.planner.model.TravelConstraints;
+ import com.ai.guide.domain.planner.narrative.GroundedNarrativeService;
+ import com.ai.guide.domain.trip.service.TripService;
++import com.ai.guide.domain.trip.service.TripPlanLimits;
+ import com.fasterxml.jackson.databind.ObjectMapper;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import org.springframework.dao.DataAccessResourceFailureException;
+ import org.springframework.stereotype.Service;
+ import java.nio.charset.StandardCharsets;
+ import java.security.MessageDigest;
+@@ -72,6 +76,23 @@ public class PlannerService {
+     private final PlannerMetricsLogger metricsLogger;
+     private final GroundedNarrativeService groundedNarrativeService;
+     private final boolean plannerV1Enabled;
++    private final PlannerSaveUseCasePort plannerSaveUseCase;
++
++    public PlannerService(TravelConstraintParserPort constraintParser,
++                          ItineraryBuilderPort itineraryBuilder,
++                          PlannerSessionRepositoryPort repository,
++                          TripService tripService,
++                          ObjectMapper objectMapper,
++                          RouteGatewayPort amapPlannerGateway,
++                          PlannerPreferencesResolver preferencesResolver,
++                          PlanAdjustmentService planAdjustmentService,
++                          PlannerMetricsLogger metricsLogger,
++                          GroundedNarrativeService groundedNarrativeService,
++                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled) {
++        this(constraintParser, itineraryBuilder, repository, tripService, objectMapper, amapPlannerGateway,
++                preferencesResolver, planAdjustmentService, metricsLogger, groundedNarrativeService,
++                plannerV1Enabled, null);
++    }
+ 
+     @org.springframework.beans.factory.annotation.Autowired
+     public PlannerService(TravelConstraintParserPort constraintParser,
+@@ -84,7 +105,8 @@ public class PlannerService {
+                           PlanAdjustmentService planAdjustmentService,
+                           PlannerMetricsLogger metricsLogger,
+                           @org.springframework.beans.factory.annotation.Autowired(required = false) GroundedNarrativeService groundedNarrativeService,
+-                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled) {
++                          @org.springframework.beans.factory.annotation.Value("${planner.v1.enabled:true}") boolean plannerV1Enabled,
++                          PlannerSaveUseCasePort plannerSaveUseCase) {
+         this.constraintParser = constraintParser;
+         this.itineraryBuilder = itineraryBuilder;
+         this.repository = repository;
+@@ -96,6 +118,7 @@ public class PlannerService {
+         this.metricsLogger = metricsLogger;
+         this.groundedNarrativeService = groundedNarrativeService;
+         this.plannerV1Enabled = plannerV1Enabled;
++        this.plannerSaveUseCase = plannerSaveUseCase;
+     }
+ 
+     public PlannerService(TravelConstraintParserPort constraintParser,
+@@ -331,6 +354,43 @@ public class PlannerService {
+         return session == null ? error(404, "规划会话不存在或无权访问。", null) : new ServiceResult(200, planResponse(session, ""));
+     }
+ 
++    /** Restore an offline edit into the currently authorized planner session. */
++    public ServiceResult restoreDraft(String sessionId, RestoreDraftRequest request) {
++        if (UserContext.isAnonymous()) return error(401, "登录后才能恢复正式行程草稿。", null);
++        StoredSession session = findAuthorized(sessionId,
++                request == null ? "" : safe(request.sessionAccessToken()));
++        if (session == null) return error(404, "规划会话不存在或无权访问。", null);
++        if (request == null || request.trip() == null || request.expectedVersion() == null
++                || request.expectedVersion() != session.currentVersion()) {
++            return conflict(session);
++        }
++        String formalId = safe(session.trip().get("sourceTripId"));
++        if (formalId.isBlank()) return error(400, "此会话未关联正式行程。", session);
++        Trip formal = tripService.get(UserContext.getUserId(), formalId);
++        if (formal == null) return error(404, "正式行程不存在或无权访问。", session);
++        Integer sourceVersion = number(request.trip().get("sourceTripVersion"));
++        if (sourceVersion == null || sourceVersion != formal.currentVersion()) {
++            return error(409, "正式行程已更新，请先查看最新版本再恢复备份。", session);
++        }
++        Map<String, Object> restored = mutableMap(request.trip());
++        try {
++            new TripPlanLimits(objectMapper).validate(restored);
++        } catch (IllegalArgumentException invalid) {
++            return error(400, invalid.getMessage(), session);
++        }
++        // Identity and revision come from the authorized server session, never the browser backup.
++        restored.put("sourceTripId", formalId);
++        restored.put("formalTripId", formalId);
++        restored.put("sourceTripVersion", formal.currentVersion());
++        restored.put("version", session.currentVersion() + 1);
++        MutationResult result = repository.update(session, restored, session.currentVersion(),
++                "RESTORE_DRAFT", "恢复本地草稿", "用户确认恢复离线备份", List.of());
++        if ("CONFLICT".equals(result.status())) return conflict(result.session());
++        Map<String, Object> response = planResponse(result.session(), "");
++        response.put("message", "草稿已恢复到当前规划会话。");
++        return new ServiceResult(200, response);
++    }
++
+     /**
+      * Refreshes provider-backed facts without creating a planner revision. Dynamic
+      * weather, POI and route data are intentionally not treated as a user edit.
+@@ -480,67 +540,12 @@ public class PlannerService {
+     }
+ 
+     public ServiceResult save(String sessionId, String accessToken) {
+-        try {
+-            return saveOnce(sessionId, accessToken);
+-        } catch (DataAccessResourceFailureException exception) {
+-            // 保存键按“会话 + 版本”幂等。首次请求若恰好拿到被云端回收的连接，
+-            // Hikari 会剔除坏连接，随后完整重试一次不会写出重复行程。
+-            log.warn("[Planner] 保存行程遇到瞬时数据库断连，正在使用新连接重试一次: {}", exception.getMostSpecificCause().getMessage());
+-            return saveOnce(sessionId, accessToken);
+-        }
+-    }
+-
+-    private ServiceResult saveOnce(String sessionId, String accessToken) {
+-        if (UserContext.isAnonymous()) return error(401, "请先登录后保存行程。", null);
+-        StoredSession session = findAuthorized(sessionId, accessToken);
+-        if (session == null) return error(404, "规划会话不存在或无权访问。", null);
+-        Map<String, Object> plan = mutableMap(session.trip());
+-        plan.put("plannerSessionId", session.sessionId());
+-        plan.put("plannerVersion", session.currentVersion());
+-        plan.put("appliedPreferences", session.appliedPreferences().asMap());
+-        String saveKey = "planner-save-" + session.sessionId() + "-" + session.currentVersion();
+-        TripService.OperationResult saved = tripService.savePlannerSnapshot(
+-                UserContext.getUserId(), plan, saveKey);
+-        if (saved.status() >= 400 || saved.trip() == null) {
+-            Map<String, Object> body = new LinkedHashMap<>();
+-            body.put("ok", false);
+-            body.put("message", saved.message());
+-            body.put("appliedPreferences", session.appliedPreferences().asMap());
+-            if (saved.tripId() != null) body.put("tripId", saved.tripId());
+-            if (saved.expectedVersion() != null) body.put("expectedVersion", saved.expectedVersion());
+-            if (saved.currentVersion() != null) body.put("currentVersion", saved.currentVersion());
+-            return new ServiceResult(saved.status(), body);
+-        }
+-        plan.put("formalTripId", saved.trip().id());
+-        plan.put("sourceTripId", saved.trip().id());
+-        plan.put("sourceTripVersion", saved.trip().currentVersion());
+-        boolean linked = repository.linkFormalTrip(session, plan);
+-        // A concurrent adjustment owns the newer business snapshot. Retry only the
+-        // saved identity metadata rather than replacing its stops with the old plan.
+-        for (int attempt = 0; !linked && attempt < 3; attempt++) {
+-            StoredSession latest = findAuthorized(sessionId, accessToken);
+-            if (latest == null) break;
+-            Map<String, Object> latestPlan = mutableMap(latest.trip());
+-            String existingId = safe(latestPlan.get("formalTripId"));
+-            if (!existingId.isBlank() && !existingId.equals(saved.trip().id())) break;
+-            // Do not move a concurrently saved baseline backwards.
+-            int baseline = 0;
+-            try { baseline = Integer.parseInt(safe(latestPlan.get("sourceTripVersion"))); }
+-            catch (NumberFormatException ignored) { /* Legacy snapshots can omit the baseline. */ }
+-            latestPlan.put("formalTripId", saved.trip().id());
+-            latestPlan.put("sourceTripId", saved.trip().id());
+-            latestPlan.put("sourceTripVersion", Math.max(baseline, saved.trip().currentVersion()));
+-            linked = repository.linkFormalTrip(latest, latestPlan);
++        if (plannerSaveUseCase == null) {
++            throw new IllegalStateException("PlannerSaveUseCasePort 未配置；请通过应用层保存用例执行 V1 保存。");
+         }
+-        Map<String, Object> body = new LinkedHashMap<>();
+-        body.put("ok", true);
+-        body.put("trip", saved.trip());
+-        body.put("tripId", saved.trip().id());
+-        body.put("currentVersion", saved.trip().currentVersion());
+-        body.put("appliedPreferences", session.appliedPreferences().asMap());
+-        body.put("draftLinked", linked);
+-        if (!linked) body.put("message", "正式行程已保存，草稿仍在更新；再次保存将继续更新同一正式行程。");
+-        return new ServiceResult(saved.status(), body);
++        PlannerSaveResult result = plannerSaveUseCase.save(
++                new PlannerSaveActor(UserContext.getUserId(), UserContext.isAnonymous()), sessionId, accessToken);
++        return new ServiceResult(result.serviceStatus(), result.body());
+     }
+ 
+     public ServiceResult openFormalTrip(String tripId) {
+diff --git a/ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java b/ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java
+index 807aa28..f1af960 100644
+--- a/ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java
++++ b/ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java
+@@ -1,12 +1,17 @@
+ package com.ai.guide.adapter.planner.web;
+ 
+ import com.ai.guide.application.planner.PlanningApplicationService;
++import com.ai.guide.application.planner.PreviewAdjustmentResult;
++import com.ai.guide.application.planner.ApplyAdjustmentResult;
++import com.ai.guide.application.planner.PlanningActor;
+ import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
+ import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
+ import com.ai.guide.domain.planner.model.PlanRequest;
+ import com.ai.guide.domain.planner.model.PlannerMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowMutationRequest;
+ import com.ai.guide.domain.planner.model.ShadowPlanRequest;
++import com.ai.guide.domain.planner.model.PlannerSaveResult;
++import com.ai.guide.common.context.UserContext;
+ import com.ai.guide.domain.planner.service.PlannerService;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+@@ -17,6 +22,7 @@ import java.util.Map;
+ import static org.junit.jupiter.api.Assertions.assertEquals;
+ import static org.junit.jupiter.api.Assertions.assertNotNull;
+ import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.ArgumentMatchers.argThat;
+ import static org.mockito.ArgumentMatchers.eq;
+ import static org.mockito.Mockito.mock;
+ import static org.mockito.Mockito.verify;
+@@ -153,48 +159,84 @@ class PlannerControllerTest {
+     }
+ 
+     @Test
+-    void saveDelegatesToApplicationService() {
+-        when(applicationService.save("s1", "tok"))
+-                .thenReturn(new PlannerService.ServiceResult(200, Map.of("saved", true)));
+-
+-        ResponseEntity<?> response = controller.save("s1", "tok");
+-        assertEquals(200, response.getStatusCode().value());
+-        verify(applicationService).save("s1", "tok");
++    void saveDelegatesExplicitActorAndPreservesStatusAndBody() {
++        UserContext.set("user-1", "user-1", "USER");
++        try {
++            when(applicationService.save(any(PlanningActor.class), eq("s1"), eq("tok")))
++                    .thenAnswer(inv -> {
++                        PlanningActor actor = inv.getArgument(0);
++                        assertEquals(new PlanningActor("user-1", false), actor);
++                        return new PlannerSaveResult(201, Map.of("ok", true, "tripId", "formal-1"));
++                    });
++
++            ResponseEntity<?> response = controller.save("s1", "tok");
++            assertEquals(201, response.getStatusCode().value());
++            assertEquals(Map.of("ok", true, "tripId", "formal-1"), response.getBody());
++            verify(applicationService).save(new PlanningActor("user-1", false), "s1", "tok");
++        } finally {
++            UserContext.clear();
++        }
+     }
+ 
+     @Test
+     void converseInjectsTokenWhenNull() {
+-        when(applicationService.converse(eq("s1"), any(PlanConversationRequestDto.class)))
++        when(applicationService.converse(any(PlanningActor.class), eq("s1"), any(PlanConversationRequestDto.class)))
+                 .thenAnswer(inv -> {
+-                    PlanConversationRequestDto req = inv.getArgument(1);
++                    PlanConversationRequestDto req = inv.getArgument(2);
+                     assertEquals("tok", req.getSessionAccessToken());
+-                    return new PlannerService.ServiceResult(200, Map.of("conv", true));
++                    return PreviewAdjustmentResult.success(Map.of("conv", true));
+                 });
+ 
+         ResponseEntity<?> response = controller.converse("s1", null, "tok");
+         assertEquals(200, response.getStatusCode().value());
++        verify(applicationService).converse(argThat(PlanningActor::anonymous), eq("s1"), any(PlanConversationRequestDto.class));
+     }
+ 
+     @Test
+     void previewAdjustmentInjectsTokenWhenNull() {
+-        when(applicationService.previewAdjustment(eq("s1"), any(PlanConversationRequestDto.class)))
++        when(applicationService.previewAdjustment(any(PlanningActor.class), eq("s1"), any(PlanConversationRequestDto.class)))
+                 .thenAnswer(inv -> {
+-                    PlanConversationRequestDto req = inv.getArgument(1);
++                    PlanConversationRequestDto req = inv.getArgument(2);
+                     assertEquals("tok", req.getSessionAccessToken());
+-                    return new PlannerService.ServiceResult(200, Map.of("preview", true));
++                    return PreviewAdjustmentResult.success(Map.of("preview", true));
+                 });
+ 
+         ResponseEntity<?> response = controller.previewAdjustment("s1", null, "tok");
+         assertEquals(200, response.getStatusCode().value());
++        verify(applicationService).previewAdjustment(argThat(PlanningActor::anonymous), eq("s1"), any(PlanConversationRequestDto.class));
++    }
++
++    @Test
++    void previewApplicationOutcomeMapsToCompatibleHttpStatusAndBody() {
++        when(applicationService.previewAdjustment(any(PlanningActor.class), eq("s1"), any(PlanConversationRequestDto.class)))
++                .thenReturn(PreviewAdjustmentResult.of(PreviewAdjustmentResult.Outcome.CONFLICT,
++                        Map.of("ok", false, "message", "行程版本已更新")));
++
++        ResponseEntity<?> response = controller.previewAdjustment("s1", new PlanConversationRequestDto(), "tok");
++        assertEquals(409, response.getStatusCode().value());
++        assertEquals(Map.of("ok", false, "message", "行程版本已更新"), response.getBody());
++    }
++
++    @Test
++    void nonApplicablePreviewOutcomeRemainsHttpSuccessButCannotBeApplied() {
++        Map<String, Object> body = Map.of("ok", true, "proposalId", "p1", "canApply", false,
++                "candidateReplacements", java.util.List.of());
++        when(applicationService.previewAdjustment(any(PlanningActor.class), eq("s1"), any(PlanConversationRequestDto.class)))
++                .thenReturn(PreviewAdjustmentResult.of(PreviewAdjustmentResult.Outcome.NO_CANDIDATE, body));
++
++        ResponseEntity<?> response = controller.previewAdjustment("s1", new PlanConversationRequestDto(), "tok");
++        assertEquals(200, response.getStatusCode().value());
++        assertEquals(body, response.getBody());
++        assertEquals(false, ((Map<?, ?>) response.getBody()).get("canApply"));
+     }
+ 
+     @Test
+     void applyAdjustmentInjectsTokenWhenNull() {
+-        when(applicationService.applyAdjustment(eq("s1"), any(ApplyAdjustmentRequestDto.class)))
++        when(applicationService.applyAdjustment(any(PlanningActor.class), eq("s1"), any(ApplyAdjustmentRequestDto.class)))
+                 .thenAnswer(inv -> {
+-                    ApplyAdjustmentRequestDto req = inv.getArgument(1);
++                    ApplyAdjustmentRequestDto req = inv.getArgument(2);
+                     assertEquals("tok", req.getSessionAccessToken());
+-                    return new PlannerService.ServiceResult(200, Map.of("apply", true));
++                    return ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.SUCCESS, Map.of("apply", true));
+                 });
+ 
+         ResponseEntity<?> response = controller.applyAdjustment("s1", null, "tok");
+diff --git a/ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java b/ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java
+index 0598325..860e8dc 100644
+--- a/ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java
++++ b/ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java
+@@ -1,5 +1,7 @@
+ package com.ai.guide.architecture;
+ 
++import com.ai.guide.domain.planner.gateway.ProposalRepositoryPort;
++import com.ai.guide.domain.planner.gateway.PlannerSaveUseCasePort;
+ import com.tngtech.archunit.core.importer.ImportOption;
+ import com.tngtech.archunit.junit.AnalyzeClasses;
+ import com.tngtech.archunit.junit.ArchTest;
+@@ -151,4 +153,34 @@ public class ColaArchitectureGuardTest {
+                             "║ 重构已彻底清除全系统 12 个模块的所有旧 domain..api 控制器包。所有 Web 端点必须放置在      ║\n" +
+                             "║ adapter.<模块>.web 包下，严禁复辟旧目录！                                                  ║\n" +
+                             "╚═══════════════════════════════════════════════════════════════════════════════════════════╝");
++
++    /** Proposal caching belongs to infrastructure, not the planner domain. */
++    @ArchTest
++    public static final ArchRule planner_domain_must_not_depend_on_cache_clients =
++            noClasses()
++                    .that().resideInAPackage("com.ai.guide.domain.planner..")
++                    .should().dependOnClassesThat().resideInAnyPackage(
++                            "com.github.benmanes.caffeine..",
++                            "org.springframework.data.redis.."
++                    );
++
++    @ArchTest
++    public static final ArchRule planner_proposal_infrastructure_must_implement_domain_port =
++            classes()
++                    .that().resideInAPackage("com.ai.guide.infrastructure.planner.proposal..")
++                    .and().areTopLevelClasses()
++                    .should().beAssignableTo(ProposalRepositoryPort.class);
++
++    /** Save orchestration is in application; it must not call back into its legacy domain facade. */
++    @ArchTest
++    public static final ArchRule planner_save_application_must_implement_port_without_domain_facade_cycle =
++            classes()
++                    .that().haveSimpleName("PlannerSaveApplicationService")
++                    .should().beAssignableTo(PlannerSaveUseCasePort.class);
++
++    @ArchTest
++    public static final ArchRule planner_save_application_must_not_call_legacy_planner_facade =
++            noClasses()
++                    .that().haveSimpleName("PlannerSaveApplicationService")
++                    .should().dependOnClassesThat().haveSimpleName("PlannerService");
+ }
+diff --git a/ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java b/ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java
+index 8ddab3c..6afd0b1 100644
+--- a/ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java
++++ b/ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java
+@@ -3,6 +3,7 @@ package com.ai.guide.domain.trip.service;
+ import com.ai.guide.common.context.UserContext;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+ import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
++import com.ai.guide.application.planner.PlannerSaveApplicationService;
+ import com.ai.guide.domain.planner.service.PlannerService;
+ import com.ai.guide.infrastructure.trip.repository.TripRepository;
+ import com.fasterxml.jackson.databind.ObjectMapper;
+@@ -59,7 +60,9 @@ class PlannerSaveConsistencyTest {
+             if (old.currentVersion()!=current.get().currentVersion()) return false;
+             current.set(session(old.currentVersion(),new LinkedHashMap<>(call.getArgument(1)))); return true;
+         });
+-        var planner = new PlannerService(null,null,repo,trips,new ObjectMapper(),null,null,null);
++        var saveUseCase = new PlannerSaveApplicationService(repo, trips);
++        var planner = new PlannerService(null,null,repo,trips,new ObjectMapper(),null,null,null,
++                null,null,true,saveUseCase);
+         UserContext.set("owner","owner","USER");
+         try {
+             var first = planner.save("save-session","");
+diff --git a/ai/src/test/java/com/ai/guide/domain/trip/service/TripSaveCapacityRegressionTest.java b/ai/src/test/java/com/ai/guide/domain/trip/service/TripSaveCapacityRegressionTest.java
+index 8e4c644..0ca4b63 100644
+--- a/ai/src/test/java/com/ai/guide/domain/trip/service/TripSaveCapacityRegressionTest.java
++++ b/ai/src/test/java/com/ai/guide/domain/trip/service/TripSaveCapacityRegressionTest.java
+@@ -2,6 +2,7 @@ package com.ai.guide.domain.trip.service;
+ 
+ import com.ai.guide.adapter.trip.web.TripController;
+ import com.ai.guide.application.trip.TripApplicationService;
++import com.ai.guide.application.planner.PlannerSaveApplicationService;
+ import com.ai.guide.common.context.UserContext;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
+ import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
+@@ -64,7 +65,8 @@ class TripSaveCapacityRegressionTest {
+     }
+ 
+     private PlannerService planner(PlannerSessionRepositoryPort repository) {
+-        return new PlannerService(null, null, repository, trips, mapper, null, null, null);
++        return new PlannerService(null, null, repository, trips, mapper, null, null, null,
++                null, null, true, new PlannerSaveApplicationService(repository, trips));
+     }
+ 
+     @Test void repeatedPlannerSaveBeforeAndAfterIdLinkingStaysAtVersionOne() {

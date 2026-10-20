@@ -76,7 +76,8 @@ public final class OpeningHoursPolicy {
 
     public static boolean isClosed(String evidence, String date, String time) {
         int weekday;
-        int offset = time == null ? 0 : new ItineraryTimeEngine().parseTimeMinutes(time) / 1440;
+        Integer parsedTime = new ItineraryTimeEngine().parseExplicitTimeMinutes(time);
+        int offset = parsedTime == null ? 0 : parsedTime / 1440;
         try {
             weekday = LocalDate.parse(date).plusDays(offset).getDayOfWeek().getValue();
         } catch (Exception unknownDate) {

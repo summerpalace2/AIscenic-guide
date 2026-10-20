@@ -1,0 +1,125 @@
+[
+  {
+    "id": "bj-palace-museum",
+    "name": "故宫博物院",
+    "displayName": "故宫博物院",
+    "city": "北京",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "历史",
+      "博物馆"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "北京的历史文化博物馆，依托故宫古建筑展示宫廷历史与文物。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "故宫博物院",
+      "matches": [
+        "故宫博物院"
+      ]
+    },
+    "intro": "北京的历史文化博物馆，依托故宫古建筑展示宫廷历史与文物。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://www.dpm.org.cn/about/about_view.html",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "bj-national-museum",
+    "name": "中国国家博物馆",
+    "displayName": "中国国家博物馆",
+    "city": "北京",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "历史",
+      "博物馆"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于北京东长安街的国家博物馆，展示历史与文化藏品。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "中国国家博物馆",
+      "matches": [
+        "中国国家博物馆"
+      ]
+    },
+    "intro": "位于北京东长安街的国家博物馆，展示历史与文化藏品。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://m.chnmuseum.cn/gbgk/gbjj/",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "bj-summer-palace",
+    "name": "颐和园",
+    "displayName": "颐和园",
+    "city": "北京",
+    "district": "",
+    "category": "自然",
+    "tags": [
+      "园林",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于北京、以万寿山和昆明湖为主景区的皇家园林文化遗产。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "颐和园",
+      "matches": [
+        "颐和园"
+      ]
+    },
+    "intro": "北京的皇家园林文化遗产，可按实际入口与体力选择游览片区。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://www.summerpalace.net.cn/about.html",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  }
+]

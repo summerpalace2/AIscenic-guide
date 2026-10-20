@@ -8,8 +8,14 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ColloquialDiningIntentTest {
-    private final ConversationIntentClassifier classifier = new ConversationIntentClassifier();
+    private final ConversationIntentClassifier classifier = classifierWithTaxonomy();
     private final PlanPageContext context = PlanPageContext.builder().activeDay(1).build();
+
+    private static ConversationIntentClassifier classifierWithTaxonomy() {
+        var classifier = new ConversationIntentClassifier();
+        classifier.setDiningCategoryGrounder(new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter()));
+        return classifier;
+    }
 
     @Test
     void particlesAndQuantitiesDoNotChangeStructuredDessertIntent() {
@@ -58,13 +64,13 @@ class ColloquialDiningIntentTest {
         assertEquals(false, intent.getGenericDiningCraving());
         assertEquals("亲爱的甜品店", intent.getCuisineOrPlace());
         assertEquals("亲爱的甜品店", intent.getRequestedVenueName());
-        var grounder = new DiningCategoryGrounder();
+        var grounder = new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         assertEquals("亲爱的甜品店", grounder.resolveRequestedFlavor(intent, "默认"));
     }
 
     @Test
     void genericStructuredFieldsNormalizeWithoutWideningUnlistedFood() {
-        var grounder = new DiningCategoryGrounder();
+        var grounder = new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         assertEquals("特色甜品糖水", grounder.resolveRequestedFlavor(PlanAdjustmentIntent.builder()
                 .genericDiningCraving(true).cuisineOrPlace("点甜食的呀").build(), "默认"));
         assertEquals("特色甜品糖水", grounder.normalizeGenericCuisine("点心"));

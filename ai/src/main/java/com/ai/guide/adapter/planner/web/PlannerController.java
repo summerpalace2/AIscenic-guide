@@ -1,15 +1,24 @@
 package com.ai.guide.adapter.planner.web;
 
 import com.ai.guide.application.planner.PlanningApplicationService;
+import com.ai.guide.application.planner.ApplyAdjustmentResult;
+import com.ai.guide.application.planner.PlanningActor;
+import com.ai.guide.application.planner.PreviewAdjustmentResult;
+import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
 import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
 import com.ai.guide.domain.planner.model.PlanRequest;
+import com.ai.guide.domain.planner.model.RestoreDraftRequest;
 import com.ai.guide.domain.planner.model.PlannerMutationRequest;
 import com.ai.guide.domain.planner.model.ShadowMutationRequest;
 import com.ai.guide.domain.planner.model.ShadowPlanRequest;
 import com.ai.guide.domain.planner.service.PlannerService;
+import com.ai.guide.domain.planner.model.PlannerSaveResult;
+import com.ai.guide.domain.planner.model.PlannerOpenResult;
+import com.ai.guide.domain.planner.model.PlannerRestoreResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -81,8 +90,38 @@ public class PlannerController {
     }
 
     @PostMapping("/trips/{tripId}/open")
-    public ResponseEntity<?> openFormalTrip(@PathVariable String tripId) {
-        return response(plannerService.openFormalTrip(tripId));
+    public ResponseEntity<?> openFormalTrip(@PathVariable String tripId,
+                                            @RequestHeader(value = "Idempotency-Key", required = false) String operationKey) {
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PlannerOpenResult result = plannerService.openFormalTrip(actor, tripId, operationKey);
+        return ResponseEntity.status(result.serviceStatus()).body(result.body());
+    }
+
+    @PostMapping("/trips/{tripId}/open-sessions/{sessionId}/ack")
+    public ResponseEntity<?> acknowledgeOpenSession(@PathVariable String tripId, @PathVariable String sessionId) {
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PlannerOpenResult result = plannerService.acknowledgeOpenSession(actor, tripId, sessionId);
+        return ResponseEntity.status(result.serviceStatus()).body(result.body());
+    }
+
+    @DeleteMapping("/trips/{tripId}/open-sessions/{sessionId}")
+    public ResponseEntity<?> discardUncommittedOpen(@PathVariable String tripId, @PathVariable String sessionId) {
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PlannerOpenResult result = plannerService.discardUncommittedOpen(actor, tripId, sessionId);
+        return ResponseEntity.status(result.serviceStatus()).body(result.body());
+    }
+
+    @PostMapping("/sessions/{sessionId}/restore-draft")
+    public ResponseEntity<?> restoreDraft(@PathVariable String sessionId,
+                                          @RequestBody RestoreDraftRequest request,
+                                          @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
+        RestoreDraftRequest effective = request == null ? null : new RestoreDraftRequest(
+                request.trip(), request.expectedVersion(),
+                request.sessionAccessToken() == null || request.sessionAccessToken().isBlank()
+                        ? token : request.sessionAccessToken());
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PlannerRestoreResult result = plannerService.restoreDraft(actor, sessionId, effective);
+        return ResponseEntity.status(result.serviceStatus()).body(result.body());
     }
 
     @GetMapping("/sessions")
@@ -108,7 +147,7 @@ public class PlannerController {
                                     @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
         PlannerMutationRequest effective = request == null ? new PlannerMutationRequest() : request;
         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) effective.setSessionAccessToken(token == null ? "" : token);
-        return response(plannerService.replan(sessionId, effective));
+        return response(plannerService.replan(new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous()), sessionId, effective));
     }
 
     @PostMapping("/sessions/{sessionId}/stops")
@@ -117,13 +156,27 @@ public class PlannerController {
                                    @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
         PlannerMutationRequest effective = request == null ? new PlannerMutationRequest() : request;
         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) effective.setSessionAccessToken(token == null ? "" : token);
-        return response(plannerService.mutateStops(sessionId, effective));
+        return response(plannerService.mutateStops(new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous()), sessionId, effective));
+    }
+
+    @PostMapping("/sessions/{sessionId}/pins")
+    public ResponseEntity<?> updatePins(@PathVariable String sessionId,
+            @RequestBody(required = false) com.ai.guide.domain.planner.model.PlannerPinsRequest request,
+            @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
+        var effective = request == null ? null : new com.ai.guide.domain.planner.model.PlannerPinsRequest(
+                request.expectedVersion(), request.addStopIds(), request.removeStopIds(),
+                request.sessionAccessToken() == null || request.sessionAccessToken().isBlank()
+                        ? token : request.sessionAccessToken());
+        return response(plannerService.updatePins(new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous()),
+                sessionId, effective));
     }
 
     @PostMapping("/sessions/{sessionId}/save")
     public ResponseEntity<?> save(@PathVariable String sessionId,
                                   @RequestHeader(value = "X-Plan-Session-Token", required = false) String token) {
-        return response(plannerService.save(sessionId, token));
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PlannerSaveResult result = plannerService.save(actor, sessionId, token);
+        return ResponseEntity.status(result.serviceStatus()).body(result.body());
     }
 
     @PostMapping("/sessions/{sessionId}/conversation")
@@ -134,7 +187,9 @@ public class PlannerController {
         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
             effective.setSessionAccessToken(token == null ? "" : token);
         }
-        return response(plannerService.converse(sessionId, effective));
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PreviewAdjustmentResult result = plannerService.converse(actor, sessionId, effective);
+        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
     }
 
     @PostMapping("/sessions/{sessionId}/adjust/preview")
@@ -145,7 +200,9 @@ public class PlannerController {
         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
             effective.setSessionAccessToken(token == null ? "" : token);
         }
-        return response(plannerService.previewAdjustment(sessionId, effective));
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        PreviewAdjustmentResult result = plannerService.previewAdjustment(actor, sessionId, effective);
+        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
     }
 
     @PostMapping("/sessions/{sessionId}/adjust/apply")
@@ -156,10 +213,39 @@ public class PlannerController {
         if (effective.getSessionAccessToken() == null || effective.getSessionAccessToken().isBlank()) {
             effective.setSessionAccessToken(token == null ? "" : token);
         }
-        return response(plannerService.applyAdjustment(sessionId, effective));
+        PlanningActor actor = new PlanningActor(UserContext.getUserId(), UserContext.isAnonymous());
+        ApplyAdjustmentResult result = plannerService.applyAdjustment(actor, sessionId, effective);
+        return ResponseEntity.status(httpStatus(result.outcome())).body(result.body());
     }
 
     private ResponseEntity<?> response(PlannerService.ServiceResult result) {
         return ResponseEntity.status(result.status()).body(result.body());
+    }
+
+    private int httpStatus(PreviewAdjustmentResult.Outcome outcome) {
+        return switch (outcome) {
+            case SUCCESS, CLARIFICATION, NO_CANDIDATE, PREVIEW_UNAPPLICABLE -> 200;
+            case BAD_REQUEST -> 400;
+            case UNAUTHORIZED -> 401;
+            case FORBIDDEN -> 403;
+            case NOT_FOUND -> 404;
+            case CONFLICT -> 409;
+            case UNPROCESSABLE -> 422;
+            case TOO_MANY_REQUESTS -> 429;
+            case SERVICE_UNAVAILABLE -> 503;
+            case INTERNAL_ERROR -> 500;
+        };
+    }
+
+    private int httpStatus(ApplyAdjustmentResult.Outcome outcome) {
+        return switch (outcome) {
+            case SUCCESS -> 200;
+            case BAD_REQUEST -> 400;
+            case UNAUTHORIZED -> 401;
+            case FORBIDDEN -> 403;
+            case NOT_FOUND -> 404;
+            case CONFLICT -> 409;
+            case INTERNAL_ERROR -> 500;
+        };
     }
 }

@@ -1,0 +1,9 @@
+{
+  "poiIdentity": {
+    "exactNameScore": 100,
+    "partialNameScore": 60,
+    "coordinateBonus": 10,
+    "poiIdBonus": 10,
+    "minimumAcceptableScore": 20
+  }
+}

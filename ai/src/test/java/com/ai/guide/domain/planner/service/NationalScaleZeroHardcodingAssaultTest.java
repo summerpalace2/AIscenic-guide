@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Component regressions use fake model output, never claim live AMap/LLM coverage. */
 @DisplayName("多城市餐饮契约与 POI 分类回归（模型输出模拟，非在线实测）")
 public class NationalScaleZeroHardcodingAssaultTest {
-    private final DiningCategoryGrounder grounder = new DiningCategoryGrounder();
+    private final DiningCategoryGrounder grounder = new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
     private final ObjectMapper mapper = new ObjectMapper();
 
     private PlanAdjustmentIntent diningIntent(String message, String cuisine, boolean generic, String slot) throws Exception {
@@ -74,7 +74,7 @@ public class NationalScaleZeroHardcodingAssaultTest {
 
     @Test
     void authoritativeAmapTypeCodesWinOverCampusBuildingNames() {
-        var registry = new PoiCategoryPolicyRegistry();
+        var registry = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         for (String name : List.of("清华大学蒙民伟理科馆", "北京大学静园草坪", "浙江大学格物楼", "南开大学思源堂")) {
             assertEquals(PoiDomainType.DINING, registry.resolveCategory(Map.of("name", name + "咖啡馆", "typecode", "050500", "type", "SCENIC")), name);
             assertNotEquals(PoiDomainType.DINING, registry.resolveCategory(Map.of("name", name, "typecode", "141200")), name);
@@ -88,14 +88,16 @@ public class NationalScaleZeroHardcodingAssaultTest {
         Path root = Files.exists(Path.of("src/main/java")) ? Path.of("src/main/java") : Path.of("ai/src/main/java");
         assertTrue(Files.isDirectory(root), "Source root must exist; scanning cannot silently skip files");
         Pattern coordinate = Pattern.compile("\"[-+]?\\d{1,3}\\.\\d+,[-+]?\\d{1,2}\\.\\d+\"");
+        Pattern fixedClock = Pattern.compile("\"(?:08:00|10:00|12:00|18:00|22:00)\"");
         List<String> violations = new ArrayList<>();
-        for (String relative : List.of("service/adjustment/PlanAdjustmentHelper.java", "service/adjustment/AddStopAdjustmentStrategy.java",
-                "service/adjustment/ReplaceStopAdjustmentStrategy.java", "service/RuntimeLocationPlanner.java")) {
-            Path file = root.resolve("com/ai/guide/domain/planner").resolve(relative);
-            String source = Files.readString(file);
-            if (coordinate.matcher(source).find()) violations.add(relative + ": literal coordinate");
-            if (source.contains("case \"BREAKFAST\" -> \"08:00\"") || source.contains("case \"LUNCH\" -> \"12:00\"")
-                    || source.contains("case \"DINNER\" -> \"18:00\"")) violations.add(relative + ": fixed meal switch");
+        Path plannerRoot = root.resolve("com/ai/guide/domain/planner");
+        try (var paths = Files.walk(plannerRoot)) {
+            for (Path file : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
+                String source = Files.readString(file);
+                String relative = plannerRoot.relativize(file).toString();
+                if (coordinate.matcher(source).find()) violations.add(relative + ": literal coordinate");
+                if (fixedClock.matcher(source).find()) violations.add(relative + ": literal schedule clock");
+            }
         }
         assertEquals(List.of(), violations);
     }

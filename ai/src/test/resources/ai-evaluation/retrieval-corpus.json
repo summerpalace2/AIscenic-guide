@@ -1,0 +1,440 @@
+{
+  "schemaVersion": "ai-evaluation-retrieval-corpus-v1",
+  "corpusType": "CONTROLLED_MIXED_FIXTURE",
+  "sourcePolicy": "25 synthetic controlled documents and 5 verbatim existing repository assets. Synthetic facts are not verified travel knowledge. Existing facts are not independently reverified by this evaluation.",
+  "documents": [
+    {
+      "id": "eval-bj-museum",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "北京故宫文物陈列",
+      "content": "受控测试事实：北京故宫文物陈列包含青铜器和宫廷书画；本资料不提供当日开放状态。",
+      "tags": [
+        "故宫",
+        "青铜器",
+        "宫廷书画"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-bj-garden",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "北京颐和园游览主题",
+      "content": "受控测试事实：北京颐和园资料涉及昆明湖、长廊和园林历史。",
+      "tags": [
+        "颐和园",
+        "昆明湖",
+        "长廊"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-bj-building",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "清华蒙民伟理科馆定位说明",
+      "content": "受控测试事实：蒙民伟理科馆是本测试中的清华校内建筑；校内访问权限必须另行核实。",
+      "tags": [
+        "清华",
+        "蒙民伟理科馆",
+        "校内建筑"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-bj-food",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "北京驴肉火烧口味说明",
+      "content": "受控测试事实：本条驴肉火烧资料描述咸口面食，包含肉类，不属于素食甜品。",
+      "tags": [
+        "驴肉火烧",
+        "咸口",
+        "肉类"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-bj-alias",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "北京国家博物馆展览主题",
+      "content": "受控测试事实：国家博物馆又称国博，本条介绍古代中国展览与文物主题。",
+      "tags": [
+        "国博",
+        "国家博物馆",
+        "古代中国"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-hz-museum",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "杭州浙江省博物馆展览主题",
+      "content": "受控测试事实：浙江省博物馆又称浙博，本条讨论越文化和历史文物。",
+      "tags": [
+        "浙博",
+        "浙江省博物馆",
+        "越文化"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-hz-garden",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "杭州西湖园林主题",
+      "content": "受控测试事实：杭州西湖资料涉及苏堤、湖畔与园林文化。",
+      "tags": [
+        "西湖",
+        "苏堤",
+        "湖畔"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-hz-building",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "杭州浙江大学求是大讲堂说明",
+      "content": "受控测试事实：求是大讲堂为本测试中的浙江大学校内建筑；访问权限另行核实。",
+      "tags": [
+        "浙江大学",
+        "求是大讲堂",
+        "校内建筑"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-hz-food",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "杭州定胜糕口味说明",
+      "content": "受控测试事实：定胜糕属于米糕甜食，本条记载糕点与甜口风味，不提供过敏原保证。",
+      "tags": [
+        "定胜糕",
+        "米糕",
+        "甜口"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-hz-alias",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "杭州中国丝绸博物馆展览主题",
+      "content": "受控测试事实：中国丝绸博物馆又称国丝馆，本条介绍丝绸织造与服饰文化。",
+      "tags": [
+        "国丝馆",
+        "中国丝绸博物馆",
+        "织造"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-xa-museum",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "西安陕西历史博物馆主题",
+      "content": "受控测试事实：陕西历史博物馆又称陕历博，本条讨论唐代文物和历史。",
+      "tags": [
+        "陕历博",
+        "陕西历史博物馆",
+        "唐代文物"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-xa-garden",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "西安大明宫遗址主题",
+      "content": "受控测试事实：大明宫遗址资料涉及宫殿遗址、丹凤门与唐代历史。",
+      "tags": [
+        "大明宫",
+        "丹凤门",
+        "宫殿遗址"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-xa-building",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "西安交通大学钱学森图书馆说明",
+      "content": "受控测试事实：钱学森图书馆为本测试中的西安交通大学校内建筑；访问权限另行核实。",
+      "tags": [
+        "西安交通大学",
+        "钱学森图书馆",
+        "校内建筑"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-xa-food",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "西安肉夹馍口味说明",
+      "content": "受控测试事实：肉夹馍属于含肉面食，本条描述咸口，不能据此认定素食。",
+      "tags": [
+        "肉夹馍",
+        "含肉",
+        "咸口"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-xa-alias",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "西安碑林书法主题",
+      "content": "受控测试事实：西安碑林资料介绍石刻、碑刻书法与历史文化。",
+      "tags": [
+        "碑林",
+        "石刻",
+        "书法"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-wh-museum",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "武汉湖北省博物馆主题",
+      "content": "受控测试事实：湖北省博物馆又称省博，本条介绍曾侯乙编钟与楚文化。",
+      "tags": [
+        "省博",
+        "湖北省博物馆",
+        "曾侯乙编钟"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-wh-garden",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "武汉东湖园林主题",
+      "content": "受控测试事实：武汉东湖资料涉及听涛景区、湖畔和园林文化。",
+      "tags": [
+        "东湖",
+        "听涛",
+        "湖畔"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-wh-building",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "武汉大学老图书馆说明",
+      "content": "受控测试事实：老图书馆为本测试中的武汉大学校内建筑；访问权限另行核实。",
+      "tags": [
+        "武汉大学",
+        "老图书馆",
+        "校内建筑"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-wh-food",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "武汉热干面口味说明",
+      "content": "受控测试事实：本条热干面描述芝麻酱和咸口面食，不提供坚果过敏安全保证。",
+      "tags": [
+        "热干面",
+        "芝麻酱",
+        "咸口"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "eval-wh-alias",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "武汉黄鹤楼文化主题",
+      "content": "受控测试事实：黄鹤楼资料介绍诗词、楼阁与历史文化。",
+      "tags": [
+        "黄鹤楼",
+        "诗词",
+        "楼阁"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written fixture; not verified travel information"
+    },
+    {
+      "id": "cq-hongyadong-accessibility-001",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "洪崖洞老人与少走路无障碍电梯与坡道指引",
+      "content": "洪崖洞吊脚楼依山而建，高低落差极大（垂直11层）。1层临嘉陵江滨江路，11层接沧白路城市主干道。景区内部配备观光直梯与扶梯连通各层，但节假日高峰期电梯排队等待时间长（常需20-40分钟）。带老人或少走路人群，强烈建议选择低步行路线：乘坐出租车或网约车直达11层沧白路平街进入，利用内部直梯逐层向下游玩，避免从1层徒步爬陡峭楼梯至11层；若去1层看全景，可在11层沧白路乘观光直梯下达1层滨江路。景区各主层设休息座椅与卫生间。",
+      "tags": [
+        "洪崖洞",
+        "无障碍",
+        "渝中区",
+        "重庆",
+        "accessibility",
+        "老人友好",
+        "少走路"
+      ],
+      "provenance": "EXISTING_REPOSITORY_ASSET",
+      "sourceReference": "src/main/resources/knowledge_documents.jsonl#cq-hongyadong-accessibility-001",
+      "verificationCaveat": "Reused verbatim; this evaluation does not independently verify current real-world facts."
+    },
+    {
+      "id": "cq-hongyadong-transport-002",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "洪崖洞公共交通、打车衔接与步行距离",
+      "content": "洪崖洞交通极为便捷但节假日易交通管制。轨交站点：轨道交通2号线临江门站，2号出口出站后沿沧白路步行约500米（全程平路无陡坡）即可到达11层入口；或轨道交通1/6号线小什字站，9号出口步行约600米到达11层。公共公交：小什字站、沧白路站有数十条公交线路。打车注意事项：夜间高峰期（19:00-22:00）沧白路及千厮门大桥周边实行临时交通管制，网约车与出租车无法停靠11层或1层，需步行至解放碑或魁星楼平街打车。",
+      "tags": [
+        "重庆",
+        "渝中区",
+        "transport",
+        "洪崖洞"
+      ],
+      "provenance": "EXISTING_REPOSITORY_ASSET",
+      "sourceReference": "src/main/resources/knowledge_documents.jsonl#cq-hongyadong-transport-002",
+      "verificationCaveat": "Reused verbatim; this evaluation does not independently verify current real-world facts."
+    },
+    {
+      "id": "cq-hongyadong-dynamic-003",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "洪崖洞开放时间、门票、夜景亮灯与限流规则",
+      "content": "洪崖洞景区免费开放，无须强制预约（按重庆市文旅委2024/2025年最新通告，取消A级景区强制预约，高峰期实行现场扫码登记或人流管控）。景区外围24小时开放，内部商业街区营业时间一般为10:00-22:00。夜景灯光亮灯时间通常为18:30-23:00（夏季）或18:00-22:30（冬季），具体时间随季节与节能要求动态微调。节假日极端客流时实行“单向循环”限流措施，千厮门大桥可能实行封桥供游客步行观景。",
+      "tags": [
+        "dynamic",
+        "重庆",
+        "渝中区",
+        "洪崖洞"
+      ],
+      "provenance": "EXISTING_REPOSITORY_ASSET",
+      "sourceReference": "src/main/resources/knowledge_documents.jsonl#cq-hongyadong-dynamic-003",
+      "verificationCaveat": "Reused verbatim; this evaluation does not independently verify current real-world facts."
+    },
+    {
+      "id": "cq-sanxia-museum-dynamic-002",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "三峡博物馆开放时间、免预约规则与门票政策",
+      "content": "开放时间：周二至周日 09:00-17:00（16:30停止入馆），周一闭馆（逢法定节假日正常开放）。门票政策：免费开放。最新入馆规则（自2024/2025年起）：实行免预约进馆政策，观众直接携带中华人民共和国居民身份证原件刷卡入馆；未带身份证者可通过“重庆中国三峡博物馆”官方微信公众号现场扫码登记生成二维码入馆。",
+      "tags": [
+        "dynamic",
+        "重庆",
+        "渝中区",
+        "三峡博物馆"
+      ],
+      "provenance": "EXISTING_REPOSITORY_ASSET",
+      "sourceReference": "src/main/resources/knowledge_documents.jsonl#cq-sanxia-museum-dynamic-002",
+      "verificationCaveat": "Reused verbatim; this evaluation does not independently verify current real-world facts."
+    },
+    {
+      "id": "cq-changjiang-suodao-dynamic-002",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "长江索道票价、分时段预约与运营时间",
+      "content": "票价政策：单程票30元/人，往返票50元/人。运营时间：07:30-22:30（夏季及节假日可能延长至23:00）。预约入口：通过官方微信公众号“长江索道”预订分时段门票。注意事项：因例行检修或雷雨强风等天气可能临时停运，出行前须在公众号查询实时运行状态。",
+      "tags": [
+        "dynamic",
+        "重庆",
+        "渝中区/南岸区",
+        "长江索道"
+      ],
+      "provenance": "EXISTING_REPOSITORY_ASSET",
+      "sourceReference": "src/main/resources/knowledge_documents.jsonl#cq-changjiang-suodao-dynamic-002",
+      "verificationCaveat": "Reused verbatim; this evaluation does not independently verify current real-world facts."
+    },
+    {
+      "id": "eval-bj-same-name",
+      "city": "北京市",
+      "scope": "CITY",
+      "title": "人民公园休息设施",
+      "content": "受控测试事实：本条只适用于北京市人民公园。本测试记录休息座椅和树荫，不包含票价或当天活动。",
+      "tags": [
+        "人民公园",
+        "休息座椅",
+        "树荫"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written same-name disambiguation fixture; no claim about a real park."
+    },
+    {
+      "id": "eval-hz-same-name",
+      "city": "杭州市",
+      "scope": "CITY",
+      "title": "人民公园休息设施",
+      "content": "受控测试事实：本条只适用于杭州市人民公园。本测试记录休息座椅和树荫，不包含票价或当天活动。",
+      "tags": [
+        "人民公园",
+        "休息座椅",
+        "树荫"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written same-name disambiguation fixture; no claim about a real park."
+    },
+    {
+      "id": "eval-xa-same-name",
+      "city": "西安市",
+      "scope": "CITY",
+      "title": "人民公园休息设施",
+      "content": "受控测试事实：本条只适用于西安市人民公园。本测试记录休息座椅和树荫，不包含票价或当天活动。",
+      "tags": [
+        "人民公园",
+        "休息座椅",
+        "树荫"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written same-name disambiguation fixture; no claim about a real park."
+    },
+    {
+      "id": "eval-wh-same-name",
+      "city": "武汉市",
+      "scope": "CITY",
+      "title": "人民公园休息设施",
+      "content": "受控测试事实：本条只适用于武汉市人民公园。本测试记录休息座椅和树荫，不包含票价或当天活动。",
+      "tags": [
+        "人民公园",
+        "休息座椅",
+        "树荫"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written same-name disambiguation fixture; no claim about a real park."
+    },
+    {
+      "id": "eval-cq-same-name",
+      "city": "重庆市",
+      "scope": "CITY",
+      "title": "人民公园休息设施",
+      "content": "受控测试事实：本条只适用于重庆市人民公园。本测试记录休息座椅和树荫，不包含票价或当天活动。",
+      "tags": [
+        "人民公园",
+        "休息座椅",
+        "树荫"
+      ],
+      "provenance": "SYNTHETIC_CONTROLLED",
+      "sourceReference": "Author-written same-name disambiguation fixture; no claim about a real park."
+    }
+  ]
+}

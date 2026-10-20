@@ -1,0 +1,17 @@
+{
+  "candidateRanking": {
+    "compactDistanceKm": 3.5,
+    "localDistanceKm": 6.0,
+    "compactDistanceBonus": 45,
+    "localDistanceBonus": 20,
+    "distancePenaltyPerKm": 12.0,
+    "shortTripBudgetMaximumMinutes": 360,
+    "shortTripFarDistanceKm": 8.0,
+    "shortTripFarPenalty": 80,
+    "shortTripExtremeDistanceKm": 12.0,
+    "shortTripExtremePenalty": 200,
+    "unknownLocationPenalty": 25,
+    "contextAverageWeight": 0.6,
+    "contextNearestWeight": 0.4
+  }
+}

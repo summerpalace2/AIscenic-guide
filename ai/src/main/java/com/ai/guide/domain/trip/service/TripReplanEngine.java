@@ -5,6 +5,9 @@ import com.ai.guide.domain.trip.model.TripVersion;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -31,13 +34,23 @@ public class TripReplanEngine {
     private final ItineraryBuilderPort itineraryBuilder;
     private final RouteGatewayPort amapPlannerGateway;
     private final ObjectMapper objectMapper;
+    private final PlannerTaxonomyPort taxonomy;
 
     public TripReplanEngine(ItineraryBuilderPort itineraryBuilder,
                             RouteGatewayPort amapPlannerGateway,
                             ObjectMapper objectMapper) {
+        this(itineraryBuilder, amapPlannerGateway, objectMapper, TaxonomyPort.empty());
+    }
+
+    @Autowired
+    public TripReplanEngine(ItineraryBuilderPort itineraryBuilder,
+                            RouteGatewayPort amapPlannerGateway,
+                            ObjectMapper objectMapper,
+                            PlannerTaxonomyPort taxonomy) {
         this.itineraryBuilder = itineraryBuilder;
         this.amapPlannerGateway = amapPlannerGateway;
         this.objectMapper = objectMapper;
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
     }
 
     public ReplanResult replan(Map<String, Object> source, Map<String, Object> request,
@@ -47,6 +60,8 @@ public class TripReplanEngine {
         if (targetId.isBlank()) targetId = text(request == null ? null : request.get("entityId"));
         StopLocation target = locateStop(trip, targetId);
         if (target == null) throw new BadRequestException("未在当前行程中找到要替换的站点。");
+        if (com.ai.guide.domain.planner.service.PlannerPins.read(source).contains(text(target.stop().get("id"))))
+            throw new BadRequestException("该站点已固定，请先在规划会话中取消固定并保存后再替换。");
 
         String oldVenueId = text(target.stop().get("venueId"));
         if (oldVenueId.isBlank()) oldVenueId = text(target.stop().get("entityId"));
@@ -91,6 +106,9 @@ public class TripReplanEngine {
         trip.put("subtitle", "局部重规划 · 路线已重新计算");
         appendHistory(trip, nextVersion, "局部重规划", reason, List.of(targetId));
         amapPlannerGateway.hydrate(trip);
+        if (!com.ai.guide.domain.planner.service.PlannerPins.retained(source, trip))
+            throw new BadRequestException("本次重规划会改变已固定站点，请先取消固定再调整。");
+        com.ai.guide.domain.planner.service.PlannerPins.preserve(source, trip);
         return new ReplanResult(trip, "局部重规划", reason, List.of(targetId), replacement.getId());
     }
 
@@ -107,37 +125,46 @@ public class TripReplanEngine {
     private int replacementScore(Attraction candidate, Attraction old, String reason) {
         int score = 0;
         List<String> tags = candidate.getTags() == null ? List.of() : candidate.getTags();
-        if (reason.matches(".*(室内|雨|避暑).*")) {
+        if (matchesHint(reason, "replanIndoorAliases")) {
             if (Boolean.TRUE.equals(candidate.getIndoor())) score += 20;
             if (tags.contains("室内")) score += 10;
         }
-        if (reason.matches(".*(少走路|不想走|轻松|老人|长辈).*")) {
+        if (matchesHint(reason, "replanLowWalkingAliases")) {
             if ("低".equals(candidate.getWalkDifficulty())) score += 20;
-            if (safe(candidate.getWalk()).matches(".*(少走路|直达|扶梯).*")) score += 10;
-            if (tags.contains("少走路") || tags.contains("长辈友好")) score += 10;
+            if (matchesAny(safe(candidate.getWalk()), "candidateLowWalkingFeatures")) score += 10;
+            if (tags.stream().anyMatch(tag -> taxonomy.getHints("candidateLowWalkingFeatures").contains(tag))) score += 10;
         }
-        if (reason.matches(".*(时间变少|赶时间|快|短停留).*")) {
-            if (safe(candidate.getDuration()).matches(".*(45|60).*")) score += 20;
+        if (matchesHint(reason, "replanUrgencyAliases")) {
+            if (matchesAny(safe(candidate.getDuration()), "shortVisitDurationTokens")) score += 20;
             if (tags.contains("短停留")) score += 10;
         }
-        if (reason.matches(".*(夜景|晚上|灯光).*")) {
+        if (matchesHint(reason, "replanNightAliases")) {
             if ("夜景".equals(candidate.getCategory()) || tags.contains("夜景")) score += 25;
         }
-        if (reason.matches(".*(美食|吃|火锅|小吃).*")) {
+        if (taxonomy.getHints("foodTags").stream().anyMatch(reason::contains)
+                || taxonomy.getHints("dining").stream().anyMatch(reason::contains)) {
             if ("美食".equals(candidate.getCategory()) || tags.contains("美食")) score += 25;
         }
-        if (reason.matches(".*(文创|艺术|拍照).*")) {
+        if (matchesHint(reason, "replanCultureAliases")) {
             if ("文创".equals(candidate.getCategory()) || tags.contains("文创") || tags.contains("拍照")) score += 20;
         }
-        if (reason.matches(".*(少走路|不想走|轻松|老人|长辈).*")
+        if (matchesHint(reason, "replanLowWalkingAliases")
                 && ("夜景".equals(old.getCategory()) || old.matchesAnyTagOrFeature("夜景"))
                 && ("夜景".equals(candidate.getCategory()) || candidate.matchesAnyTagOrFeature("夜景"))
                 && ("低".equals(candidate.getWalkDifficulty()) || "SUPPORTED".equals(candidate.getEffectiveAccessibility()))
-                && (safe(candidate.getWalk()).matches(".*(少走路|直达|短步行|平街|扶梯).*") || candidate.matchesAnyTagOrFeature("少走路", "视野开阔"))) {
+                && (matchesAny(safe(candidate.getWalk()), "candidateLowWalkingFeatures") || candidate.matchesAnyTagOrFeature(taxonomy.getHints("candidateLowWalkingFeatures").toArray(String[]::new)))) {
             score += 30;
         }
         if (safe(candidate.getDistrict()).equals(old.getDistrict())) score += 5;
         return score;
+    }
+
+    private boolean matchesHint(String text, String key) {
+        return matchesAny(text, key);
+    }
+
+    private boolean matchesAny(String text, String key) {
+        return text != null && taxonomy.getHints(key).stream().anyMatch(text::contains);
     }
 
     @SuppressWarnings("unchecked")

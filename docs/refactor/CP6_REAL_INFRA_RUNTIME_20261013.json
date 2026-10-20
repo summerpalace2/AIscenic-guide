@@ -1,0 +1,16 @@
+{
+  "pgVersion": "PostgreSQL 16.15, compiled by Visual C++ build 1944, 64-bit",
+  "redisVersion": "Redis server v=7.4.3 sha=29f60425:0 malloc=libc bits=64 build=fe3cf092b025b92a",
+  "pgPort": 51732,
+  "redisPort": 51733,
+  "pgPid": 23964,
+  "redisLauncherPid": 72228,
+  "envPath": "C:\\Users\\summer\\AppData\\Local\\Temp\\cp6-infra-25a17aeef88e\\.env.cp6-test",
+  "runtime": "C:\\Users\\summer\\AppData\\Local\\Temp\\cp6-infra-25a17aeef88e",
+  "postgresqlSha256": "25e6fcdfb8caec38691bf461125e7564508760666f7b8e5dc6a5f0818f58f81e",
+  "redisSha256": "f6fe3dbbea180672fe08cba80759168ea68a51cd7ee4f097e1b8905a053d0ad1",
+  "postgresqlSource": "https://get.enterprisedb.com/postgresql/postgresql-16.15-1-windows-x64-binaries.zip",
+  "redisSource": "https://github.com/redis-windows/redis-windows/releases/tag/7.4.3",
+  "redisWindowsCommunityPort": true,
+  "officialLinuxProductionAcceptance": false
+}

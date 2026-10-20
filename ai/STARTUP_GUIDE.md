@@ -1,189 +1,56 @@
-# 《渝游智策》项目手动启动与测试指引
+# 本地启动与验证
 
-> **致测试者 / 评估人员**：  
-> 本系统由 **Java 核心后端**、**Node.js BFF 协同服务** 和 **Vue 3 前端应用** 3 个独立子项目构成。请按照以下步骤，**分别打开 3 个独立终端窗口**手动启动各个服务。
+Java 后端属于本仓库的 `ai/` Maven 模块。Node BFF 和 Vue 前端在单独的 Web 仓库；下面的 `<java-repo>`、`<web-repo>` 指各自在本机的实际检出路径，不是固定目录。需要 JDK 17+、Node.js 及相应依赖，供应商凭据由使用者提供，项目没有内置可用 Key。
 
----
+## 准备配置
 
-## 一、项目架构与子工程说明
+唯一共享模板是 [`.env.example`](.env.example)。首次运行复制为本目录 `.env`，填入必需值；已经存在 `.env` 时不要覆盖。`JWT_SECRET` 至少 32 个 UTF-8 字节；当前 Spring AI 初始化也要求非空 `DEEPSEEK_API_KEY`。BFF 使用独立 `YUYOUZHICE_AUTH_SECRET`，其启动器可协助初始化本地随机 secret。
 
+模型、高德、Embedding、语音和基础设施按实际使用配置。模型假 key 只能用于隔离验证，进程启动成功不代表聊天可用。默认 SQLite 适合本地开发；Redis 聊天持久化、Qdrant RAG、PostgreSQL 与外部供应商分别需要可用环境。不要把真实 `.env` 或数据文件提交到 Git。
+
+Java 按当前工作目录 `.env`、父目录 `.env` 的顺序读取，进程环境和 JVM 参数优先。BFF/工具用 `SCENIC_GUIDE_JAVA_DIR` 指定本 Java 模块目录，共享该文件但各自只加载需要的字段。
+
+## 启动三个进程
+
+终端一，进入 Java 模块目录：
+
+```powershell
+cd <java-repo>/ai
+.\mvnw.cmd spring-boot:run
 ```
-yuyouzhice/
-├── backend/          # 【子项目 1】Java AI 核心后端（Spring Boot 3 + Spring AI）
-├── server/           # 【子项目 2】Node.js BFF 服务层（API 路由、安全拦截、高德聚合）
-├── frontend/         # 【子项目 3】Vue 3 前端工程（Vite + Tailwind + 高德地图 3D）
-└── .env              # 统一环境密钥配置（已内置 DeepSeek、高德地图等可用 Key）
+
+macOS/Linux 使用 `./mvnw spring-boot:run`。默认端口 8080；隔离验收请指定其他端口和临时数据库，不复用个人开发数据。
+
+终端二，进入 Web 仓库：
+
+```powershell
+cd <web-repo>
+$env:SCENIC_GUIDE_JAVA_DIR = '<java-repo>/ai'
+node server/index.mjs
 ```
 
-| 子项目 | 运行端口 | 核心职责 |
-|---|---|---|
-| **1. Java AI 核心后端 (`backend`)** | `http://localhost:8080` | **系统核心中枢**：负责 DeepSeek 语言大模型交互、山地防折返时空拓扑排序、无障碍坡度约束、嵌入式 SQLite 文旅知识检索与多版本行程管理。 |
-| **2. Node.js BFF 服务层 (`server`)** | `http://localhost:3000` | **安全与代理层**：负责用户会话认证、CSRF 安全防护、高德地图 Web 路线服务代理，将前端请求安全转发至 Java 后端。 |
-| **3. Vue 3 前端交互层 (`frontend`)** | `http://localhost:5173` | **用户界面层**：提供行程规划看板、沉浸式高德 3D 轨迹地图、多版本切换对比卡片，以及右下角的“渝悠悠 AI 助手”微调对话抽屉。 |
+终端三，进入同一 Web 仓库的 Vue 工程：
 
----
+```powershell
+cd <web-repo>/frontend
+npm run dev
+```
 
-## 二、环境要求检查
+Web 仓库首次运行需先按其 README 安装依赖；BFF 默认 3000，前端默认 5173，实际端口以各进程输出为准。供应商服务并不由这三个进程自动托管。
 
-在启动前，请在终端中确认本地已安装以下基础环境：
+## 验证与测试
 
-1. **Java 17 或更高版本**（必须）
-   ```bash
-   java -version
-   ```
-   *(需输出 `java version "17.x.x"` 或更高版本)*
+Java `/actuator/health`、BFF `/api/health` 可检查进程就绪；健康响应不证明高德、模型或其他供应商已正确授权。再依次验证聊天追问、规划预览和确认、正式保存/打开。供应商缺失、超时或未核验状态应在功能结果中如实呈现。
 
-2. **Node.js 18 或更高版本**（必须，推荐 v20+）
-   ```bash
-   node -v
-   ```
-   *(需输出 `v18.x.x` 或更高版本)*
+从 Java 仓库根目录运行后端离线回归：
 
-> **说明**：
-> * 本项目自带 **Maven Wrapper (`mvnw`)**，无需单独安装 Maven。
-> * 数据存储采用嵌入式 **SQLite (`knowledge.db`)**，无需额外安装或配置 MySQL/PostgreSQL 数据库。
-> * 云端 API 密钥已在 `.env` 中预置，无需手动申请 Key。
+```powershell
+.\mvnw.cmd -pl ai test
+```
 
----
+测试配置使用临时 SQLite 和测试凭据，不需要复制个人 `.env`。真实基础设施测试需额外准备专门的隔离环境，参见 [CP6 基础设施说明](../tools/cp6-infra/README.md)。
 
-## 三、手动启动步骤（需打开 3 个终端窗口）
 
-> **启动顺序建议**：**终端 1 (Java后端)** ➔ **终端 2 (Node BFF)** ➔ **终端 3 (Vue前端)**
+## PDF 中文字体
 
----
-
-### 💻 终端 1：启动 Java AI 核心后端（端口 8080）
-
-1. 打开第 1 个终端，进入后端目录：
-   ```bash
-   cd backend
-   ```
-   *(如果在原有开发目录下，请进入 `D:\scenic-guide\ai`)*
-
-2. 执行启动命令：
-   * **Windows 系统**：
-     ```powershell
-     .\mvnw.cmd spring-boot:run
-     ```
-   * **macOS / Linux 系统**：
-     ```bash
-     ./mvnw spring-boot:run
-     ```
-
-3. **启动成功标志**：
-   * 终端控制台打印出 Spring Boot 图标，并在末尾输出：
-     ```
-     Started ScenicGuideApplication in X.XXX seconds (process running for ...)
-     ```
-   * 此时 Java 后端已在 `http://localhost:8080` 成功就绪。
-
----
-
-### 💻 终端 2：启动 Node.js BFF 服务（端口 3000）
-
-1. 打开第 2 个终端，进入 Web 根目录：
-   ```bash
-   cd web
-   ```
-   *(如果在原有开发目录下，请进入 `loop-p0-functional-inventory-1-home`)*
-
-2. 首次运行如果尚未安装依赖，先执行一次：
-   ```bash
-   npm install
-   ```
-
-3. 启动 BFF 服务：
-   ```bash
-   node server/index.mjs
-   ```
-
-4. **启动成功标志**：
-   * 控制台输出：
-     ```
-     渝游智策已启动：http://localhost:3000
-     ```
-   * 此时 BFF 服务已在 `http://localhost:3000` 成功就绪，并与 Java 后端连通。
-
----
-
-### 💻 终端 3：启动 Vue 3 前端界面（端口 5173）
-
-1. 打开第 3 个终端，进入前端项目目录：
-   ```bash
-   cd web/frontend
-   ```
-   *(如果在原有开发目录下，请进入 `loop-p0-functional-inventory-1-home/frontend`)*
-
-2. 首次运行如果尚未安装依赖，先执行一次：
-   ```bash
-   npm install
-   ```
-
-3. 启动前端 Vite 开发服务器：
-   ```bash
-   npm run dev
-   ```
-
-4. **启动成功标志**：
-   * 控制台输出：
-     ```
-       VITE v5.x.x  ready in xxx ms
-
-       ➜  Local:   http://localhost:5173/
-       ➜  Network: use --host to expose
-     ```
-
----
-
-## 四、访问与功能体验
-
-当 3 个终端均启动完毕后：
-
-1. 打开浏览器访问：
-   👉 **`http://localhost:5173`**
-2. 进入系统主界面，即可开始全流程体验。
-
----
-
-## 五、核心测试场景指引
-
-测试者可通过以下测试用例验证系统的核心能力：
-
-### 🎯 测试 1：山地防折返与避障行程规划（全量规划）
-* **操作**：
-  在首页输入框输入需求：  
-  > *“带父母在渝中区深度游，不爬陡坡，节奏慢一点，2天行程，想去洪崖洞和解放碑”*
-* **验证点**：
-  1. 行程路线依山势平缓串联（解放碑 ➔ 洪崖洞 ➔ 戴家巷），无跨江反复折返；
-  2. 卡片标注了山地适老化建议（如电梯代步、避开百级台阶等）；
-  3. 右侧高德地图同步生成 3D 轨迹，点击左侧卡片，地图视角聚焦对应 POI。
-
-### 💬 测试 2：会话式局部智能微调（核心创新点：免推倒重排）
-* **操作**：
-  1. 点击页面右下角的 **【渝悠悠 AI 助手】** 气泡图标；
-  2. 在右侧对话抽屉中输入微调需求：  
-     > *“在当前行程草稿中新增一段渝中·曾家岩人文观展安排，包含重庆中国三峡博物馆”*
-  3. 界面弹出 **【TRIP DECISION - 局部调整预览】** 提案浮窗；
-  4. 浮窗清晰对比新旧方案变化，确认并点击底部 **【确认并应用】**。
-* **验证点**：
-  1. 页面提示调整成功，版本升为 **Version 2**；
-  2. 原有其他景点顺次微调，首日精准插入三峡博物馆；
-  3. 高德地图轨迹同步重新测距重绘。
-
-### 🔄 测试 3：多版本对比回溯
-* **操作**：
-  在行程单上方点击 `v1 [初始规划]` 与 `v2 [局部微调]` 按钮；
-* **验证点**：
-  行程看板与地图轨迹秒级回溯到对应版本，支持游客随时查看历史备选方案。
-
----
-
-## 六、常见问题排查（FAQ）
-
-| 异常现象 | 排查与解决办法 |
-|---|---|
-| **Java 启动报错 `UnsupportedClassVersionError`** | 本地 JDK 版本过低。请确认已切换到 JDK 17 或以上版本（`java -version`）。 |
-| **启动提示端口已被占用 (Port in use)** | 系统使用 `8080`、`3000`、`5173` 端口。请在任务管理器中关闭占用的残留 `java` 或 `node` 进程，或重启终端后重试。 |
-| **前端页面提示“网络错误 / 后端不可用”** | 检查 **终端 1 (Java后端)** 是否还在编译或启动中。Java 首次初始化约需 10~15 秒，需等终端 1 输出 `Started ScenicGuideApplication` 后再刷新页面。 |
-| **前端运行 `npm run dev` 报找不到模块** | 说明尚未安装依赖。请先在 `frontend` 目录下运行一次 `npm install`。 |
-| **是否需要注册登录才能测试？** | **不需要**。系统支持免登录游客模式，直接即可体验规划与微调全部功能。如需测试档案保存，点击右上角登录输入任意账号即可。 |
+应用内已携带 OFL 授权的 Noto Sans SC 静态中文字体，行程手册和运营报表默认嵌入实际使用的字形，不要求主机安装系统中文字体。默认保持 `PDF_FONT_FILE` 为空。若需替换，配置可读取的中文 TTF 绝对路径或带字面索引的 TTC 路径并重启；无效配置会导出失败，不静默回退为缺字字体。授权、来源、哈希与构建说明见 `src/main/resources/fonts/README.md`。自定义字库需自行确保授权与覆盖范围。

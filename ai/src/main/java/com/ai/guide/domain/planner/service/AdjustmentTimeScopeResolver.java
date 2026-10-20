@@ -1,6 +1,9 @@
 package com.ai.guide.domain.planner.service;
 
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.language.IntentLanguagePolicy;
+
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import java.util.Comparator;
@@ -13,7 +16,7 @@ import java.util.regex.Pattern;
 public final class AdjustmentTimeScopeResolver {
     private AdjustmentTimeScopeResolver() {}
     private static final Pattern CLOCK = Pattern.compile("(?<!\\d)(\\d{1,2})[:：](\\d{2})(?!\\d)");
-    public static void resolve(PlanAdjustmentIntent intent, TaxonomyPort taxonomy) {
+    public static void resolve(PlanAdjustmentIntent intent, PlannerTaxonomyPort taxonomy) {
         if (intent == null) return;
         String raw = intent.getRawMessage() == null ? "" : intent.getRawMessage();
         var preserves = new ArrayList<>(intent.getPreserveReferences() == null ? List.<String>of() : intent.getPreserveReferences());
@@ -67,13 +70,13 @@ public final class AdjustmentTimeScopeResolver {
         i.setRequiresClarification(true);
         var missing = new ArrayList<>(i.getMissingFields());
         missing.remove("TIME_RANGE"); missing.add(0, "TIME_RANGE"); i.setMissingFields(missing);
-        i.setClarificationQuestion("请明确一个有效的调整时段，例如18:00以后或20:00至21:00；其余安排会保留。");
+        i.setClarificationQuestion("请明确一个有效的调整时段，例如某个具体时刻之后或一段明确起止时间；其余安排会保留。");
     }
     public static int minute(Map<String,Object> stop) {
         var m = CLOCK.matcher(String.valueOf(stop.getOrDefault("time", stop.getOrDefault("startTime", ""))));
         return m.matches() ? Integer.parseInt(m.group(1)) * 60 + Integer.parseInt(m.group(2)) : -1;
     }
-    public static boolean preserves(Map<String,Object> stop, PlanAdjustmentIntent intent, TaxonomyPort taxonomy) {
+    public static boolean preserves(Map<String,Object> stop, PlanAdjustmentIntent intent, PlannerTaxonomyPort taxonomy) {
         String name = String.valueOf(stop.getOrDefault("name", "")); int minute = minute(stop);
         for (String ref : intent.getPreserveReferences() == null ? List.<String>of() : intent.getPreserveReferences()) {
             if (!name.isBlank() && ref.contains(name)) return true;

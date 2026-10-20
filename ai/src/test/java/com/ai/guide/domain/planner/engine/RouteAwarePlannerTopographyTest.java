@@ -4,7 +4,7 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.planner.model.PlanRequest;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.planner.service.ChongqingTopographyKnowledge;
+import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
 import com.ai.guide.domain.planner.service.ItineraryBuilder;
 import com.ai.guide.domain.planner.service.PlannerService;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +32,9 @@ class RouteAwarePlannerTopographyTest {
     @Autowired
     private AttractionService attractionService;
 
+    @Autowired
+    private ChongqingTopographyStrategy topographyStrategy;
+
     @Test
     @DisplayName("验证在带长辈/少走路偏好下，顺势而下（Downhill First）获得加分，形成舒适单向动线")
     void testDownhillFirstPreferenceUnderLowWalking() {
@@ -41,12 +44,13 @@ class RouteAwarePlannerTopographyTest {
         assertNotNull(liziba, "李子坝地标应存在");
 
         // 验证高程流向判定
-        assertEquals(ChongqingTopographyKnowledge.ElevationFlow.DOWNHILL,
-                ChongqingTopographyKnowledge.detectElevationFlow(eling, liziba));
+        assertEquals(com.ai.guide.domain.planner.model.topography.ElevationFlow.DOWNHILL,
+                topographyStrategy.detectElevationFlow(eling, liziba));
 
         // 验证特色交通指引生成
-        String hint = ChongqingTopographyKnowledge.generateTransitCharacteristicHint(eling, liziba, "walking");
-        assertTrue(hint.contains("三层马路步道") && hint.contains("下行"), "必须包含三层马路顺山势下行提示");
+        String hint = topographyStrategy.generateTransitCharacteristicHint(eling, liziba, "walking");
+        assertTrue(hint.contains("顺山势") && hint.contains("下行") && hint.contains("实时导航"),
+                "应使用 taxonomy 中配置的顺山势下行提示，并提醒核实实时路况");
     }
 
     @Test

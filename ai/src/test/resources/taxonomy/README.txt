@@ -1,0 +1,1 @@
+Test-only compatibility policy: supplies the legacy Chongqing seed destination so older fixture scenarios keep targeting their seeded catalog. Production taxonomy remains destination-neutral; tests that assert production startup policy load ai/src/main/resources/taxonomy/dining_taxonomy.json explicitly.

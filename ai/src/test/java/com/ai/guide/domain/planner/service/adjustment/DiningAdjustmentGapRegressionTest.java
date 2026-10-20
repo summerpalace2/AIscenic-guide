@@ -3,9 +3,9 @@ package com.ai.guide.domain.planner.service.adjustment;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.engine.*;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import com.ai.guide.domain.planner.model.*;
-import com.ai.guide.domain.planner.service.AttractionDiningKnowledge.DiningOption;
+import com.ai.guide.domain.dining.model.DiningOption;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -59,12 +59,8 @@ class DiningAdjustmentGapRegressionTest {
         var builder = mock(ItineraryBuilderPort.class);
         when(builder.createDiningStop(any(), anyString(), anyString(), anyString())).thenAnswer(invocation ->
                 new LinkedHashMap<>(Map.of("id", invocation.getArgument(1), "name", "【午餐推荐】新餐厅", "type", "DINING", "time", invocation.getArgument(2))));
-        var grounder = mock(DiningCategoryGrounder.class);
-        when(grounder.resolveSlotType(any(PlanAdjustmentIntent.class))).thenReturn("LUNCH");
-        when(grounder.resolveRequestedFlavor(any(PlanAdjustmentIntent.class), anyString())).thenReturn("驴肉火烧");
-        when(grounder.isGenericDiningCraving(any(PlanAdjustmentIntent.class), any())).thenReturn(true);
-        var taxonomy = mock(TaxonomyPort.class);
-        when(taxonomy.getMealWindow("LUNCH")).thenReturn(new TaxonomyPort.MealWindow(690, 810, 720, "12:00"));
+        var taxonomy = new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter();
+        var grounder = new DiningCategoryGrounder(taxonomy);
         var costs = mock(RouteCostProvider.class);
         when(costs.calculate(any(), any(), any())).thenReturn(RouteCost.estimated(500, 10, 500, "WALKING", "test"));
         var strategy = new ReplaceStopAdjustmentStrategy(mock(AttractionService.class), builder, mock(RouteAwarePlanner.class),
@@ -166,7 +162,7 @@ class DiningAdjustmentGapRegressionTest {
         when(grounder.isGenericDiningCraving(any(PlanAdjustmentIntent.class), any())).thenAnswer(invocation ->
                 ((PlanAdjustmentIntent) invocation.getArgument(0)).getGenericDiningCraving());
         var taxonomy = mock(TaxonomyPort.class);
-        when(taxonomy.getMealWindow("LUNCH")).thenReturn(new TaxonomyPort.MealWindow(690, 810, 720, "12:00"));
+        when(taxonomy.getMealWindow("LUNCH")).thenReturn(new com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow(690, 810, 720, "12:00"));
         var center = mock(DynamicGeoCentroidResolver.class);
         when(center.resolve(any(), any(), any())).thenReturn("116.300000,39.900000");
         var costs = mock(RouteCostProvider.class);

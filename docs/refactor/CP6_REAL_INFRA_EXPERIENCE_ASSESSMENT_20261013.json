@@ -1,0 +1,6 @@
+{
+  "outcome": "not_used",
+  "reason": "Wiki查询无匹配主题；旧PG/schema原始经验只用于确定验证边界，未作为本轮新幂等修复依据。",
+  "evidence": [],
+  "effect": "当前生产修复由真实PostgreSQL双JVM失败及修后实测支撑；不归因于既有经验。"
+}

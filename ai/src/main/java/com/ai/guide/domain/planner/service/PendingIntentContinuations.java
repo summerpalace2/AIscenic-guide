@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.domain.language.IntentLanguagePolicy;
+
 import com.ai.guide.domain.planner.model.*;
 import java.util.*;
 import java.util.function.LongSupplier;
@@ -7,65 +9,109 @@ import java.util.function.LongSupplier;
 /** Server-owned expiring continuation: a short answer fills only the requested slot. */
 public final class PendingIntentContinuations {
     public record Pending(String intentId, int baseRevision, long expiresAt, PlanAdjustmentIntent intent) {}
-    private final Map<String, Pending> entries = new LinkedHashMap<>();
-    private final Map<String, PlanAdjustmentIntent> remainingActions = new LinkedHashMap<>();
-    private final Map<String, String> generations = new LinkedHashMap<>();
-    private final Map<String, String> epochs = new LinkedHashMap<>();
-    private final Map<String, Long> resetAt = new LinkedHashMap<>();
+    public static final class State {
+        public Pending pending;
+        public PlanAdjustmentIntent remaining;
+        public String generation;
+        public String epoch;
+        public boolean pendingTimeScopeResolved;
+        public boolean remainingTimeScopeResolved;
+    }
+    private final com.ai.guide.domain.planner.gateway.PlannerConversationStatePort store;
+    private final com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    private record ActiveState(String session,State state) {}
+    private final ThreadLocal<ActiveState> active = new ThreadLocal<>();
     private final LongSupplier clock;
-    public synchronized String begin(String session) {
-        if (generations.size() >= 4096 && !generations.containsKey(session)) {
-            String oldest = generations.keySet().iterator().next();
-            generations.remove(oldest); resetAt.remove(oldest); epochs.remove(oldest);
-            entries.remove(oldest); remainingActions.remove(oldest);
-        }
-        // The first proposal also has a random epoch. Eviction may forget this
-        // authority; it must never recreate a shared INITIAL value for old proposals.
-        epochs.computeIfAbsent(session, ignored -> UUID.randomUUID().toString());
-        String ticket = UUID.randomUUID().toString(); generations.put(session, ticket); return ticket;
+    private final ConversationIntentClassifier classifier;
+    public PendingIntentContinuations() { this(new ConversationIntentClassifier(),System::currentTimeMillis); }
+    public PendingIntentContinuations(LongSupplier clock) { this(new ConversationIntentClassifier(),clock); }
+    public PendingIntentContinuations(ConversationIntentClassifier classifier) { this(classifier,System::currentTimeMillis); }
+    public PendingIntentContinuations(ConversationIntentClassifier classifier,LongSupplier clock) {
+        this(classifier,clock,new InMemoryPlannerConversationState());
     }
-    public synchronized boolean current(String session, String ticket) { return Objects.equals(generations.get(session), ticket); }
-    public synchronized boolean commit(String session, String ticket, Runnable action) { if (!current(session,ticket)) return false; action.run(); return true; }
-    public synchronized void reset(String session) { begin(session); clear(session); remainingActions.remove(session); epochs.put(session,UUID.randomUUID().toString()); resetAt.put(session, clock.getAsLong()); }
-    public synchronized void afterApply(String session, int revision) {
-        var remaining = remainingActions.get(session);
-        reset(session);
-        if (remaining != null && !remaining.getCompoundActions().isEmpty()) remember(session, revision, remaining);
+    public PendingIntentContinuations(ConversationIntentClassifier classifier,LongSupplier clock,
+            com.ai.guide.domain.planner.gateway.PlannerConversationStatePort store) {
+        this.classifier = classifier == null ? new ConversationIntentClassifier() : classifier;
+        this.clock = clock == null ? System::currentTimeMillis : clock;
+        this.store = Objects.requireNonNull(store);
     }
-    public synchronized String epoch(String session) { return epochs.getOrDefault(session, ""); }
-    public synchronized boolean validProposal(String session, String proposalEpoch, long createdAt) {
-        String currentEpoch = epochs.get(session);
-        return currentEpoch != null && proposalEpoch != null && !proposalEpoch.isBlank()
-                && !"INITIAL".equals(proposalEpoch) && currentEpoch.equals(proposalEpoch);
+    private <T> T operate(String session,java.util.function.Function<State,T> action) {
+        ActiveState outer = active.get();
+        if (outer!=null && Objects.equals(outer.session(),session)) return action.apply(outer.state());
+        return store.withSessionLock(session,() -> {
+            State state = mapper.convertValue(store.continuationState(session),State.class);
+            if(state.pending!=null) state.pending.intent().setTimeScopeResolved(state.pendingTimeScopeResolved);
+            if(state.remaining!=null) state.remaining.setTimeScopeResolved(state.remainingTimeScopeResolved);
+            active.set(new ActiveState(session,state));
+            try {
+                T result = action.apply(state);
+                state.pendingTimeScopeResolved=state.pending!=null && state.pending.intent().isTimeScopeResolved();
+                state.remainingTimeScopeResolved=state.remaining!=null && state.remaining.isTimeScopeResolved();
+                store.saveContinuationState(session,mapper.convertValue(state,new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {}));
+                return result;
+            } finally { if (outer==null) active.remove(); else active.set(outer); }
+        });
     }
-    /** Legacy proposals lack an authoritative epoch and must be previewed again. */
-    public synchronized boolean validProposal(String session, long createdAt) { return false; }
-    private final ConversationIntentClassifier classifier = new ConversationIntentClassifier();
-    public PendingIntentContinuations() { this(System::currentTimeMillis); }
-    public PendingIntentContinuations(LongSupplier clock) { this.clock = clock; }
-    public synchronized void clear(String session) { entries.remove(session); }
-    public synchronized Pending pending(String session) { return entries.get(session); }
-    public synchronized void abandonCompoundQueue(String session) { remainingActions.remove(session); }
-    public synchronized Pending remember(String session, int revision, PlanAdjustmentIntent intent) {
-        entries.entrySet().removeIf(e -> e.getValue().expiresAt() <= clock.getAsLong());
-        if (entries.size() >= 1024) entries.remove(entries.keySet().iterator().next());
-        inferMissing(intent);
-        var pending = new Pending(UUID.randomUUID().toString(), revision, clock.getAsLong() + 600_000, intent);
-        entries.put(session, pending); return pending;
+    private String begin(State state) {
+        if (state.epoch == null) state.epoch = UUID.randomUUID().toString();
+        state.generation = UUID.randomUUID().toString(); return state.generation;
     }
-    public synchronized PlanAdjustmentIntent resume(String session, int revision, String id, String message, PlanPageContext context, String ticket) {
-        return current(session,ticket) ? resume(session,revision,id,message,context) : null;
+    private void reset(State state) { begin(state); state.pending=null; state.remaining=null; state.epoch=UUID.randomUUID().toString(); }
+    public String begin(String session) { return operate(session,this::begin); }
+    public boolean current(String session,String ticket) { return operate(session,state -> Objects.equals(state.generation,ticket)); }
+    public boolean commit(String session,String ticket,Runnable action) { return operate(session,state -> {
+        if (!Objects.equals(state.generation,ticket)) return false; action.run(); return true;
+    }); }
+    public void reset(String session) { operate(session,state -> { reset(state);return null; }); }
+    public void afterApply(String session,int revision) { operate(session,state -> {
+        var remaining=state.remaining; reset(state);
+        if (remaining!=null && !remaining.getCompoundActions().isEmpty()) state.pending=remember(revision,remaining);
+        return null;
+    }); }
+    public String epoch(String session) { return operate(session,state -> state.epoch==null?"":state.epoch); }
+    public boolean validProposal(String session,String proposalEpoch,long createdAt) { return operate(session,state ->
+        state.epoch!=null && proposalEpoch!=null && !proposalEpoch.isBlank() && !"INITIAL".equals(proposalEpoch) && state.epoch.equals(proposalEpoch)); }
+    public boolean validProposal(String session,long createdAt) { return false; }
+    public void clear(String session) { operate(session,state -> { state.pending=null;return null; }); }
+    public Pending pending(String session) { return operate(session,state -> state.pending); }
+    public boolean deferAfterApply(String session,String ticket,PlanAdjustmentIntent original,List<String> actions) {
+        return operate(session,state -> {
+            if (!Objects.equals(state.generation,ticket)) return false;
+            var queued=new ArrayList<String>(state.remaining==null?List.of():state.remaining.getCompoundActions());
+            for (String action:actions) if (!queued.contains(action)) queued.add(action);
+            state.remaining=original.toBuilder().type(ConversationIntentType.CLARIFICATION).operation("CLARIFICATION")
+                    .compoundActions(queued).requiresClarification(true).missingFields(List.of("COMPOUND_ACTION_ORDER"))
+                    .clarificationQuestion("剩余要求尚未执行：\n"+String.join("\n",queued)+"\n回复执行下一个，逐项查看预览。").build();
+            return true;
+        });
     }
-    public synchronized PlanAdjustmentIntent resume(String session, int revision, String id, String message, PlanPageContext context) {
-        Pending pending = entries.get(session);
+    public void abandonCompoundQueue(String session) { operate(session,state -> { state.remaining=null;return null; }); }
+    private Pending remember(int revision,PlanAdjustmentIntent intent) { inferMissing(intent); return new Pending(UUID.randomUUID().toString(),revision,clock.getAsLong()+600_000,intent); }
+    public Pending remember(String session,int revision,PlanAdjustmentIntent intent) { return operate(session,state -> state.pending=remember(revision,intent)); }
+    public PlanAdjustmentIntent resume(String session,int revision,String id,String message,PlanPageContext context,String ticket) {
+        return operate(session,state -> Objects.equals(state.generation,ticket)?resume(state,session,revision,id,message,context):null);
+    }
+    public PlanAdjustmentIntent resume(String session,int revision,String id,String message,PlanPageContext context) {
+        return operate(session,state -> resume(state,session,revision,id,message,context));
+    }
+    public PlanAdjustmentIntent resume(String session,int revision,String id,String message,PlanPageContext context,String ticket,
+            PlannerCalendarDateResolver.Reference calendar) {
+        return operate(session,state -> Objects.equals(state.generation,ticket)?resume(state,session,revision,id,message,context,calendar):null);
+    }
+    private PlanAdjustmentIntent resume(State state,String session,int revision,String id,String message,PlanPageContext context) {
+        return resume(state,session,revision,id,message,context,null);
+    }
+    private PlanAdjustmentIntent resume(State state,String session,int revision,String id,String message,PlanPageContext context,
+            PlannerCalendarDateResolver.Reference calendar) {
+        Pending pending = state.pending;
         if (pending == null) return null;
-        if (pending.baseRevision() != revision || pending.expiresAt() <= clock.getAsLong()) { entries.remove(session); return null; }
+        if (pending.baseRevision() != revision || pending.expiresAt() <= clock.getAsLong()) { state.pending = null; return null; }
         if (id != null && !id.isBlank() && !id.equals(pending.intentId())) return null;
         String text = message == null ? "" : message.trim();
         PlanAdjustmentIntent original = pending.intent();
         String field = original.getMissingFields().isEmpty() ? "" : original.getMissingFields().get(0);
         if ("COMPOUND_ACTION_ORDER".equals(field)) {
-            if (IntentLanguagePolicy.positiveText(text).matches(".*(?:取消|停止|重新开始).*")) { entries.remove(session); remainingActions.remove(session); return null; }
+            if (IntentLanguagePolicy.positiveText(text).matches(".*(?:取消|停止|重新开始).*")) { state.pending = null; state.remaining = null; return null; }
             List<String> actions = original.getCompoundActions().isEmpty()
                     ? IntentLanguagePolicy.distinctActionClauses(original.getRawMessage()) : original.getCompoundActions();
             var refused = new HashSet<Integer>();
@@ -87,14 +133,14 @@ public final class PendingIntentContinuations {
             // A venue inside a refusal or a complete replacement command is not
             // a selection of the old queued operation.
             if (positive.isBlank()) {
-                if (acceptedActions.isEmpty()) { entries.remove(session); remainingActions.remove(session); return null; }
+                if (acceptedActions.isEmpty()) { state.pending = null; state.remaining = null; return null; }
                 return original.toBuilder().compoundActions(acceptedActions)
                         .clarificationQuestion("已移除被拒绝的操作。剩余要求：\n" + String.join("\n", acceptedActions)
                                 + "\n请选择希望执行的项，或发送新的完整调整要求。").build();
             }
             var standalone = classifier.classify(positive, context);
             if (positive.matches("(?s).*(?:添加|加入|删除|移除|替换|换成|重排|重新规划|优化).*")) {
-                entries.remove(session); remainingActions.remove(session);
+                state.pending = null; state.remaining = null;
                 return inheritProtections(original, standalone, context);
             }
             var choice = java.util.regex.Pattern.compile("(?:执行|选择|选|先做|先执行)?\\s*第?\\s*([一二两三四五六七八九十\\d]+)\\s*(?:个|项|条)?(?:操作|调整)?").matcher(positive);
@@ -112,7 +158,7 @@ public final class PendingIntentContinuations {
             if (index == null || index < 1 || index > actions.size()) {
                 // A new complete command may replace the old task; short ambiguous answers keep it.
                 if (!standalone.isRequiresClarification() && standalone.getType() != ConversationIntentType.UNKNOWN) {
-                    entries.remove(session); remainingActions.remove(session); return inheritProtections(original, standalone, context);
+                    state.pending = null; state.remaining = null; return inheritProtections(original, standalone, context);
                 }
                 return original.toBuilder().clarificationQuestion("请选择第 1 至 " + actions.size() + " 项，或单独发送完整调整要求。").build();
             }
@@ -127,7 +173,7 @@ public final class PendingIntentContinuations {
             answer.setPinnedStopIds(union(union(original.getPinnedStopIds(), answer.getPinnedStopIds()), context.getPinnedStopIds()));
             answer.setPreferences(union(original.getPreferences(), answer.getPreferences()));
             answer.setConditions(union(original.getConditions(), answer.getConditions()));
-            AdjustmentTimeScopeResolver.resolve(answer, null);
+            classifier.resolveTimeScope(answer);
             if (answer.getTargetStartMinute() == null && !answer.getMissingFields().contains("TIME_RANGE")) {
                 answer.setTargetStartMinute(original.getTargetStartMinute());
                 answer.setTargetEndMinute(original.getTargetEndMinute());
@@ -135,25 +181,46 @@ public final class PendingIntentContinuations {
             }
             var remaining = new ArrayList<>(acceptedActions); remaining.remove(actions.get(index - 1));
             if (!remaining.isEmpty()) {
-                if (remainingActions.size() >= 1024 && !remainingActions.containsKey(session)) remainingActions.remove(remainingActions.keySet().iterator().next());
-                remainingActions.put(session, original.toBuilder().compoundActions(remaining)
-                        .clarificationQuestion("剩余要求尚未执行：\n" + String.join("\n", remaining) + "\n回复“执行下一个”或选择序号，逐项查看预览。").build());
-            } else remainingActions.remove(session);
-            entries.remove(session);
+                state.remaining = original.toBuilder().compoundActions(remaining)
+                        .clarificationQuestion("剩余要求尚未执行：\n" + String.join("\n", remaining) + "\n回复“执行下一个”或选择序号，逐项查看预览。").build();
+            } else state.remaining = null;
+            state.pending = null;
             return answer;
         }
-        Integer statedDay = ConversationIntentClassifier.extractExplicitDayNumber(text);
+        if (calendar != null && calendar.present() && calendar.day() == null) {
+            var answer = original.toBuilder().rawMessage(original.getRawMessage()+"，"+text).build();
+            PlannerCalendarDateResolver.apply(answer,calendar); return answer;
+        }
+        Integer statedDay = calendar != null && calendar.present() ? calendar.day() : ConversationIntentClassifier.extractExplicitDayNumber(text);
         var explicit = classifier.classify(text,context);
-        boolean explicitCommand = text.matches("(?s).*(?:添加|加入|删除|移除|替换|换成|重排|重新规划|优化).*" );
+        boolean explicitCommand = IntentLanguagePolicy.hasAdjustmentAction(text)
+                && !ConversationIntentClassifier.isDayOnlyReply(text)
+                && !(calendar != null && calendar.dateOnly())
+                && ConversationIntentClassifier.isModificationOperation(explicit.getOperation());
         if (explicitCommand && Objects.equals(explicit.getOperation(), original.getOperation()) && completeCommand(explicit)) {
-            entries.remove(session); remainingActions.remove(session);
+            state.pending = null; state.remaining = null;
             return inheritProtections(original, explicit, context);
+        }
+        if (statedDay != null && !"DAY_NUMBER".equals(field) && !explicitCommand
+                && (ConversationIntentClassifier.isDayOnlyReply(text) || calendar != null && calendar.dateOnly())
+                && operationType(original.getOperation()) != ConversationIntentType.UNKNOWN) {
+            // A different slot may already be pending. Updating the day does not fill that slot
+            // or authorize reusing a concrete stop ID from the previous day.
+            var answer = original.toBuilder().dayNumber(statedDay)
+                    .targetStopId(Objects.equals(statedDay, original.getDayNumber()) ? original.getTargetStopId() : null)
+                    .type(ConversationIntentType.CLARIFICATION).requiresClarification(true)
+                    .rawMessage(original.getRawMessage() + "，" + text)
+                    .pinnedStopIds(union(original.getPinnedStopIds(), context.getPinnedStopIds()))
+                    .clarificationQuestion("已改为第 " + statedDay + " 天。" + nextQuestion(field, original.getClarificationQuestion()))
+                    .build();
+            state.pending = null;
+            return answer;
         }
         if (IntentLanguagePolicy.positiveText(text).matches("(?s).*(?:取消|停止|重新开始).*")
                 || (!"DAY_NUMBER".equals(field) && statedDay != null && !Objects.equals(statedDay, original.getDayNumber()))
                 || (explicitCommand && explicit.getOperation() != null && !Set.of("UNKNOWN","CLARIFICATION").contains(explicit.getOperation())
                     && !Objects.equals(explicit.getOperation(),original.getOperation()))) {
-            entries.remove(session); return null;
+            state.pending = null; return null;
         }
         int day = original.getDayNumber() == null ? (context.getActiveDay() == null ? 1 : context.getActiveDay()) : original.getDayNumber();
         var answerContext = PlanPageContext.builder().activeDay(day).selectedStopId(original.getTargetStopId())
@@ -171,13 +238,27 @@ public final class PendingIntentContinuations {
             };
             answer=original.toBuilder().type(remaining.isEmpty()?operationType:ConversationIntentType.CLARIFICATION).dayNumber(day)
                 .missingFields(remaining).requiresClarification(!remaining.isEmpty()).clarificationQuestion(remaining.isEmpty()?null:"请继续补充具体地点或调整条件。").build();
+        } else if ("REDUCE_COUNT".equals(field)) {
+            Integer count = PlannerQuantityPolicy.count(text);
+            if (count == null || count < 1) return original;
+            var missing = new ArrayList<>(original.getMissingFields()); missing.remove("REDUCE_COUNT");
+            answer = original.toBuilder().reduceCount(count).missingFields(missing)
+                    .type(missing.isEmpty() ? ConversationIntentType.REDUCE_DAY_DENSITY : ConversationIntentType.CLARIFICATION)
+                    .requiresClarification(!missing.isEmpty()).clarificationQuestion(missing.isEmpty() ? null : nextQuestion(missing.get(0),original.getClarificationQuestion())).build();
+        } else if ("REDUCTION_REPHRASE".equals(field)) {
+            if (!PlannerQuantityPolicy.reductionRequest(text) || PlannerQuantityPolicy.retainRequest(text)) return original;
+            answer = classifier.classify(text, answerContext);
+            PlannerQuantityPolicy.normalize(answer);
         } else if ("REPLAN_PURPOSE".equals(field)) {
             Integer choice = ConversationIntentClassifier.parseChineseNumber(text.replaceAll("^(?:选|选择|第)|个$|项$", ""));
             String op = choice == null ? "" : switch(choice) { case 1 -> "REPLAN_DAY"; case 2 -> "REPLACE_STOP"; case 3 -> "REDUCE_DENSITY"; case 4 -> "ADD_STOP"; default -> ""; };
             if (op.isEmpty()) return original;
             answer = PlanAdjustmentIntent.builder().type(ConversationIntentType.CLARIFICATION).operation(op).scope(choice == 2 ? "STOP" : "DAY")
                     .dayNumber(day).requiresClarification(true).rawMessage(original.getRawMessage()).build();
-            if (choice == 3) { answer.setType(ConversationIntentType.REDUCE_DAY_DENSITY); answer.setReduceCount(1); answer.setRequiresClarification(false); }
+            if (choice == 3) {
+                answer.setMissingFields(List.of("REDUCE_COUNT")); answer.setReduceCount(null);
+                answer.setClarificationQuestion("你希望减少多少个景点？请明确数量。");
+            }
             else {
                 answer.setMissingFields(List.of(choice == 1 ? "REPLAN_PREFERENCE" : choice == 2 ? "TARGET_STOP" : "TARGET_PLACE"));
                 answer.setClarificationQuestion(choice == 1 ? "你想怎样重新规划第 " + day + " 天？请告诉我希望保留的兴趣或调整条件。"
@@ -187,7 +268,7 @@ public final class PendingIntentContinuations {
             // Parse the correction alone: old invalid clocks are evidence, not execution input.
             var corrected = original.toBuilder().rawMessage(text).targetStartMinute(null).targetEndMinute(null)
                     .timeScopeResolved(false).requiresClarification(false).missingFields(new ArrayList<>()).build();
-            AdjustmentTimeScopeResolver.resolve(corrected, null);
+            classifier.resolveTimeScope(corrected);
             if (corrected.isRequiresClarification() || corrected.getTargetStartMinute() == null) return original;
             var missing = new ArrayList<>(original.getMissingFields()); missing.remove("TIME_RANGE");
             answer = original.toBuilder().targetStartMinute(corrected.getTargetStartMinute()).targetEndMinute(corrected.getTargetEndMinute())
@@ -195,11 +276,27 @@ public final class PendingIntentContinuations {
                     .clarificationQuestion(missing.isEmpty() ? null : original.getClarificationQuestion())
                     .type(missing.isEmpty() ? operationType(original.getOperation()) : ConversationIntentType.CLARIFICATION).build();
         } else {
+            if ("TARGET_STOP".equals(field)) {
+                String targetReference = IntentLanguagePolicy.positiveText(text);
+                if (targetReference.isBlank() || targetReference.matches("(?:随便|都可以|不知道|不确定|任意|取消)")) return original;
+                var missing = new ArrayList<>(original.getMissingFields());
+                missing.remove("TARGET_STOP");
+                answer = original.toBuilder().targetStopReference(targetReference)
+                        .type(missing.isEmpty() ? operationType(original.getOperation()) : ConversationIntentType.CLARIFICATION)
+                        .missingFields(missing).requiresClarification(!missing.isEmpty())
+                        .clarificationQuestion(missing.isEmpty() ? null : original.getClarificationQuestion()).build();
+            } else {
             String prefix = switch(field) { case "TARGET_PLACE", "VENUE_OR_PREFERENCE" -> "添加"; case "TARGET_STOP" -> "REMOVE_STOP".equals(original.getOperation()) ? "删除" : "替换";
                 case "REPLAN_PREFERENCE", "TIME_RANGE" -> "重新规划行程，"; default -> ""; };
             if (prefix.isEmpty()) return null;
             String slotText = IntentLanguagePolicy.positiveText(text);
-            answer = classifier.classify(prefix + (Set.of("TARGET_PLACE", "VENUE_OR_PREFERENCE").contains(field) ? slotText.replaceFirst("^(?:我)?(?:想去|要去|希望去|想添加|添加|加入|去)\\s*", "") : slotText), answerContext);
+            if ("TARGET_STOP".equals(field) && Set.of("REPLACE_STOP", "SUGGEST_REPLACEMENTS").contains(original.getOperation())
+                    && original.getReplacementPlaceName() != null && !original.getReplacementPlaceName().isBlank()) {
+                answer = classifier.classify("把" + slotText + "替换成" + original.getReplacementPlaceName(), answerContext);
+            } else {
+                answer = classifier.classify(prefix + (Set.of("TARGET_PLACE", "VENUE_OR_PREFERENCE").contains(field)
+                        ? slotText.replaceFirst("^(?:我)?(?:想去|要去|希望去|想添加|添加|加入|去)\\s*", "") : slotText), answerContext);
+            }
             if ("TARGET_STOP".equals(field)) {
                 if (original.getRequestedVenueName() != null) answer.setRequestedVenueName(original.getRequestedVenueName());
                 if (original.getReplacementPlaceName() != null) answer.setReplacementPlaceName(original.getReplacementPlaceName());
@@ -208,29 +305,62 @@ public final class PendingIntentContinuations {
                 answer.setOperation(original.getOperation());
                 if (answer.getTargetStopId() != null || answer.getTargetStopReference() != null) {
                     var missing = new ArrayList<>(original.getMissingFields()); missing.remove("TARGET_STOP");
+                    if (original.getScope() != null) answer.setScope(original.getScope());
                     answer.setMissingFields(missing); answer.setRequiresClarification(!missing.isEmpty());
                     answer.setType(missing.isEmpty() ? operationType(original.getOperation()) : ConversationIntentType.CLARIFICATION);
                     answer.setClarificationQuestion(missing.isEmpty() ? null : original.getClarificationQuestion());
+                } else {
+                    answer.setType(ConversationIntentType.CLARIFICATION);
+                    answer.setScope(original.getScope());
+                    answer.setMissingFields(new ArrayList<>(original.getMissingFields()));
+                    answer.setRequiresClarification(true);
+                    answer.setClarificationQuestion(original.getClarificationQuestion());
                 }
             }
-            if ("REPLAN_PREFERENCE".equals(field) && answer.getPreferences().isEmpty() && answer.getConditions().isEmpty()) {
-                answer.setType(ConversationIntentType.CLARIFICATION); answer.setOperation(original.getOperation()); answer.setRequiresClarification(true); answer.setMissingFields(original.getMissingFields()); answer.setClarificationQuestion(original.getClarificationQuestion());
+            if (Set.of("TARGET_PLACE", "VENUE_OR_PREFERENCE", "REPLAN_PREFERENCE").contains(field)) {
+                boolean slotUnsatisfied = slotText.isBlank() || answer.isRequiresClarification() || answer.getType() == ConversationIntentType.UNKNOWN;
+                if ("REPLAN_PREFERENCE".equals(field) && answer.getPreferences().isEmpty() && answer.getConditions().isEmpty()) {
+                    slotUnsatisfied = true;
+                }
+                if (slotUnsatisfied) {
+                    answer.setType(ConversationIntentType.CLARIFICATION);
+                    answer.setOperation(original.getOperation());
+                    answer.setScope(original.getScope());
+                    answer.setTargetStopId(original.getTargetStopId());
+                    answer.setTargetStopReference(original.getTargetStopReference());
+                    answer.setMissingFields(new ArrayList<>(original.getMissingFields()));
+                    answer.setRequiresClarification(true);
+                    answer.setClarificationQuestion(original.getClarificationQuestion());
+                } else {
+                    var missing = new ArrayList<>(original.getMissingFields());
+                    missing.remove(field);
+                    answer.setOperation(original.getOperation());
+                    if (original.getScope() != null) answer.setScope(original.getScope());
+                    if (original.getTargetStopId() != null) answer.setTargetStopId(original.getTargetStopId());
+                    if (original.getTargetStopReference() != null) answer.setTargetStopReference(original.getTargetStopReference());
+                    if ("REPLACE_STOP".equals(original.getOperation()) || "SUGGEST_REPLACEMENTS".equals(original.getOperation())) {
+                        String rep = answer.getReplacementPlaceName();
+                        if (rep == null || rep.isBlank()) rep = answer.getRequestedVenueName();
+                        if (rep == null || rep.isBlank()) rep = slotText;
+                        if (rep != null && !rep.isBlank()) answer.setReplacementPlaceName(rep);
+                        if (answer.getReplacementPlaceId() == null && answer.getTargetAttractionId() != null) {
+                            answer.setReplacementPlaceId(answer.getTargetAttractionId());
+                        }
+                    }
+                    answer.setMissingFields(missing);
+                    answer.setRequiresClarification(!missing.isEmpty());
+                    answer.setType(missing.isEmpty() ? operationType(original.getOperation()) : ConversationIntentType.CLARIFICATION);
+                    answer.setClarificationQuestion(missing.isEmpty() ? null : nextQuestion(missing.get(0), original.getClarificationQuestion()));
+                }
             }
-            if (Set.of("TARGET_PLACE", "VENUE_OR_PREFERENCE", "REPLAN_PREFERENCE").contains(field)
-                    && !answer.isRequiresClarification() && answer.getType() != ConversationIntentType.UNKNOWN) {
-                // A parsed slot answer is not a replacement for the whole pending
-                // task. Other required fields remain required regardless of order.
-                var missing = new ArrayList<>(original.getMissingFields());
-                missing.remove(field);
-                answer.setOperation(original.getOperation());
-                answer.setMissingFields(missing);
-                answer.setRequiresClarification(!missing.isEmpty());
-                answer.setType(missing.isEmpty() ? operationType(original.getOperation()) : ConversationIntentType.CLARIFICATION);
-                answer.setClarificationQuestion(missing.isEmpty() ? null : nextQuestion(missing.get(0), original.getClarificationQuestion()));
             }
         }
-        answer.setDayNumber(day);
-        answer.setRawMessage(original.getRawMessage() + "，" + text);
+        if (answer.getMissingFields() != null && answer.getMissingFields().contains("DAY_NUMBER")) {
+            answer.setDayNumber(original.getDayNumber());
+        } else {
+            answer.setDayNumber(day);
+        }
+        answer.setRawMessage(Set.of("REDUCTION_REPHRASE", "REDUCE_COUNT").contains(field) ? text : original.getRawMessage() + "，" + text);
         answer.setPreserveReferences(union(original.getPreserveReferences(), answer.getPreserveReferences()));
         // A short answer fills a slot; an omitted/default empty pin list does not
         // authorize removing protections already saved by the server.
@@ -238,16 +368,17 @@ public final class PendingIntentContinuations {
         answer.setPreferences(union(original.getPreferences(), answer.getPreferences()));
         answer.setConditions(union(original.getConditions(), answer.getConditions()));
         if (answer.getTargetStartMinute() == null) { answer.setTargetStartMinute(original.getTargetStartMinute()); answer.setTargetEndMinute(original.getTargetEndMinute()); answer.setTimeScopeResolved(original.isTimeScopeResolved()); }
-        entries.remove(session);
+        state.pending = null;
         return answer;
     }
     private static String nextQuestion(String field, String fallback) {
         return switch (field) {
             case "DAY_NUMBER" -> "你想安排在第几天？";
-            case "TIME_RANGE" -> "请明确一个有效的调整时段，例如18:00以后或20:00至21:00；其余安排会保留。";
+            case "TIME_RANGE" -> "请明确一个有效的调整时段，例如某个具体时刻之后或一段明确起止时间；其余安排会保留。";
             case "TARGET_PLACE", "VENUE_OR_PREFERENCE" -> "请告诉我想要添加的具体地点或偏好。";
             case "TARGET_STOP" -> "请告诉我要调整的具体站点。";
             case "REPLAN_PREFERENCE" -> "请告诉我希望保留的兴趣或调整条件。";
+            case "REDUCE_COUNT" -> "你希望减少多少个景点？";
             default -> fallback;
         };
     }
@@ -267,7 +398,7 @@ public final class PendingIntentContinuations {
         answer.setPinnedStopIds(union(union(original.getPinnedStopIds(), answer.getPinnedStopIds()), context.getPinnedStopIds()));
         answer.setPreferences(union(original.getPreferences(), answer.getPreferences()));
         answer.setConditions(union(original.getConditions(), answer.getConditions()));
-        AdjustmentTimeScopeResolver.resolve(answer, null);
+        classifier.resolveTimeScope(answer);
         if (answer.getTargetStartMinute() == null && !answer.getMissingFields().contains("TIME_RANGE")) {
             answer.setTargetStartMinute(original.getTargetStartMinute()); answer.setTargetEndMinute(original.getTargetEndMinute());
             answer.setTimeScopeResolved(original.getTargetStartMinute() != null || original.isTimeScopeResolved());
@@ -307,6 +438,8 @@ public final class PendingIntentContinuations {
                 case "REPLANPURPOSE" -> "REPLAN_PURPOSE";
                 case "REPLANPREFERENCE","PREFERENCES","CONDITIONS" -> "REPLAN_PREFERENCE";
                 case "TIMERANGE","TARGETSTARTMINUTE","TARGETENDMINUTE" -> "TIME_RANGE";
+                case "REDUCECOUNT" -> "REDUCE_COUNT";
+                case "REDUCTIONREPHRASE" -> "REDUCTION_REPHRASE";
                 default -> "";
             };
             if (!mapped.isEmpty() && !canonical.contains(mapped)) canonical.add(mapped);

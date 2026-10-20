@@ -1,11 +1,10 @@
 package com.ai.guide.domain.attraction.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -24,19 +23,27 @@ import java.util.concurrent.ConcurrentHashMap;
 public class RuntimeAttractionDetailService {
 
     private final GeoRouteGatewayPort routeService;
+    private final DynamicShortTripPolicyPort dynamicPolicy;
     private final Map<String, Attraction> runtimeAttractionCache = new ConcurrentHashMap<>();
 
-    public RuntimeAttractionDetailService(@Autowired(required = false) GeoRouteGatewayPort routeService) {
+    @Autowired
+    public RuntimeAttractionDetailService(@Autowired(required = false) GeoRouteGatewayPort routeService,
+                                          DynamicShortTripPolicyPort dynamicPolicy) {
         this.routeService = routeService;
+        this.dynamicPolicy = dynamicPolicy;
+    }
+
+    public RuntimeAttractionDetailService(GeoRouteGatewayPort routeService) {
+        this(routeService, DynamicShortTripPolicyPort::unconfigured);
     }
 
     public Map<String, Object> detail(String entityId) {
         String poiId = poiId(entityId);
         if (poiId.isBlank()) return null;
-        PoiOutcome outcome = routeService.poiDetail(poiId);
-        if (outcome.status() != OutcomeStatus.SUCCESS
+        GeoPoiOutcome outcome = routeService.poiDetail(poiId);
+        if (outcome.status() != GeoOutcomeStatus.SUCCESS
                 || outcome.candidates() == null || outcome.candidates().isEmpty()) return null;
-        AmapResponseNormalizer.PoiCandidate poi = outcome.candidates().get(0);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = outcome.candidates().get(0);
         return projection(poi, outcome);
     }
 
@@ -47,10 +54,10 @@ public class RuntimeAttractionDetailService {
         if (cached != null) return cached;
         String poiId = poiId(entityId);
         if (poiId.isBlank()) return null;
-        PoiOutcome outcome = routeService.poiDetail(poiId);
-        if (outcome.status() != OutcomeStatus.SUCCESS
+        GeoPoiOutcome outcome = routeService.poiDetail(poiId);
+        if (outcome.status() != GeoOutcomeStatus.SUCCESS
                 || outcome.candidates() == null || outcome.candidates().isEmpty()) return null;
-        AmapResponseNormalizer.PoiCandidate poi = outcome.candidates().get(0);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = outcome.candidates().get(0);
         Attraction built = buildAttractionFromPoi(entityId, poi);
         if (built != null) {
             runtimeAttractionCache.put(entityId, built);
@@ -58,17 +65,18 @@ public class RuntimeAttractionDetailService {
         return built;
     }
 
-    public Attraction buildAttractionFromPoi(String entityId, AmapResponseNormalizer.PoiCandidate poi) {
+    public Attraction buildAttractionFromPoi(String entityId, com.ai.guide.domain.geo.model.GeoPoiCandidate poi) {
         if (poi == null) return null;
         String name = text(poi.name());
         String address = text(poi.address());
         String district = extractDistrict(address);
         String location = coordinate(poi.coordinate());
         String photoUrl = text(poi.photoUrl());
-        int visitMins = RuntimeLocationPlanner.inferVisitMinutes(name, text(poi.type()), 60);
+        int visitMins = dynamicPolicy.getPolicy().visitDuration(name, text(poi.type()), 60);
         return Attraction.builder()
                 .id(entityId)
                 .name(name)
+                .city(text(poi.cityName()))
                 .displayName(name)
                 .district(district.isBlank() ? "所在片区待核验" : district)
                 .category("探索打卡")
@@ -123,8 +131,8 @@ public class RuntimeAttractionDetailService {
 
         if (routeService == null || !routeService.isConfigured()) return null;
 
-        PoiOutcome search = routeService.searchPoi(cleanQuery, effectiveCity);
-        List<AmapResponseNormalizer.PoiCandidate> candidates = search.candidates();
+        GeoPoiOutcome search = routeService.searchPoi(cleanQuery, effectiveCity);
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates = search.candidates();
 
         // 若直接搜索未果且包含高校/地标后缀，尝试以核心主体兜底检索
         if ((candidates == null || candidates.isEmpty()) && cleanQuery.length() > 6) {
@@ -137,7 +145,7 @@ public class RuntimeAttractionDetailService {
                 fallbackQuery = cleanQuery.substring(0, cleanQuery.indexOf("公园") + 2);
             }
             if (!fallbackQuery.equals(cleanQuery)) {
-                PoiOutcome retry = routeService.searchPoi(fallbackQuery, effectiveCity);
+                GeoPoiOutcome retry = routeService.searchPoi(fallbackQuery, effectiveCity);
                 if (retry.candidates() != null && !retry.candidates().isEmpty()) {
                     candidates = retry.candidates();
                 }
@@ -146,7 +154,7 @@ public class RuntimeAttractionDetailService {
 
         if (candidates == null || candidates.isEmpty()) return null;
 
-        AmapResponseNormalizer.PoiCandidate poi = candidates.get(0);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = candidates.get(0);
         String entityId = "amap-" + text(poi.poiId());
         if (entityId.equals("amap-")) {
             entityId = "amap-" + Math.abs(cleanQuery.hashCode());
@@ -188,14 +196,18 @@ public class RuntimeAttractionDetailService {
      * provider detail. The caller is responsible for deciding that the message
      * is a place question; this service never guesses that intent. */
     public String answerReference(String reference) {
+        return answerReference(reference, "");
+    }
+
+    public String answerReference(String reference, String city) {
         String query = text(reference);
         if (query.isBlank()) return "请提供具体景点名称，我再为你查询高德实时详情。";
         if (routeService == null || !routeService.isConfigured()) return "地点查询暂不可用，请稍后重试。";
-        PoiOutcome search = routeService.searchPoi(query, "");
+        GeoPoiOutcome search = routeService.searchPoi(query, text(city));
         if (search.candidates() == null || search.candidates().isEmpty()) {
             return "高德暂时没有找到“" + query + "”，请检查名称或补充所在区县。";
         }
-        AmapResponseNormalizer.PoiCandidate poi = search.candidates().get(0);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate poi = search.candidates().get(0);
         return answer("amap-" + text(poi.poiId()));
     }
 
@@ -205,8 +217,8 @@ public class RuntimeAttractionDetailService {
                 + "。\n【出行核验】本次 POI 未提供可靠的开放时间、门票、预约、坡度或无障碍信息，请核实官方公告与现场条件后安排。";
     }
 
-    private Map<String, Object> projection(AmapResponseNormalizer.PoiCandidate poi,
-                                           PoiOutcome outcome) {
+    private Map<String, Object> projection(com.ai.guide.domain.geo.model.GeoPoiCandidate poi,
+                                           GeoPoiOutcome outcome) {
         String id = "amap-" + text(poi.poiId());
         String name = text(poi.name());
         String address = text(poi.address());
@@ -221,7 +233,7 @@ public class RuntimeAttractionDetailService {
         result.put("type", text(poi.type()));
         result.put("address", address);
         result.put("location", coordinate(poi.coordinate()));
-        int visitMins = RuntimeLocationPlanner.inferVisitMinutes(name, text(poi.type()), 180);
+        int visitMins = dynamicPolicy.getPolicy().visitDuration(name, text(poi.type()), 180);
         result.put("duration", "约 " + visitMins + " 分钟");
         String ticketAdvice = (address.contains("大学") || address.contains("学院") || name.contains("大学") || name.contains("学院"))
                 ? "以现场及校方公告为准（校区管理需遵守参访出入规则）"
@@ -261,7 +273,7 @@ public class RuntimeAttractionDetailService {
         return text(city).replaceFirst("市$", "");
     }
 
-    private List<Map<String, Object>> facts(AmapResponseNormalizer.PoiCandidate poi) {
+    private List<Map<String, Object>> facts(com.ai.guide.domain.geo.model.GeoPoiCandidate poi) {
         List<Map<String, Object>> facts = new ArrayList<>();
         facts.add(fact("地址", text(poi.address()), text(poi.address()).isBlank() ? "未知" : "动态",
                 "来自本次高德 POI 详情查询。"));
@@ -294,7 +306,7 @@ public class RuntimeAttractionDetailService {
         return "";
     }
 
-    private String coordinate(AmapResponseNormalizer.Coordinate coordinate) {
+    private String coordinate(com.ai.guide.domain.geo.model.GeoCoordinate coordinate) {
         return coordinate == null ? "" : coordinate.longitude() + "," + coordinate.latitude();
     }
 

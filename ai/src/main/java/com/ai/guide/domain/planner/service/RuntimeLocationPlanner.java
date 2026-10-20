@@ -1,19 +1,22 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.common.context.OperationDeadline;
+
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.dining.service.DiningVenueService;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort;
+import com.ai.guide.domain.planner.engine.PlannerScoringPolicy;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.planner.service.strategy.ChongqingTopographyStrategy;
 import com.ai.guide.domain.planner.service.strategy.ChengduPlainTopographyStrategy;
 import com.ai.guide.domain.planner.service.strategy.XiAnHeritageTopographyStrategy;
 import com.ai.guide.domain.planner.service.strategy.GenericPlainTopographyStrategy;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -47,39 +50,66 @@ import java.util.regex.Pattern;
 @Service
 public class RuntimeLocationPlanner {
 
-    private static final String SCENIC_TYPE = "110000";
-    private static final int DEFAULT_START_MINUTE = 9 * 60 + 30;
-
     private final GeoRouteGatewayPort routeService;
     private final ObjectMapper objectMapper;
     private final int searchRadiusMeters;
     private final int maxCandidates;
+    private final int mediumBudgetMinutes;
+    private final int longBudgetMinutes;
+    private final int shortRadiusMeters;
+    private final int mediumRadiusMeters;
+    private final int longRadiusMeters;
+    private final int shortPageCount;
+    private final int mediumPageCount;
+    private final int longPageCount;
     private final DiningVenueService diningVenueService;
-    private final TaxonomyPort taxonomy;
+    private final PlannerTaxonomyPort taxonomy;
+    private final DynamicShortTripPolicyPort dynamicPolicy;
     private final TopographyStrategyRouter topographyStrategyRouter;
+    private final com.ai.guide.domain.planner.engine.ItineraryTimeEngine durationParser =
+            new com.ai.guide.domain.planner.engine.ItineraryTimeEngine();
 
     @Autowired
     public RuntimeLocationPlanner(
             GeoRouteGatewayPort routeService,
             ObjectMapper objectMapper,
-            @Value("${planner.runtime-location.search-radius-meters:6000}") int searchRadiusMeters,
-            @Value("${planner.runtime-location.max-candidates:40}") int maxCandidates,
+            @Value("${planner.runtime-location.search-radius-meters}") int searchRadiusMeters,
+            @Value("${planner.runtime-location.max-candidates}") int maxCandidates,
+            @Value("${planner.runtime-location.medium-budget-minutes}") int mediumBudgetMinutes,
+            @Value("${planner.runtime-location.long-budget-minutes}") int longBudgetMinutes,
+            @Value("${planner.runtime-location.short-radius-meters}") int shortRadiusMeters,
+            @Value("${planner.runtime-location.medium-radius-meters}") int mediumRadiusMeters,
+            @Value("${planner.runtime-location.long-radius-meters}") int longRadiusMeters,
+            @Value("${planner.runtime-location.short-page-count}") int shortPageCount,
+            @Value("${planner.runtime-location.medium-page-count}") int mediumPageCount,
+            @Value("${planner.runtime-location.long-page-count}") int longPageCount,
             DiningVenueService diningVenueService,
-            TaxonomyPort taxonomy,
+            PlannerTaxonomyPort taxonomy,
+            DynamicShortTripPolicyPort dynamicPolicy,
             TopographyStrategyRouter topographyStrategyRouter) {
         this.routeService = routeService;
         this.objectMapper = objectMapper;
         this.searchRadiusMeters = Math.max(500, searchRadiusMeters);
         this.maxCandidates = Math.max(10, Math.min(60, maxCandidates));
+        this.mediumBudgetMinutes = mediumBudgetMinutes;
+        this.longBudgetMinutes = longBudgetMinutes;
+        this.shortRadiusMeters = shortRadiusMeters;
+        this.mediumRadiusMeters = mediumRadiusMeters;
+        this.longRadiusMeters = longRadiusMeters;
+        this.shortPageCount = shortPageCount;
+        this.mediumPageCount = mediumPageCount;
+        this.longPageCount = longPageCount;
         this.diningVenueService = diningVenueService;
         this.taxonomy = taxonomy;
+        this.dynamicPolicy = dynamicPolicy;
         this.topographyStrategyRouter = topographyStrategyRouter;
     }
 
     public RuntimeLocationPlanner(GeoRouteGatewayPort routeService, ObjectMapper objectMapper,
                                   int searchRadiusMeters, int maxCandidates,
-                                  DiningVenueService diningVenueService, TaxonomyPort taxonomy) {
-        this(routeService, objectMapper, searchRadiusMeters, maxCandidates, diningVenueService, taxonomy,
+                                  DiningVenueService diningVenueService, PlannerTaxonomyPort taxonomy) {
+        this(routeService, objectMapper, searchRadiusMeters, maxCandidates, 180, 300, 4000, 6000, 8000, 2, 3, 3, diningVenueService, taxonomy,
+                taxonomy instanceof DynamicShortTripPolicyPort policy ? policy : DynamicShortTripPolicyPort::unconfigured,
                 new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy(), new ChengduPlainTopographyStrategy(),
                         new XiAnHeritageTopographyStrategy(), new GenericPlainTopographyStrategy())));
     }
@@ -87,7 +117,7 @@ public class RuntimeLocationPlanner {
     public RuntimeLocationPlanner(GeoRouteGatewayPort routeService, ObjectMapper objectMapper,
                                   int searchRadiusMeters, int maxCandidates) {
         this(routeService, objectMapper, searchRadiusMeters, maxCandidates,
-                new DiningVenueService(null, routeService, objectMapper), new TaxonomyProvider());
+                new DiningVenueService(null, routeService, TaxonomyPort.empty()), TaxonomyPort.empty());
     }
 
     /** Convenient constructor for focused unit tests. */
@@ -106,8 +136,8 @@ public class RuntimeLocationPlanner {
                     "当前未配置高德服务端密钥，无法确认起点与周边景点；不会回退到无关核心景点。", 0);
         }
 
-        PoiOutcome startOutcome = routeService.searchPoi(requestedPlace, city(constraints));
-        AmapResponseNormalizer.PoiCandidate start = chooseStart(startOutcome.candidates(), requestedPlace);
+        GeoPoiOutcome startOutcome = routeService.searchPoi(requestedPlace, city(constraints));
+        com.ai.guide.domain.geo.model.GeoPoiCandidate start = chooseStart(startOutcome.candidates(), requestedPlace);
         if (start == null || start.coordinate() == null) {
             String reason = startOutcome.reason() == null || startOutcome.reason().isBlank()
                     ? "高德没有返回可定位的起点。" : startOutcome.reason();
@@ -122,21 +152,23 @@ public class RuntimeLocationPlanner {
                     "无法确认“" + requestedPlace + "”的地图位置：" + reason, 0);
         }
 
-        int pages = budgetMinutes >= 300 ? 3 : (budgetMinutes >= 180 ? 3 : 2);
-        int effectiveRadius = budgetMinutes >= 300 ? Math.max(searchRadiusMeters, 8000)
-                : budgetMinutes >= 180 ? Math.max(searchRadiusMeters, 6000) : Math.max(searchRadiusMeters, 4000);
-        PoiOutcome around = routeService.searchAround(
-                coordinate(start.coordinate()), effectiveRadius, SCENIC_TYPE, "", city(constraints), pages);
-        List<AmapResponseNormalizer.PoiCandidate> candidates = usableCandidates(around.candidates(), start);
-        if (candidates.isEmpty()) {
+        boolean longBudget = budgetMinutes >= longBudgetMinutes;
+        boolean mediumBudget = budgetMinutes >= mediumBudgetMinutes;
+        int pages = longBudget ? longPageCount : mediumBudget ? mediumPageCount : shortPageCount;
+        int budgetRadius = longBudget ? longRadiusMeters : mediumBudget ? mediumRadiusMeters : shortRadiusMeters;
+        int effectiveRadius = Math.max(searchRadiusMeters, budgetRadius);
+        GeoPoiOutcome around = routeService.searchAround(
+                coordinate(start.coordinate()), effectiveRadius, scenicType(), "", city(constraints), pages);
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates = usableCandidates(around.candidates(), start);
+        if (candidates.isEmpty() && !OperationDeadline.expired()) {
             // Some provider regions return a broader result only when the type
             // filter is omitted. This remains a generic provider fallback.
             around = routeService.searchAround(coordinate(start.coordinate()), effectiveRadius,
-                    "", "景点", city(constraints), Math.min(pages, 2));
+                    "", requiredTaxonomyValue("runtimePoiFallbackSearchKeyword"), city(constraints), Math.min(pages, 2));
             candidates = usableCandidates(around.candidates(), start);
         }
 
-        List<AmapResponseNormalizer.PoiCandidate> rankedCandidates = rankCandidates(start, candidates, constraints);
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> rankedCandidates = rankCandidates(start, candidates, constraints);
         List<Map<String, Object>> stops = selectStops(start, rankedCandidates, constraints, budgetMinutes);
         boolean routesVerified = allRoutesVerified(stops);
         Map<String, Object> spatial = mutableMap(trip.get("spatialPlan"));
@@ -177,6 +209,20 @@ public class RuntimeLocationPlanner {
         trip.put("degraded", stops.isEmpty() || !routesVerified);
         trip.put("degradationReasons", stops.isEmpty() ? List.of("NO_FEASIBLE_NEARBY_CANDIDATE")
                 : routesVerified ? List.of() : List.of("UNVERIFIED_ROUTE_SEGMENT"));
+        if (OperationDeadline.expired()) {
+            trip.put("degraded", true);
+            List<String> reasons = new ArrayList<>();
+            if (trip.get("degradationReasons") instanceof List<?> currentReasons)
+                currentReasons.forEach(reason -> reasons.add(String.valueOf(reason)));
+            reasons.add("PLANNING_DEADLINE_EXCEEDED");
+            trip.put("degradationReasons", reasons);
+            spatial.put("status", stops.isEmpty() ? "TIMEOUT" : "PARTIAL_TIMEOUT");
+            trip.put("summary", "规划时间预算已用尽，当前仅保留已完成的 " + stops.size() + " 处站点；其余安排尚未完成，可继续局部调整。");
+            Map<String, Object> partialSource = mutableMap(trip.get("sourceStatus"));
+            partialSource.put("planning", "部分完成：请求超时");
+            partialSource.put("fallback", true);
+            trip.put("sourceStatus", partialSource);
+        }
         return trip;
     }
 
@@ -229,10 +275,10 @@ public class RuntimeLocationPlanner {
         }
         String startCoordinate = runtimeStartCoordinate(sourceTrip);
         if (startCoordinate.isBlank()) return null;
-        List<AmapResponseNormalizer.PoiCandidate> candidates = searchCandidates(
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates = searchCandidates(
                 startCoordinate, requestedName, constraints);
         Set<String> used = usedVenues(sourceTrip);
-        AmapResponseNormalizer.Coordinate startPoint = AmapResponseNormalizer.parseCoordinate(startCoordinate);
+        com.ai.guide.domain.geo.model.GeoCoordinate startPoint = com.ai.guide.domain.geo.model.GeoCoordinates.parse(startCoordinate);
         candidates = candidates.stream()
                 .filter(candidate -> !used.contains("amap-" + text(candidate.poiId())))
                 .filter(candidate -> !text(candidate.poiId()).equals(text(resolvedTarget.stop().get("amapPoiId"))))
@@ -256,8 +302,8 @@ public class RuntimeLocationPlanner {
         int sourcePlannedMinutes = plannedMinutes(sourceTrip);
         int replacedTravelMinutes = routeMinutesFromStop(resolvedTarget.stop());
         int optionIndex = 1;
-        for (AmapResponseNormalizer.PoiCandidate candidate : candidates) {
-            RoutePairOutcome route = routeService.routePair(
+        for (com.ai.guide.domain.geo.model.GeoPoiCandidate candidate : candidates) {
+            GeoRoutePairOutcome route = routeService.routePair(
                     previousCoordinate, coordinate(candidate.coordinate()), city(constraints), previousPoiId,
                     text(candidate.navigationPoiId()).isBlank() ? text(candidate.poiId()) : candidate.navigationPoiId(),
                     "transit".equalsIgnoreCase(constraints.getTransportPreference()) ? "transit" : "walking");
@@ -330,25 +376,31 @@ public class RuntimeLocationPlanner {
         return result;
     }
 
-    private List<AmapResponseNormalizer.PoiCandidate> searchCandidates(String startCoordinate,
+    private List<com.ai.guide.domain.geo.model.GeoPoiCandidate> searchCandidates(String startCoordinate,
                                                                          String requestedName,
                                                                          TravelConstraints constraints) {
-        PoiOutcome outcome;
+        GeoPoiOutcome outcome;
         if (requestedName != null && !requestedName.isBlank()) {
             String reference = requestedName.startsWith("amap-") ? requestedName.substring("amap-".length()) : requestedName;
             outcome = requestedName.startsWith("amap-")
                     ? routeService.poiDetail(reference)
                     : routeService.searchPoi(reference, city(constraints));
         } else {
-            outcome = routeService.searchAround(startCoordinate, searchRadiusMeters, SCENIC_TYPE, "", city(constraints), 3);
+            outcome = routeService.searchAround(startCoordinate, searchRadiusMeters, scenicType(), "", city(constraints), 3);
             if (outcome.candidates().isEmpty()) {
-                outcome = routeService.searchAround(startCoordinate, searchRadiusMeters, "", "景点", city(constraints), 3);
+                outcome = routeService.searchAround(startCoordinate, searchRadiusMeters, "", requiredTaxonomyValue("runtimePoiFallbackSearchKeyword"), city(constraints), 3);
             }
         }
         if (outcome.candidates() == null) return List.of();
         return outcome.candidates().stream()
                 .filter(candidate -> candidate != null && candidate.coordinate() != null && !safeName(candidate).isBlank())
                 .toList();
+    }
+
+    private String requiredTaxonomyValue(String key) {
+        return taxonomy.getHints(key).stream().findFirst().map(String::trim)
+                .filter(value -> !value.isBlank())
+                .orElseThrow(() -> new IllegalStateException("Missing planner taxonomy value: " + key));
     }
 
     private boolean isRuntimeTrip(Map<String, Object> trip) {
@@ -373,9 +425,9 @@ public class RuntimeLocationPlanner {
         return firstNonBlank(text(previous.get("amapPoiId")), text(previous.get("venueId")));
     }
 
-    private Map<String, Object> replacementStop(AmapResponseNormalizer.PoiCandidate candidate,
+    private Map<String, Object> replacementStop(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate,
                                                  Map<String, Object> original,
-                                                 RoutePairOutcome route,
+                                                 GeoRoutePairOutcome route,
                                                  int travelMinutes, int visitMinutes, String reason) {
         Map<String, Object> stop = new LinkedHashMap<>();
         stop.put("id", original.get("id"));
@@ -429,12 +481,14 @@ public class RuntimeLocationPlanner {
         updatedStatus.put("poi", "已查询");
         boolean verified = allRoutesVerified(mapList(trip.get("days")).stream()
                 .flatMap(day -> mapList(day.get("stops")).stream()).toList());
+        // Verifying retained routes cannot complete the missing portion of an earlier timed-out plan.
+        boolean planningIncomplete = com.ai.guide.domain.planner.model.PlannerVersionMetadata.planningIncomplete(trip);
         updatedStatus.put("route", verified ? "已核验" : "待确认");
         updatedStatus.put("weather", weatherStatus);
-        updatedStatus.put("fallback", !verified);
+        updatedStatus.put("fallback", planningIncomplete || !verified);
         trip.put("sourceStatus", updatedStatus);
         trip.put("routeDataStatus", verified ? "VERIFIED_AMAP" : "PARTIAL");
-        trip.put("degraded", !verified);
+        trip.put("degraded", planningIncomplete || !verified);
     }
 
     private Map<String, Object> copy(Map<String, Object> source) {
@@ -485,7 +539,7 @@ public class RuntimeLocationPlanner {
         return null;
     }
 
-    private Map<String, Object> addStopTemplate(AmapResponseNormalizer.PoiCandidate candidate) {
+    private Map<String, Object> addStopTemplate(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate) {
         Map<String, Object> template = new LinkedHashMap<>();
         template.put("id", "runtime-added-" + text(candidate.poiId()));
         template.put("stableStopId", template.get("id"));
@@ -504,8 +558,10 @@ public class RuntimeLocationPlanner {
 
     private int durationMinutes(Object value) {
         String text = text(value);
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(\\d+)").matcher(text);
-        return matcher.find() ? Math.max(30, Integer.parseInt(matcher.group(1))) : 60;
+        int knownMinutes = durationParser.parseKnownDurationMinutes(text);
+        if (knownMinutes > 0) return knownMinutes;
+        DynamicShortTripPolicyPort.Policy policy = dynamicPolicy.getPolicy();
+        return policy.unknownStopDurationMinutes();
     }
 
     private int plannedMinutes(Map<String, Object> trip) {
@@ -559,72 +615,87 @@ public class RuntimeLocationPlanner {
     private record StopRef(Map<String, Object> day, List<Map<String, Object>> stops,
                            int index, Map<String, Object> stop) {}
 
-    public static int resolveStartMinute(TravelConstraints constraints) {
-        String text = constraints != null ? constraints.getRawPrompt() : "";
-        if (text != null && !text.isBlank()) {
-            Matcher mTime = Pattern.compile("(?i)(?:上午|早上|早晨)\\s*(\\d{1,2})(?:点|时|:(\\d{2}))?").matcher(text);
-            if (mTime.find()) {
-                int h = Integer.parseInt(mTime.group(1));
-                int m = mTime.group(2) != null ? Integer.parseInt(mTime.group(2)) : 0;
-                return Math.max(6 * 60, Math.min(23 * 60, h * 60 + m));
-            }
-            Matcher mNoon = Pattern.compile("(?i)(?:中午)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(text);
-            if (mNoon.find()) {
-                int h = mNoon.group(1) != null ? Integer.parseInt(mNoon.group(1)) : 12;
-                int m = mNoon.group(2) != null ? Integer.parseInt(mNoon.group(2)) : 0;
-                return h * 60 + m;
-            }
-            Matcher mAfternoon = Pattern.compile("(?i)(?:下午)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(text);
-            if (mAfternoon.find()) {
-                int h = mAfternoon.group(1) != null ? Integer.parseInt(mAfternoon.group(1)) : 2;
-                if (h < 12) h += 12;
-                int m = mAfternoon.group(2) != null ? Integer.parseInt(mAfternoon.group(2)) : 0;
-                return h * 60 + m;
-            }
-            Matcher mEvening = Pattern.compile("(?i)(?:晚上|今晚|夜间)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(text);
-            if (mEvening.find()) {
-                int h = mEvening.group(1) != null ? Integer.parseInt(mEvening.group(1)) : 7;
-                if (h < 12) h += 12;
-                int m = mEvening.group(2) != null ? Integer.parseInt(mEvening.group(2)) : 0;
-                return h * 60 + m;
-            }
-            Matcher mExact = Pattern.compile("(\\b\\d{1,2})[:：](\\d{2})").matcher(text);
-            if (mExact.find()) {
-                int h = Integer.parseInt(mExact.group(1));
-                int m = Integer.parseInt(mExact.group(2));
-                return h * 60 + m;
-            }
-            if (text.contains("下午")) return 14 * 60;
-            if (text.contains("今晚") || text.contains("晚上")) return 18 * 60 + 30;
-            if (text.contains("上午") || text.contains("早上")) return 9 * 60 + 30;
+    public int resolveStartMinute(TravelConstraints constraints) {
+        String prompt = constraints == null ? "" : constraints.getRawPrompt();
+        String normalized = prompt == null ? "" : prompt;
+        if (!normalized.isBlank()) {
+            Matcher exact = Pattern.compile("(?i)(?:上午|早上|早晨)\\s*(\\d{1,2})(?:点|时|:(\\d{2}))?").matcher(normalized);
+            if (exact.find()) return boundedMinute(Integer.parseInt(exact.group(1)), exact.group(2));
+            Matcher noon = Pattern.compile("(?i)(?:中午)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(normalized);
+            if (noon.find()) return noon.group(1) == null ? configuredMinute("runtimeDefaultNoonTime", currentMinute())
+                    : boundedMinute(Integer.parseInt(noon.group(1)), noon.group(2));
+            Matcher afternoon = Pattern.compile("(?i)(?:下午)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(normalized);
+            if (afternoon.find()) return afternoon.group(1) == null ? configuredMinute("runtimeDefaultAfternoonTime", currentMinute())
+                    : boundedMinute(Integer.parseInt(afternoon.group(1)), afternoon.group(2));
+            Matcher evening = Pattern.compile("(?i)(?:晚上|今晚|夜间)\\s*(\\d{1,2})?(?:点|时|:(\\d{2}))?").matcher(normalized);
+            if (evening.find()) return evening.group(1) == null ? configuredMinute("runtimeDefaultEveningTime", currentMinute())
+                    : boundedMinute(Integer.parseInt(evening.group(1)), evening.group(2));
+            Matcher clockTime = Pattern.compile("(\\b\\d{1,2})[:：](\\d{2})").matcher(normalized);
+            if (clockTime.find()) return boundedMinute(Integer.parseInt(clockTime.group(1)), clockTime.group(2));
+            if (normalized.contains("下午")) return configuredMinute("runtimeDefaultAfternoonTime", currentMinute());
+            if (taxonomy.getHints("runtimeNightKeywords").stream().anyMatch(normalized::contains))
+                return configuredMinute("runtimeDefaultNightTime", currentMinute());
+            if (normalized.contains("上午") || normalized.contains("早上"))
+                return configuredMinute("runtimeDefaultMorningTime", currentMinute());
         }
 
-        // 2. User did not specify time: obtain current local time in Chongqing (Asia/Shanghai)
         try {
-            ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"));
+            String zone = taxonomy.getHints("runtimeTimeZone").stream().findFirst().orElse(ZoneId.systemDefault().getId());
+            ZonedDateTime now = ZonedDateTime.now(ZoneId.of(zone));
             int currentMinute = now.getHour() * 60 + now.getMinute();
-            // Daytime active hours: 07:30 to 18:30 (depart soon)
-            if (currentMinute >= 7 * 60 + 30 && currentMinute <= 18 * 60 + 30) {
-                return ((currentMinute + 9) / 10) * 10;
+            int[] activeWindow = configuredMinuteWindow("runtimeActiveWindow");
+            int rounding = positiveHint("runtimeTimeRoundingMinutes", 1);
+            if (activeWindow != null && currentMinute >= activeWindow[0] && currentMinute <= activeWindow[1])
+                return Math.min(1439, ((currentMinute + rounding - 1) / rounding) * rounding);
+            boolean requestsNight = taxonomy.getHints("runtimeNightKeywords").stream().anyMatch(normalized::contains);
+            if (activeWindow != null && currentMinute > activeWindow[1] && requestsNight) {
+                int latest = configuredMinute("runtimeLatestNightStartTime", currentMinute);
+                return Math.min(latest, ((currentMinute + rounding - 1) / rounding) * rounding);
             }
-            // Explicit night travel: after 18:30 only when user prompt says night/evening
-            if (currentMinute > 18 * 60 + 30 && text != null && text.matches(".*(夜|今晚|晚上|夜景|夜市|酒吧).*")) {
-                return Math.min(20 * 60, ((currentMinute + 9) / 10) * 10);
-            }
-            // In the evening (>18:30) or early morning (<07:30) without night keywords, default to normal tourist departure 09:30 AM
-            return DEFAULT_START_MINUTE;
-        } catch (Exception ignored) {}
+            return configuredMinute("runtimeDefaultStartTime", currentMinute);
+        } catch (Exception ignored) {
+            return configuredMinute("runtimeDefaultStartTime", currentMinute());
+        }
+    }
 
-        return DEFAULT_START_MINUTE;
+    private int currentMinute() {
+        ZonedDateTime now = ZonedDateTime.now(ZoneId.systemDefault());
+        return now.getHour() * 60 + now.getMinute();
+    }
+
+    private int boundedMinute(int hour, String minuteText) {
+        int minute = minuteText == null ? 0 : Integer.parseInt(minuteText);
+        return Math.max(0, Math.min(1439, hour * 60 + minute));
+    }
+
+    private int configuredMinute(String key, int fallback) {
+        return taxonomy.getHints(key).stream().findFirst().map(value -> {
+            LocalTime time = LocalTime.parse(value);
+            return time.getHour() * 60 + time.getMinute();
+        }).orElse(fallback);
+    }
+
+    private int positiveHint(String key, int fallback) {
+        return taxonomy.getHints(key).stream().findFirst().map(Integer::parseInt).filter(value -> value > 0).orElse(fallback);
+    }
+
+    private int[] configuredMinuteWindow(String key) {
+        return taxonomy.getHints(key).stream().findFirst().map(value -> {
+            String[] bounds = value.split("\\|", 2);
+            if (bounds.length != 2) return null;
+            LocalTime start = LocalTime.parse(bounds[0]);
+            LocalTime end = LocalTime.parse(bounds[1]);
+            return new int[]{start.getHour() * 60 + start.getMinute(), end.getHour() * 60 + end.getMinute()};
+        }).orElse(null);
     }
 
     private Map<String, Object> buildRuntimeDiningStop(
-            AmapResponseNormalizer.PoiCandidate anchorPoi,
+            com.ai.guide.domain.geo.model.GeoPoiCandidate anchorPoi,
             String slotType,
             int arrivalMinute,
             TravelConstraints constraints,
             int stopIndex, int remainingMinutes) {
-        if (anchorPoi == null || anchorPoi.coordinate() == null) return null;
+        if (anchorPoi == null || anchorPoi.coordinate() == null || OperationDeadline.expired()) return null;
         String district = district(anchorPoi.address());
         Attraction anchor = new Attraction();
         anchor.setId(anchorPoi != null ? "amap-" + text(anchorPoi.poiId()) : "amap-anchor");
@@ -632,20 +703,22 @@ public class RuntimeLocationPlanner {
         anchor.setDistrict(district);
         anchor.setLocation(coordinate(anchorPoi.coordinate()));
 
-        AttractionDiningKnowledge.DiningOption option = diningVenueService.resolveNearbyDining(anchor, slotType, constraints);
+        com.ai.guide.domain.dining.model.DiningOption option = diningVenueService.resolveNearbyDining(anchor, slotType, PlannerDiningContextMapper.from(constraints));
+        if (OperationDeadline.expired()) return null;
         if (option == null || text(option.id()).startsWith("dining-fallback")
-                || AmapResponseNormalizer.parseCoordinate(option.location()) == null) return null;
+                || com.ai.guide.domain.geo.model.GeoCoordinates.parse(option.location()) == null) return null;
         String diningPoiId = text(option.id()).startsWith("amap-dining-")
                 ? text(option.id()).substring("amap-dining-".length()) : "";
         String preference = "transit".equalsIgnoreCase(constraints.getTransportPreference()) ? "transit" : "walking";
-        RoutePairOutcome route = routeService.routePair(anchor.getLocation(), option.location(), city(constraints),
+        GeoRoutePairOutcome route = routeService.routePair(anchor.getLocation(), option.location(), city(constraints),
                 text(anchorPoi.poiId()), diningPoiId, preference);
+        if (OperationDeadline.expired()) return null;
         int travelMinutes = routeMinutes(route);
         if (travelMinutes <= 0) travelMinutes = estimateTravelMinutes(anchor.getLocation(), option.location());
         int mealMinutes = durationMinutes(option.duration());
         if (travelMinutes + mealMinutes > remainingMinutes) return null;
         int mealStart = arrivalMinute + travelMinutes;
-        TaxonomyPort.MealWindow window = taxonomy.getMealWindow(slotType);
+        com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow window = taxonomy.getMealWindow(slotType);
         if (mealStart < window.startMinute() || mealStart + mealMinutes > window.endMinute()) return null;
 
         Map<String, Object> stop = new LinkedHashMap<>();
@@ -662,7 +735,7 @@ public class RuntimeLocationPlanner {
         stop.put("mealSlotType", slotType);
         stop.put("amapPoiId", diningPoiId);
         stop.put("plannedTravelMinutes", travelMinutes);
-        stop.put("duration", option.duration() != null ? option.duration() : "约 50 分钟");
+        stop.put("duration", "约 " + mealMinutes + " 分钟");
         stop.put("type", "DINING");
         stop.put("category", "美食");
         stop.put("icon", "餐");
@@ -696,13 +769,13 @@ public class RuntimeLocationPlanner {
         return stop;
     }
 
-    private List<Map<String, Object>> selectStops(AmapResponseNormalizer.PoiCandidate start,
-                                                   List<AmapResponseNormalizer.PoiCandidate> candidates,
+    private List<Map<String, Object>> selectStops(com.ai.guide.domain.geo.model.GeoPoiCandidate start,
+                                                   List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates,
                                                    TravelConstraints constraints, int budgetMinutes) {
         List<Map<String, Object>> stops = new ArrayList<>();
         String previousCoordinate = coordinate(start.coordinate());
         String previousPoiId = text(start.poiId());
-        AmapResponseNormalizer.PoiCandidate previousCandidate = start;
+        com.ai.guide.domain.geo.model.GeoPoiCandidate previousCandidate = start;
         String transportPref = constraints != null ? constraints.getTransportPreference() : "";
         boolean prefersTransit = "transit".equalsIgnoreCase(transportPref)
                 || "公交优先".equals(transportPref)
@@ -713,14 +786,18 @@ public class RuntimeLocationPlanner {
         int startMinute = initialStartMinute;
 
         // Semantic parsing supplies the diet preference; this planner does not maintain a food dictionary.
-        boolean hasDietPref = constraints != null && constraints.getDietPreference() != null && !"未提供".equals(constraints.getDietPreference()) && !"本地菜优先".equals(constraints.getDietPreference());
+        boolean hasDietPref = constraints != null && constraints.getDietPreference() != null
+                && !taxonomy.getHints("missingPreferenceValues").contains(constraints.getDietPreference())
+                && !taxonomy.getHints("defaultDiningPreference").contains(constraints.getDietPreference());
         boolean explicitFood = hasDietPref;
         int planEndMinute = initialStartMinute + budgetMinutes;
-        TaxonomyPort.MealWindow lunch = taxonomy.getMealWindow("LUNCH");
-        TaxonomyPort.MealWindow dinner = taxonomy.getMealWindow("DINNER");
+        com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow lunch = taxonomy.getMealWindow("LUNCH");
+        com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow dinner = taxonomy.getMealWindow("DINNER");
         boolean spansLunch = initialStartMinute < lunch.endMinute() && planEndMinute > lunch.startMinute();
         boolean spansDinner = initialStartMinute < dinner.endMinute() && planEndMinute > dinner.startMinute();
-        boolean allowDining = (explicitFood || spansLunch || spansDinner) && budgetMinutes >= 90;
+        DynamicShortTripPolicyPort.Policy schedulePolicy = dynamicPolicy.getPolicy();
+        boolean allowDining = (explicitFood || spansLunch || spansDinner)
+                && budgetMinutes >= schedulePolicy.diningMinimumBudgetMinutes();
         boolean diningInserted = false;
         String mealSlotType;
         if (spansLunch) {
@@ -735,39 +812,32 @@ public class RuntimeLocationPlanner {
             mealSlotType = "LUNCH";
         }
 
-        int maxStops = Math.max(2, Math.min(7, (budgetMinutes + 45) / 55));
+        int maxStops = Math.max(schedulePolicy.minimumStops(), Math.min(schedulePolicy.maximumStops(),
+                (budgetMinutes + schedulePolicy.stopBudgetBaseMinutes()) / schedulePolicy.minutesPerStop()));
         Map<PoiCategory, Integer> categoryCounts = new LinkedHashMap<>();
 
-        for (AmapResponseNormalizer.PoiCandidate candidate : candidates) {
-            if (stops.size() >= maxStops || remaining < 25) break;
+        for (com.ai.guide.domain.geo.model.GeoPoiCandidate candidate : candidates) {
+            if (stops.size() >= maxStops || remaining < schedulePolicy.minimumRemainingForStopMinutes()) break;
+            if (OperationDeadline.expired()) break;
 
-            PoiCategory category = detectCategory(safeName(candidate), text(candidate.type()), text(candidate.typecode()));
+            PoiCategory category = detectCategory(safeName(candidate), text(candidate.type()), text(candidate.typecode()), taxonomy);
 
-            // Category diversity quotas:
-            // 1. NEVER recommend more than 1 plaza in a single itinerary!
-            if (category == PoiCategory.SQUARE && categoryCounts.getOrDefault(PoiCategory.SQUARE, 0) >= 1) {
-                continue;
-            }
-            // 2. Parks: at most 1 for short trips (<=240 min), at most 2 for longer trips
-            int maxParks = budgetMinutes > 240 ? 2 : 1;
-            if (category == PoiCategory.PARK_NATURE && categoryCounts.getOrDefault(PoiCategory.PARK_NATURE, 0) >= maxParks) {
-                continue;
-            }
-            // 3. Religious temples: at most 1
-            if (category == PoiCategory.RELIGIOUS_TEMPLE && categoryCounts.getOrDefault(PoiCategory.RELIGIOUS_TEMPLE, 0) >= 1) {
-                continue;
-            }
-            // 4. Commercial streets: at most 1
-            if (category == PoiCategory.COMMERCIAL_STREET && categoryCounts.getOrDefault(PoiCategory.COMMERCIAL_STREET, 0) >= 1) {
+            int categoryLimit = category == PoiCategory.PARK_NATURE
+                    ? (budgetMinutes > schedulePolicy.longParkBudgetMinutes()
+                    ? schedulePolicy.longTripMaxParks() : schedulePolicy.shortTripMaxParks())
+                    : schedulePolicy.maxOccurrences(category.name());
+            if (categoryCounts.getOrDefault(category, 0) >= categoryLimit) {
                 continue;
             }
 
             if (!diningInserted && allowDining) {
                 String effectiveSlotType = mealSlotType;
-                TaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
+                com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
                 boolean timeTrigger = startMinute >= mealWindow.startMinute() && startMinute < mealWindow.endMinute();
-                boolean budgetUrgent = remaining <= 95 && remaining >= 45 && (spansLunch || spansDinner || explicitFood);
-                if (timeTrigger || (explicitFood && remaining <= budgetMinutes - 45) || budgetUrgent) {
+                boolean budgetUrgent = remaining <= schedulePolicy.diningUrgencyMaximumRemainingMinutes()
+                        && remaining >= schedulePolicy.diningUrgencyMinimumRemainingMinutes()
+                        && (spansLunch || spansDinner || explicitFood);
+                if (timeTrigger || (explicitFood && remaining <= budgetMinutes - schedulePolicy.explicitFoodDiningLeadMinutes()) || budgetUrgent) {
                     Map<String, Object> diningStop = buildRuntimeDiningStop(
                             previousCandidate, effectiveSlotType, startMinute, constraints, stops.size() + 1, remaining);
                     if (diningStop != null) {
@@ -782,30 +852,32 @@ public class RuntimeLocationPlanner {
                             previousCoordinate = text(diningLoc);
                         }
                         previousPoiId = text(diningStop.get("amapPoiId"));
-                        previousCandidate = new AmapResponseNormalizer.PoiCandidate(previousPoiId,
-                                text(diningStop.get("name")), AmapResponseNormalizer.parseCoordinate(previousCoordinate),
+                        previousCandidate = new com.ai.guide.domain.geo.model.GeoPoiCandidate(previousPoiId,
+                                text(diningStop.get("name")), com.ai.guide.domain.geo.model.GeoCoordinates.parse(previousCoordinate),
                                 text(diningStop.get("address")), "餐饮服务", null, null, previousPoiId, null, null);
-                        if (stops.size() >= maxStops || remaining < 25) break;
+                        if (stops.size() >= maxStops || remaining < schedulePolicy.minimumRemainingForStopMinutes()) break;
                     }
                 }
             }
 
             String destination = coordinate(candidate.coordinate());
-            AmapResponseNormalizer.Coordinate prevCoord = AmapResponseNormalizer.parseCoordinate(previousCoordinate);
-            AmapResponseNormalizer.Coordinate destCoord = candidate.coordinate();
+            com.ai.guide.domain.geo.model.GeoCoordinate prevCoord = com.ai.guide.domain.geo.model.GeoCoordinates.parse(previousCoordinate);
+            com.ai.guide.domain.geo.model.GeoCoordinate destCoord = candidate.coordinate();
             double distBetweenKm = (prevCoord != null && destCoord != null)
                     ? distanceKm(prevCoord, destCoord) : 1.0;
-            String segmentPreference = prefersTransit || (distBetweenKm > 1.5 && !"低".equals(constraints.getWalkingTolerance()))
+            String segmentPreference = prefersTransit || (distBetweenKm > schedulePolicy.transitPreferredDistanceKm() && !"低".equals(constraints.getWalkingTolerance()))
                     ? "transit" : "walking";
-            RoutePairOutcome route = routeService.routePair(
+            GeoRoutePairOutcome route = routeService.routePair(
                     previousCoordinate, destination, city(constraints), previousPoiId,
                     text(candidate.navigationPoiId()).isBlank() ? text(candidate.poiId()) : candidate.navigationPoiId(),
                     segmentPreference);
+            if (OperationDeadline.expired()) break;
             int travelMinutes = routeMinutes(route);
             if (travelMinutes <= 0) travelMinutes = estimateTravelMinutes(previousCoordinate, destination);
-            int visitMinutes = inferVisitMinutes(safeName(candidate), text(candidate.type()), remaining - travelMinutes);
+            int visitMinutes = schedulePolicy.visitDuration(safeName(candidate), text(candidate.type()), remaining - travelMinutes);
             if (travelMinutes + visitMinutes > remaining) {
-                if (remaining - travelMinutes >= 20 && visitMinutes > 25) {
+                if (remaining - travelMinutes >= schedulePolicy.minimumVisitRemainderMinutes()
+                        && visitMinutes > schedulePolicy.minimumRemainingForStopMinutes()) {
                     visitMinutes = remaining - travelMinutes;
                 } else {
                     continue;
@@ -813,11 +885,6 @@ public class RuntimeLocationPlanner {
             }
 
             int arrivalMinute = startMinute + travelMinutes;
-
-            // 夜间行程收尾合理性：傍晚及夜间短途游在 22:00 前自然收拢结束，杜绝拖到深夜午夜
-            if (initialStartMinute >= 17 * 60 + 30 && arrivalMinute >= 22 * 60 && !stops.isEmpty()) {
-                break;
-            }
 
             Map<String, Object> stop = stop(candidate, stops.size() + 1,
                     formatTime(arrivalMinute), visitMinutes, route, travelMinutes, constraints);
@@ -851,9 +918,10 @@ public class RuntimeLocationPlanner {
             previousCandidate = candidate;
         }
 
-        if (!diningInserted && allowDining && remaining >= 40 && !stops.isEmpty()) {
+        if (!OperationDeadline.expired()
+                && !diningInserted && allowDining && remaining >= schedulePolicy.minimumRemainingToAddDiningMinutes() && !stops.isEmpty()) {
             String effectiveSlotType = mealSlotType;
-            TaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
+            com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow mealWindow = taxonomy.getMealWindow(effectiveSlotType);
             boolean eligiblePostMeal = startMinute >= mealWindow.startMinute() && startMinute < mealWindow.endMinute();
             if (eligiblePostMeal) {
                 Map<String, Object> diningStop = buildRuntimeDiningStop(
@@ -867,9 +935,9 @@ public class RuntimeLocationPlanner {
         return stops;
     }
 
-    private List<AmapResponseNormalizer.PoiCandidate> rankCandidates(
-            AmapResponseNormalizer.PoiCandidate start,
-            List<AmapResponseNormalizer.PoiCandidate> candidates,
+    private List<com.ai.guide.domain.geo.model.GeoPoiCandidate> rankCandidates(
+            com.ai.guide.domain.geo.model.GeoPoiCandidate start,
+            List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates,
             TravelConstraints constraints) {
         if (candidates == null || candidates.isEmpty() || constraints == null) {
             return candidates == null ? List.of() : candidates;
@@ -878,92 +946,97 @@ public class RuntimeLocationPlanner {
         List<String> interests = constraints.getInterests() == null ? List.of() : constraints.getInterests();
         boolean lowWalking = "低".equals(constraints.getWalkingTolerance());
         String companions = constraints.getCompanions() == null ? "" : constraints.getCompanions();
+        boolean chongqingProfile = usesCityStrategy(constraints.getDestination(), "CHONGQING");
 
-        List<AmapResponseNormalizer.PoiCandidate> scored = new ArrayList<>(candidates);
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> scored = new ArrayList<>(candidates);
         scored.sort((a, b) -> {
-            double scoreA = scoreCandidate(a, start, interests, lowWalking, companions);
-            double scoreB = scoreCandidate(b, start, interests, lowWalking, companions);
+            double scoreA = scoreCandidate(a, start, interests, lowWalking, companions, chongqingProfile);
+            double scoreB = scoreCandidate(b, start, interests, lowWalking, companions, chongqingProfile);
             return Double.compare(scoreB, scoreA);
         });
         return scored;
     }
 
-    private double scoreCandidate(AmapResponseNormalizer.PoiCandidate c,
-                                  AmapResponseNormalizer.PoiCandidate start,
+    private double scoreCandidate(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate,
+                                  com.ai.guide.domain.geo.model.GeoPoiCandidate start,
                                   List<String> interests,
                                   boolean lowWalking,
-                                  String companions) {
-        double score = 100.0;
-        String name = safeName(c);
-        String type = text(c.type());
-        String textToMatch = (name + " " + type + " " + text(c.address())).toLowerCase(Locale.ROOT);
+                                  String companions,
+                                  boolean chongqingProfile) {
+        double score = PlannerScoringPolicy.parameterFrom(taxonomy, "runtimeScoringParameters", "baseScore");
+        String name = safeName(candidate);
+        String type = text(candidate.type());
+        String textToMatch = (name + " " + type + " " + text(candidate.address())).toLowerCase(Locale.ROOT);
 
         for (String interest : interests) {
-            if ("自然".equals(interest) || "自然奇观".equals(interest)) {
-                if (matchesKeywords(textToMatch, "公园", "植物园", "风景", "峡谷", "江", "山", "湖", "岛", "林", "滨江")) score += 40.0;
-            } else if ("人文".equals(interest) || "人文历史".equals(interest)) {
-                if (matchesKeywords(textToMatch, "博物馆", "纪念馆", "古镇", "旧址", "遗址", "寺", "阁", "书院", "文博", "历史")) score += 40.0;
-            } else if ("8D魔幻".equals(interest)) {
-                if (matchesKeywords(textToMatch, "轨道", "单轨", "天桥", "空中", "大厦", "索道", "电梯", "崖", "桥")) score += 40.0;
-            } else if ("夜景".equals(interest) || "山城夜景".equals(interest)) {
-                if (matchesKeywords(textToMatch, "江", "观景台", "码头", "步道", "老街", "两江", "滨江")) score += 40.0;
-            } else if ("温泉".equals(interest) || "天然温泉".equals(interest)) {
-                if (matchesKeywords(textToMatch, "温泉", "汤池", "度夏", "疗养")) score += 40.0;
-            } else if ("市井".equals(interest) || "市井烟火".equals(interest)) {
-                if (matchesKeywords(textToMatch, "老街", "市井", "巷", "码头", "坊", "里", "街区")) score += 40.0;
-            } else {
-                if (textToMatch.contains(interest.toLowerCase(Locale.ROOT))) score += 30.0;
+            if (taxonomy.getHints("plannerNatureInterestLabels").contains(interest)) {
+                if (matchesTaxonomyKeywords(textToMatch, "runtimeNatureInterestFeatures")) score += runtimeScore("interestNature");
+            } else if (taxonomy.getHints("plannerHistoryInterestLabels").contains(interest)) {
+                if (matchesTaxonomyKeywords(textToMatch, "runtimeHistoryInterestFeatures")) score += runtimeScore("interestHistory");
+            } else if (taxonomy.getHints("chongqingTerrainInterestLabels").contains(interest) && chongqingProfile) {
+                if (matchesTaxonomyKeywords(textToMatch, "chongqingTerrainInterestFeatures")) score += runtimeScore("interestTerrain");
+            } else if (taxonomy.getHints("plannerNightInterestLabels").contains(interest)) {
+                if (matchesTaxonomyKeywords(textToMatch, "plannerNightScoringFeatures")) score += runtimeScore("interestNight");
+            } else if (taxonomy.getHints("plannerThermalInterestLabels").contains(interest)) {
+                if (matchesTaxonomyKeywords(textToMatch, "runtimeThermalInterestFeatures")) score += runtimeScore("interestThermal");
+            } else if (taxonomy.getHints("plannerLocalInterestLabels").contains(interest)) {
+                if (matchesTaxonomyKeywords(textToMatch, "runtimeLocalCultureInterestFeatures")) score += runtimeScore("interestLocal");
+            } else if (textToMatch.contains(interest.toLowerCase(Locale.ROOT))) {
+                score += runtimeScore("interestGeneric");
             }
         }
 
-        // Score provider prominence and generic venue characteristics uniformly across cities.
-        if (matchesKeywords(textToMatch, "古镇", "老街", "森林公园", "植物园", "湿地公园", "文化公园", "风景区", "国家级", "观景台", "步道", "俯瞰")) {
-            score += 35.0;
-        } else if (matchesKeywords(textToMatch, "博物馆", "纪念馆", "陈列馆", "美术馆", "寺", "庙", "观", "阁", "塔", "公园", "湖")) {
-            score += 25.0;
-        } else if (matchesKeywords(textToMatch, "旧址", "遗址", "故居", "旧居")) {
-            score += 20.0;
-        } else if (name.contains("广场")) {
-            score -= 10.0;
+        if (matchesTaxonomyKeywords(textToMatch, "runtimeProminentPoiFeatures")) {
+            score += runtimeScore("prominentPoi");
+        } else if (matchesTaxonomyKeywords(textToMatch, "runtimeSecondaryPoiFeatures")) {
+            score += runtimeScore("secondaryPoi");
+        } else if (matchesTaxonomyKeywords(textToMatch, "runtimeHistoricPoiFeatures")) {
+            score += runtimeScore("historicPoi");
+        } else if (matchesTaxonomyKeywords(name, "poiCategorySquareNameTokens")) {
+            score += runtimeScore("squarePenalty");
         }
 
-        // AMap official popularity & rating weighting
-        if (c.rating() != null && c.rating() > 0) {
-            if (c.rating() >= 4.5) {
-                score += 35.0; // High reputation (e.g. 磁器口 4.7, 沙坪公园 4.6, 宝轮寺 4.7)
-            } else if (c.rating() >= 4.2) {
-                score += 20.0;
-            } else if (c.rating() >= 4.0) {
-                score += 10.0;
-            } else if (c.rating() < 3.5) {
-                score -= 25.0; // Low reputation or uncurated micro-spots penalized
+        if (candidate.rating() != null && candidate.rating() > 0) {
+            if (candidate.rating() >= runtimeParameter("ratingExcellentThreshold")) {
+                score += runtimeScore("ratingExcellent");
+            } else if (candidate.rating() >= runtimeParameter("ratingGoodThreshold")) {
+                score += runtimeScore("ratingGood");
+            } else if (candidate.rating() >= runtimeParameter("ratingAverageThreshold")) {
+                score += runtimeScore("ratingAverage");
+            } else if (candidate.rating() < runtimeParameter("ratingLowThreshold")) {
+                score += runtimeScore("ratingLowPenalty");
             }
         }
-        if (c.heatTag() != null && !c.heatTag().isBlank()) {
-            String tag = c.heatTag();
-            if (tag.contains("国家级") || tag.contains("著名") || tag.contains("世界遗产") || tag.contains("名胜") || tag.contains("古迹")) {
-                score += 20.0;
-            }
+        if (candidate.heatTag() != null && matchesAnyHint(candidate.heatTag(), "runtimeProminentHeatFeatures")) {
+            score += runtimeScore("officialHeat");
         }
 
-        if (start != null && start.coordinate() != null && c.coordinate() != null) {
-            double distKm = distanceKm(start.coordinate(), c.coordinate());
+        if (start != null && start.coordinate() != null && candidate.coordinate() != null) {
+            double distance = distanceKm(start.coordinate(), candidate.coordinate());
             if (lowWalking) {
-                if (distKm < 1.5) score += 35.0;
-                else if (distKm < 3.0) score += 15.0;
-                else score -= (distKm - 3.0) * 10.0;
+                if (distance < runtimeParameter("lowWalkingCloseDistanceKm")) score += runtimeScore("lowWalkingClose");
+                else if (distance < runtimeParameter("lowWalkingMediumDistanceKm")) score += runtimeScore("lowWalkingMedium");
+                else score -= (distance - runtimeParameter("lowWalkingMediumDistanceKm")) * runtimeParameter("lowWalkingDistancePenaltyPerKm");
             } else {
-                if (distKm < 2.5) score += 15.0;
-                else if (distKm > 4.5) score -= (distKm - 4.5) * 8.0;
+                if (distance < runtimeParameter("normalCloseDistanceKm")) score += runtimeScore("normalClose");
+                else if (distance > runtimeParameter("normalFarDistanceKm")) score -= (distance - runtimeParameter("normalFarDistanceKm")) * runtimeParameter("normalFarDistancePenaltyPerKm");
             }
         }
 
-        if ("带父母".equals(companions) || "亲子家庭".equals(companions)) {
-            if (matchesKeywords(textToMatch, "公园", "博物馆", "纪念馆", "植物园", "展馆")) score += 20.0;
-            if (matchesKeywords(textToMatch, "险", "攀", "台阶", "悬崖", "陡")) score -= 30.0;
+        if (taxonomy.getHints("plannerCompanionSeniorAliases").contains(companions)
+                || taxonomy.getHints("plannerCompanionChildAliases").contains(companions)) {
+            if (matchesTaxonomyKeywords(textToMatch, "runtimeFamilyFriendlyFeatures")) score += runtimeScore("familyFriendly");
+            if (matchesTaxonomyKeywords(textToMatch, "runtimeStrenuousFeatures")) score += runtimeScore("strenuousPenalty");
         }
-
         return score;
+    }
+
+    private double runtimeScore(String key) { return PlannerScoringPolicy.parameterFrom(taxonomy, "runtimeScoringParameters", key); }
+    private double runtimeParameter(String key) { return PlannerScoringPolicy.parameterFrom(taxonomy, "runtimeScoringParameters", key); }
+    private boolean matchesAnyHint(String value, String key) { return value != null && taxonomy.getHints(key).stream().anyMatch(value::contains); }
+
+    private boolean matchesTaxonomyKeywords(String text, String key) {
+        return matchesKeywords(text, taxonomy.getHints(key).toArray(String[]::new));
     }
 
     private boolean matchesKeywords(String text, String... keywords) {
@@ -973,51 +1046,51 @@ public class RuntimeLocationPlanner {
         return false;
     }
 
-    private String buildDynamicReason(AmapResponseNormalizer.PoiCandidate candidate, int travelMinutes, TravelConstraints constraints) {
+    private String buildDynamicReason(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate, int travelMinutes, TravelConstraints constraints) {
         List<String> reasons = new ArrayList<>();
         if (constraints != null && constraints.getInterests() != null) {
             String name = safeName(candidate);
             String type = text(candidate.type());
             String target = name + " " + type;
             for (String interest : constraints.getInterests()) {
-                if ("自然".equals(interest) || "自然奇观".equals(interest)) {
-                    if (matchesKeywords(target, "公园", "植物园", "风景", "峡谷", "江", "山", "湖", "岛", "林", "滨江")) {
+                if (taxonomy.getHints("plannerNatureInterestLabels").contains(interest)) {
+                    if (matchesTaxonomyKeywords(target, "runtimeNatureInterestFeatures")) {
                         reasons.add("契合自然山水偏好");
                         break;
                     }
-                } else if ("人文".equals(interest) || "人文历史".equals(interest)) {
-                    if (matchesKeywords(target, "博物馆", "纪念馆", "古镇", "旧址", "遗址", "寺", "阁", "书院", "文博", "历史")) {
+                } else if (taxonomy.getHints("plannerHistoryInterestLabels").contains(interest)) {
+                    if (matchesTaxonomyKeywords(target, "runtimeHistoryInterestFeatures")) {
                         reasons.add("契合历史人文偏好");
                         break;
                     }
-                } else if ("8D魔幻".equals(interest)) {
-                    if (matchesKeywords(target, "轨道", "单轨", "天桥", "空中", "大厦", "索道", "电梯", "崖", "桥")) {
-                        reasons.add("具备8D魔幻特色");
+                } else if (taxonomy.getHints("chongqingTerrainInterestLabels").contains(interest) && usesCityStrategy(constraints.getDestination(), "CHONGQING")) {
+                    if (matchesKeywords(target, taxonomy.getHints("chongqingTerrainInterestFeatures").toArray(String[]::new))) {
+                        reasons.add(taxonomy.getHints("chongqingTerrainReason").stream().findFirst().orElse(""));
                         break;
                     }
-                } else if ("夜景".equals(interest) || "山城夜景".equals(interest)) {
-                    if (matchesKeywords(target, "江", "观景台", "码头", "步道", "老街", "两江")) {
-                        reasons.add("契合江岸与夜景体验");
+                } else if (taxonomy.getHints("plannerNightInterestLabels").contains(interest)) {
+                    if (matchesKeywords(target, taxonomy.getHints("plannerNightScoringFeatures").toArray(String[]::new))) {
+                        reasons.add("契合夜景观赏需求");
                         break;
                     }
-                } else if ("市井".equals(interest) || "市井烟火".equals(interest)) {
-                    if (matchesKeywords(target, "老街", "市井", "巷", "码头", "坊", "里", "街区")) {
+                } else if (taxonomy.getHints("plannerLocalInterestLabels").contains(interest)) {
+                    if (matchesTaxonomyKeywords(target, "runtimeLocalCultureInterestFeatures")) {
                         reasons.add("展现当地市井生活");
                         break;
                     }
                 }
             }
         }
-        if (candidate.rating() != null && candidate.rating() >= 4.3) {
+        if (candidate.rating() != null && candidate.rating() >= runtimeParameter("ratingReasonThreshold")) {
             reasons.add("高德口碑评分 " + candidate.rating() + " 分深受游客喜爱");
         }
         if (candidate.heatTag() != null && !candidate.heatTag().isBlank()) {
             String tag = candidate.heatTag();
-            if (tag.contains("国家级") || tag.contains("名胜") || tag.contains("古迹")) {
+            if (matchesAnyHint(tag, "runtimeProminentHeatFeatures")) {
                 reasons.add("获评“" + tag.replace(";", "·") + "”文旅地标");
             }
         }
-        if (constraints != null && "低".equals(constraints.getWalkingTolerance())) {
+        if (constraints != null && taxonomy.getHints("walkingLowAliases").contains(constraints.getWalkingTolerance())) {
             reasons.add("距离起点较近且步行平缓");
         }
         if (travelMinutes > 0) {
@@ -1029,9 +1102,9 @@ public class RuntimeLocationPlanner {
         return "安排“" + safeName(candidate) + "”是因为它" + String.join("，", reasons) + "。";
     }
 
-    private Map<String, Object> stop(AmapResponseNormalizer.PoiCandidate candidate, int index,
+    private Map<String, Object> stop(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate, int index,
                                      String startTime, int visitMinutes,
-                                     RoutePairOutcome route, int travelMinutes,
+                                     GeoRoutePairOutcome route, int travelMinutes,
                                      TravelConstraints constraints) {
         String name = safeName(candidate);
         String poiId = text(candidate.poiId());
@@ -1052,7 +1125,7 @@ public class RuntimeLocationPlanner {
         stop.put("duration", "约 " + visitMinutes + " 分钟");
         stop.put("icon", "景");
         stop.put("tone", "dynamic");
-        stop.put("category", categoryDisplayName(detectCategory(name, text(candidate.type()), text(candidate.typecode()))));
+        stop.put("category", categoryDisplayName(detectCategory(name, text(candidate.type()), text(candidate.typecode()), taxonomy)));
         if (candidate.rating() != null && candidate.rating() > 0) {
             stop.put("rating", candidate.rating());
             stop.put("amapRating", candidate.rating());
@@ -1124,18 +1197,14 @@ public class RuntimeLocationPlanner {
     public enum PoiCategory {
         HISTORIC_CULTURE, // 文博旧址、古镇老街、历史建筑、遗址、纪念馆
         PARK_NATURE,      // 公园、植物园、湿地、森林、自然风景区、湖泊
-        LANDMARK_VIEW,    // 观景台、步道、大桥、缆车索道、两江、山城8D地标
+        LANDMARK_VIEW,    // 观景台、步道、大桥、缆车索道与滨水地标
         RELIGIOUS_TEMPLE, // 寺庙、道观、祠堂、佛阁
         COMMERCIAL_STREET,// 步行街、市集、商业街区
         SQUARE,           // 广场
         OTHER             // 其他综合文旅
     }
 
-    public static PoiCategory detectCategory(String name, String type) {
-        return detectCategory(name, type, "");
-    }
-
-    public static PoiCategory detectCategory(String name, String type, String typecode) {
+    public static PoiCategory detectCategory(String name, String type, String typecode, PlannerTaxonomyPort taxonomy) {
         String code = typecode == null ? "" : typecode.trim();
         if ("110105".equals(code)) return PoiCategory.SQUARE;
         if (code.startsWith("11010")) return PoiCategory.PARK_NATURE;
@@ -1145,54 +1214,24 @@ public class RuntimeLocationPlanner {
         String n = name == null ? "" : name.trim();
         String t = type == null ? "" : type.trim();
 
-        // 1. Plazas & Squares (Strict check: any POI with 广场 is categorized as SQUARE)
-        if (n.contains("广场")) {
-            return PoiCategory.SQUARE;
-        }
-
-        // 2. Riverside viewpoints and observation facilities
-        if (n.contains("索道")
-                || n.contains("观景") || n.contains("瞰江") || n.contains("步道") || n.contains("绿道")
-                || n.contains("大桥") || n.contains("滨江") || n.contains("江岸") || n.contains("两江")
-                || n.contains("单轨") || n.contains("轻轨") || n.contains("码头") || n.contains("渡口")
-                || t.contains("观景点") || t.contains("摄影")) {
-            return PoiCategory.LANDMARK_VIEW;
-        }
-
-        // 3. Historic sites, ancient towns, museums, memorials
-        if (n.contains("古镇") || n.contains("老街") || n.contains("民俗") || n.contains("古村")
-                || n.contains("旧址")
-                || n.contains("遗址") || n.contains("故居") || n.contains("旧居") || n.contains("博物馆")
-                || n.contains("纪念馆") || n.contains("陈列馆") || n.contains("美术馆") || n.contains("艺术馆")
-                || n.contains("书院") || n.contains("文博") || n.contains("文物") || n.contains("历史")
-                || t.contains("文物古迹") || t.contains("博物馆") || t.contains("纪念馆")) {
-            return PoiCategory.HISTORIC_CULTURE;
-        }
-
-        // 4. Commercial pedestrian streets & food markets
-        if (n.contains("步行街") || n.contains("商业街") || n.contains("夜市")
-                || n.contains("市集") || n.contains("集市") || t.contains("商业街")) {
-            return PoiCategory.COMMERCIAL_STREET;
-        }
-
-        // 5. Religious temples and pagodas
-        if (n.contains("寺庙") || n.contains("道观") || n.contains("寺院") || n.contains("古刹")
-                || n.endsWith("寺") || n.endsWith("庙") || n.endsWith("观") || n.endsWith("阁")
-                || n.endsWith("塔") || n.endsWith("庵") || n.endsWith("祠")
-                || t.contains("寺庙道观") || t.contains("宗教名胜")) {
-            return PoiCategory.RELIGIOUS_TEMPLE;
-        }
-
-        // 6. Parks and nature scenery
-        if (n.contains("公园") || n.contains("植物园") || n.contains("动物园") || n.contains("森林")
-                || n.contains("湿地") || n.contains("风景区") || n.contains("景区") || n.contains("自然")
-                || n.contains("峡") || n.contains("谷") || n.contains("山") || n.contains("峰")
-                || n.contains("湖") || n.contains("池") || n.contains("瀑布") || n.contains("泉")
-                || t.contains("风景名胜") || t.contains("公园广场")) {
-            return PoiCategory.PARK_NATURE;
-        }
+        if (containsAny(n, taxonomy.getHints("poiCategorySquareNameTokens"))) return PoiCategory.SQUARE;
+        if (containsAny(n, taxonomy.getHints("poiCategoryLandmarkNameTokens"))
+                || containsAny(t, taxonomy.getHints("poiCategoryLandmarkTypeTokens"))) return PoiCategory.LANDMARK_VIEW;
+        if (containsAny(n, taxonomy.getHints("poiCategoryHistoryNameTokens"))
+                || containsAny(t, taxonomy.getHints("poiCategoryHistoryTypeTokens"))) return PoiCategory.HISTORIC_CULTURE;
+        if (containsAny(n, taxonomy.getHints("poiCategoryCommercialNameTokens"))
+                || containsAny(t, taxonomy.getHints("poiCategoryCommercialTypeTokens"))) return PoiCategory.COMMERCIAL_STREET;
+        if (containsAny(n, taxonomy.getHints("poiCategoryReligionNameTokens"))
+                || taxonomy.getHints("poiCategoryReligionNameSuffixes").stream().anyMatch(n::endsWith)
+                || containsAny(t, taxonomy.getHints("poiCategoryReligionTypeTokens"))) return PoiCategory.RELIGIOUS_TEMPLE;
+        if (containsAny(n, taxonomy.getHints("poiCategoryNatureNameTokens"))
+                || containsAny(t, taxonomy.getHints("poiCategoryNatureTypeTokens"))) return PoiCategory.PARK_NATURE;
 
         return PoiCategory.OTHER;
+    }
+
+    private static boolean containsAny(String value, List<String> tokens) {
+        return value != null && tokens.stream().anyMatch(value::contains);
     }
 
     private static String categoryDisplayName(PoiCategory category) {
@@ -1208,22 +1247,18 @@ public class RuntimeLocationPlanner {
         };
     }
 
-    private static final Pattern CAMPUS_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,12}(?:大学|学院))");
-
-    private static final Pattern NEIGHBORHOOD_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,6}(?:老街|古镇|古村|步行街|商圈|风景区|植物园|森林公园|文化公园))");
-
     private String extractNeighborhood(String name, String address, String businessArea) {
         if (businessArea != null && !businessArea.isBlank()) {
             return businessArea.trim();
         }
         String combined = (name == null ? "" : name) + " " + (address == null ? "" : address);
-        Matcher m = NEIGHBORHOOD_PATTERN.matcher(combined);
+        Matcher m = suffixPattern(taxonomy.getHints("runtimeNeighborhoodSuffixes"), 2, 6).matcher(combined);
         return m.find() ? m.group(1).trim() : "";
     }
 
     private String extractCampus(String name, String address) {
         String combined = (name == null ? "" : name) + " " + (address == null ? "" : address);
-        Matcher m = CAMPUS_PATTERN.matcher(combined);
+        Matcher m = suffixPattern(taxonomy.getHints("runtimeCampusNameSuffixes"), 2, 12).matcher(combined);
         return m.find() ? m.group(1).trim() : "";
     }
 
@@ -1237,14 +1272,16 @@ public class RuntimeLocationPlanner {
         int bracketIdx = clean.indexOf('（');
         if (bracketIdx > 0) clean = clean.substring(0, bracketIdx).trim();
 
-        Matcher m = Pattern.compile("^(.*?大学|.*?学院|.*?中学|.*?公园|.*?古镇|.*?老街|.*?风景区|.*?植物园)").matcher(clean);
+        List<String> suffixes = taxonomy.getHints("runtimePrimaryVenueSuffixes");
+        Matcher m = suffixes.isEmpty() ? Pattern.compile("(?!)").matcher(clean)
+                : Pattern.compile("^(.*?(?:" + suffixes.stream().map(Pattern::quote).collect(java.util.stream.Collectors.joining("|")) + "))").matcher(clean);
         if (m.find()) {
             return m.group(1).trim();
         }
         return clean;
     }
 
-    boolean isNoisePoi(AmapResponseNormalizer.PoiCandidate poi) {
+    boolean isNoisePoi(com.ai.guide.domain.geo.model.GeoPoiCandidate poi) {
         if (poi == null) return true;
         String name = safeName(poi);
         String type = text(poi.type());
@@ -1271,95 +1308,62 @@ public class RuntimeLocationPlanner {
 
         // Older providers and catalog records may omit codes. Use their category
         // text first, reserving generic name heuristics for truly unclassified records.
-        if (type.contains("博物馆") || type.contains("展览馆") || type.contains("美术馆")
-                || type.contains("图书馆") || type.contains("科技馆") || type.contains("天文馆")) return false;
-        if (type.contains("公共厕所") || type.contains("变电站") || type.contains("售票处")
-                || type.contains("洗手间") || type.contains("停车场") || type.contains("服务设施")
-                || type.contains("报刊亭") || type.contains("公用电话") || type.contains("公司企业")
-                || type.contains("商务住宅") || type.contains("生活服务") || type.contains("购物服务")
-                || type.contains("餐饮服务") || type.contains("住宿服务") || type.contains("学校")
-                || type.contains("科研机构") || type.contains("公园内部设施")) {
+        if (containsAny(type, taxonomy.getHints("runtimeCulturalTypeAliases"))) return false;
+        if (containsAny(type, taxonomy.getHints("runtimeExcludedTypeAliases"))) {
             return true;
         }
-        if (type.contains("风景名胜")) return false;
+        if (containsAny(type, taxonomy.getHints("runtimeScenicTypeAliases"))) return false;
 
         // 校园内部纯楼栋、单元或教学楼（如“14栋”, “2单元”, “第四教学楼”, “实验楼”）一票否决
-        if (name.matches(".*(?:[一二三四五六七八九十\\d]+[栋幢号单元楼教]|教学楼|实训楼|实验楼).*")
-                && !type.contains("餐饮") && !type.contains("咖啡") && !type.contains("茶艺")
-                && !name.matches(".*(?:餐厅|食堂|咖啡|茶馆|茶楼|茶室|面馆|饭庄|小吃).*")) {
+        if (matchesAnyPattern(name, taxonomy.getHints("runtimeBuildingNamePatterns"))
+                && !containsAny(type, taxonomy.getHints("runtimeDiningTypeAliases"))
+                && taxonomy.getHints("nonDiningNameKeywords").stream().noneMatch(name::contains)) {
             return true;
         }
 
         // 火车站/汽车站上下客进出站广场过滤
-        if (name.endsWith("东广场") || name.endsWith("西广场") || name.endsWith("南广场") || name.endsWith("北广场")) {
+        if (taxonomy.getHints("runtimeStationSquareSuffixes").stream().anyMatch(name::endsWith)) {
             return true;
         }
 
         return false;
     }
 
-    public static int inferVisitMinutes(String name, String type, int remainingBudget) {
-        String n = name == null ? "" : name;
-        String t = type == null ? "" : type;
-
-        // 1. Micro spots / photo markers / sculptures / monuments / viewpoints: 15 ~ 25 min
-        if (n.contains("打卡点") || n.contains("雕像") || n.contains("雕塑")
-                || n.contains("纪念碑") || n.contains("刻石") || n.contains("牌匾")
-                || n.contains("机位") || n.contains("拍摄") || n.contains("亭")
-                || t.contains("观景点") || t.contains("摄影")) {
-            return 20;
-        }
-
-        // 2. Large parks / historic streets / old towns / scenic resorts: 60 ~ 90 min
-        if (n.contains("老街") || n.contains("古镇") || n.contains("步道")
-                || n.contains("森林公园") || n.contains("植物园") || n.contains("动物园")
-                || n.contains("风景区") || n.contains("度假区")
-                || t.contains("公园广场") || t.contains("国家级景点")) {
-            if (remainingBudget >= 180) return 75;
-            if (remainingBudget >= 90) return 60;
-            return 45;
-        }
-
-        // 3. Historic sites / museums / memorial halls / temples / pagodas: 35 ~ 50 min
-        if (n.contains("旧址") || n.contains("故居") || n.contains("展馆")
-                || n.contains("博物馆") || n.contains("纪念馆") || n.contains("礼堂")
-                || n.contains("书院") || n.contains("寺") || n.contains("庙")
-                || n.contains("观") || n.contains("阁") || n.contains("塔")
-                || t.contains("文物古迹") || t.contains("寺庙道观")) {
-            return remainingBudget >= 120 ? 45 : 35;
-        }
-
-        // 4. Plazas / squares: typically 30 ~ 35 min, avoiding blocking genuine scenic attractions
-        if (n.contains("广场")) {
-            return remainingBudget >= 120 ? 35 : 25;
-        }
-
-        // 5. General attraction
-        return remainingBudget >= 120 ? 40 : 30;
+    private Pattern suffixPattern(List<String> suffixes, int minPrefix, int maxPrefix) {
+        if (suffixes == null || suffixes.isEmpty()) return Pattern.compile("(?!)");
+        String alternatives = suffixes.stream().filter(value -> value != null && !value.isBlank())
+                .map(Pattern::quote).collect(java.util.stream.Collectors.joining("|"));
+        return alternatives.isBlank() ? Pattern.compile("(?!)")
+                : Pattern.compile("([\\p{IsHan}]{" + minPrefix + "," + maxPrefix + "}(?:" + alternatives + "))");
     }
 
-    private List<AmapResponseNormalizer.PoiCandidate> usableCandidates(
-            List<AmapResponseNormalizer.PoiCandidate> values,
-            AmapResponseNormalizer.PoiCandidate start) {
+    private boolean matchesAnyPattern(String value, List<String> expressions) {
+        return value != null && expressions != null && expressions.stream().filter(expression -> expression != null && !expression.isBlank())
+                .anyMatch(expression -> Pattern.matches(expression, value));
+    }
+
+    private List<com.ai.guide.domain.geo.model.GeoPoiCandidate> usableCandidates(
+            List<com.ai.guide.domain.geo.model.GeoPoiCandidate> values,
+            com.ai.guide.domain.geo.model.GeoPoiCandidate start) {
         if (values == null) return List.of();
         String startCampus = start == null ? "" : extractCampus(safeName(start), text(start.address()));
         String startPrimary = start == null ? "" : primaryVenue(safeName(start));
 
-        List<AmapResponseNormalizer.PoiCandidate> filtered = new ArrayList<>();
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> filtered = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
         Set<String> seenPrimary = new HashSet<>();
         Map<String, Integer> neighborhoodCounts = new LinkedHashMap<>();
-        List<AmapResponseNormalizer.PoiCandidate> acceptedSpots = new ArrayList<>();
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> acceptedSpots = new ArrayList<>();
         int squareCandidateCount = 0;
 
-        List<AmapResponseNormalizer.PoiCandidate> sorted = values.stream()
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> sorted = values.stream()
                 .filter(item -> item != null && item.coordinate() != null && !safeName(item).isBlank())
                 .filter(item -> !samePoi(item, start))
                 .filter(item -> !isNoisePoi(item))
                 .sorted(Comparator.comparingDouble(item -> distanceKm(start.coordinate(), item.coordinate())))
                 .toList();
 
-        for (AmapResponseNormalizer.PoiCandidate item : sorted) {
+        for (com.ai.guide.domain.geo.model.GeoPoiCandidate item : sorted) {
             String poiId = text(item.poiId()).isBlank() ? safeName(item) : item.poiId();
             if (!seenIds.add(poiId)) continue;
 
@@ -1371,9 +1375,7 @@ public class RuntimeLocationPlanner {
             if (!startCampus.isBlank() && !AmapPoiTaxonomy.isScenicVenue(text(item.typecode()))
                     && !AmapPoiTaxonomy.isCulturalVenue(text(item.typecode()))) {
                 if (itemCampus.equals(startCampus)) {
-                    if (itemName.contains("广场") || itemName.contains("操场") || itemName.contains("体育")
-                            || itemName.contains("教学") || itemName.contains("楼") || itemName.contains("公寓")
-                            || itemName.contains("一教") || itemName.contains("二教") || itemName.contains("三教")) {
+                    if (containsAny(itemName, taxonomy.getHints("runtimeCampusFacilityAliases"))) {
                         continue;
                     }
                 }
@@ -1385,24 +1387,29 @@ public class RuntimeLocationPlanner {
             }
 
             // 2. 广场候选上限：候选池至多 2 个广场，防止挤占其他核心文旅景点
-            PoiCategory cat = detectCategory(itemName, text(item.type()), text(item.typecode()));
+            PoiCategory cat = detectCategory(itemName, text(item.type()), text(item.typecode()), taxonomy);
             if (cat == PoiCategory.SQUARE) {
-                if (squareCandidateCount >= 2) {
+                int maxSquareCandidates = PlannerScoringPolicy.limit(taxonomy, "maxShortTripSquareCandidates");
+                if (maxSquareCandidates > 0 && squareCandidateCount >= maxSquareCandidates) {
                     continue;
                 }
                 squareCandidateCount++;
             }
 
-            // 3. 街区聚集度控制：同一老街或街区（如黄桷垭老街、磁器口等）候选池至多保留 2 处，避免整街微小门牌占满候选池
+            // 3. Limit repeated neighborhood candidates so minor venues do not dominate the pool.
             String neighborhood = extractNeighborhood(itemName, itemAddr, item.businessArea());
-            if (!neighborhood.isBlank() && neighborhoodCounts.getOrDefault(neighborhood, 0) >= 2) {
+            int maxNeighborhoodCandidates = PlannerScoringPolicy.limit(taxonomy, "maxShortTripNeighborhoodCandidates");
+            if (!neighborhood.isBlank() && maxNeighborhoodCandidates > 0
+                    && neighborhoodCounts.getOrDefault(neighborhood, 0) >= maxNeighborhoodCandidates) {
                 continue;
             }
 
-            // 空间聚集度检查：与已有候选点相距 < 250 米的微小簇群至多允许 2 个
-            boolean tooCloseToCluster = acceptedSpots.stream().filter(ex ->
-                    item.coordinate() != null && ex.coordinate() != null && distanceKm(item.coordinate(), ex.coordinate()) < 0.25
-            ).count() >= 2;
+            // Limit dense micro-clusters using externally configured distance and count policies.
+            int maxNearbyClusterCandidates = PlannerScoringPolicy.limit(taxonomy, "maxShortTripNearbyClusterCandidates");
+            boolean tooCloseToCluster = maxNearbyClusterCandidates > 0 && acceptedSpots.stream().filter(ex ->
+                    item.coordinate() != null && ex.coordinate() != null
+                            && distanceKm(item.coordinate(), ex.coordinate()) < dynamicPolicy.getPolicy().duplicateCandidateDistanceKm()
+            ).count() >= maxNearbyClusterCandidates;
             if (tooCloseToCluster) {
                 continue;
             }
@@ -1424,22 +1431,22 @@ public class RuntimeLocationPlanner {
         return filtered;
     }
 
-    private AmapResponseNormalizer.PoiCandidate chooseStart(List<AmapResponseNormalizer.PoiCandidate> values) {
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate chooseStart(List<com.ai.guide.domain.geo.model.GeoPoiCandidate> values) {
         return chooseStart(values, null);
     }
 
-    private AmapResponseNormalizer.PoiCandidate chooseStart(List<AmapResponseNormalizer.PoiCandidate> values, String requestedPlace) {
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate chooseStart(List<com.ai.guide.domain.geo.model.GeoPoiCandidate> values, String requestedPlace) {
         if (values == null || values.isEmpty()) return null;
         if (requestedPlace != null && !requestedPlace.isBlank()) {
             String clean = requestedPlace.trim();
             // 1. Exact or contains match
-            for (AmapResponseNormalizer.PoiCandidate item : values) {
+            for (com.ai.guide.domain.geo.model.GeoPoiCandidate item : values) {
                 if (item != null && item.coordinate() != null && safeName(item).contains(clean)) {
                     return item;
                 }
             }
-            // 2. Token overlap match (e.g. "邮电大学" in "重庆邮电大学")
-            for (AmapResponseNormalizer.PoiCandidate item : values) {
+            // 2. Token overlap match (e.g. a requested campus name within a longer university name)
+            for (com.ai.guide.domain.geo.model.GeoPoiCandidate item : values) {
                 if (item != null && item.coordinate() != null) {
                     String name = safeName(item);
                     if (clean.length() >= 4 && name.contains(clean.substring(2))) {
@@ -1453,28 +1460,29 @@ public class RuntimeLocationPlanner {
                 .findFirst().orElse(null);
     }
 
-    private boolean samePoi(AmapResponseNormalizer.PoiCandidate left, AmapResponseNormalizer.PoiCandidate right) {
+    private boolean samePoi(com.ai.guide.domain.geo.model.GeoPoiCandidate left, com.ai.guide.domain.geo.model.GeoPoiCandidate right) {
         if (left == null || right == null) return false;
         if (!text(left.poiId()).isBlank() && text(left.poiId()).equals(text(right.poiId()))) return true;
         return safeName(left).equals(safeName(right));
     }
 
-    private int routeMinutes(RoutePairOutcome route) {
+    private int routeMinutes(GeoRoutePairOutcome route) {
         if (route == null || route.selected() == null || route.selected().segment() == null
                 || route.selected().segment().durationSeconds() == null) return 0;
         return Math.max(1, (int) Math.ceil(route.selected().segment().durationSeconds() / 60.0));
     }
 
     private int estimateTravelMinutes(String origin, String destination) {
-        AmapResponseNormalizer.Coordinate from = AmapResponseNormalizer.parseCoordinate(origin);
-        AmapResponseNormalizer.Coordinate to = AmapResponseNormalizer.parseCoordinate(destination);
-        if (from == null || to == null) return 30;
+        com.ai.guide.domain.geo.model.GeoCoordinate from = com.ai.guide.domain.geo.model.GeoCoordinates.parse(origin);
+        com.ai.guide.domain.geo.model.GeoCoordinate to = com.ai.guide.domain.geo.model.GeoCoordinates.parse(destination);
+        if (from == null || to == null) return dynamicPolicy.getPolicy().unknownTravelDurationMinutes();
         double distance = distanceKm(from, to);
         if (!Double.isFinite(distance)) throw new IllegalArgumentException("无法根据无效坐标估算交通时间");
-        return Math.max(5, (int) Math.ceil(distance * 4.0));
+        DynamicShortTripPolicyPort.Policy policy = dynamicPolicy.getPolicy();
+        return Math.max(policy.minimumEstimatedTravelMinutes(), (int) Math.ceil(distance * policy.estimateTravelMinutesPerKm()));
     }
 
-    private String routeLabel(RoutePairOutcome route, int fallbackMinutes) {
+    private String routeLabel(GeoRoutePairOutcome route, int fallbackMinutes) {
         if (route != null && route.selected() != null && route.selected().segment() != null
                 && route.selected().segment().distanceMeters() != null) {
             int effectiveMinutes = routeMinutes(route);
@@ -1485,13 +1493,13 @@ public class RuntimeLocationPlanner {
         return "路线待核验 · 预计约 " + fallbackMinutes + " 分钟";
     }
 
-    private Map<String, Object> routeMap(RoutePairOutcome route) {
+    private Map<String, Object> routeMap(GeoRoutePairOutcome route) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (route == null || route.selected() == null || route.selected().segment() == null) {
             result.put("status", "待核验");
             return result;
         }
-        AmapResponseNormalizer.RouteResult segment = route.selected().segment();
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = route.selected().segment();
         result.put("status", segment.metricsComplete() && segment.durationSeconds() != null ? "已核验" : "部分核验");
         result.put("mode", segment.mode());
         result.put("distanceMeters", segment.distanceMeters());
@@ -1516,11 +1524,22 @@ public class RuntimeLocationPlanner {
         return destination.endsWith("市") ? destination : destination + "市";
     }
 
-    private String coordinate(AmapResponseNormalizer.Coordinate coordinate) {
+    private boolean usesCityStrategy(String city, String strategy) {
+        if (city == null || city.isBlank()) return false;
+        return taxonomy.getCityStrategyMappings().entrySet().stream()
+                .anyMatch(entry -> entry.getValue().equalsIgnoreCase(strategy)
+                        && entry.getKey().replace("市", "").equalsIgnoreCase(city.trim().replace("市", "")));
+    }
+
+    private String scenicType() {
+        return taxonomy.getHints("runtimeScenicTypeCode").stream().findFirst().orElse("");
+    }
+
+    private String coordinate(com.ai.guide.domain.geo.model.GeoCoordinate coordinate) {
         return coordinate == null ? "" : coordinate.longitude() + "," + coordinate.latitude();
     }
 
-    private String safeName(AmapResponseNormalizer.PoiCandidate candidate) {
+    private String safeName(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate) {
         return candidate == null ? "" : text(candidate.name());
     }
 
@@ -1531,7 +1550,7 @@ public class RuntimeLocationPlanner {
         return parts.length > 1 ? parts[Math.max(0, Math.min(2, parts.length - 1))] : value;
     }
 
-    private double distanceKm(AmapResponseNormalizer.Coordinate from, AmapResponseNormalizer.Coordinate to) {
+    private double distanceKm(com.ai.guide.domain.geo.model.GeoCoordinate from, com.ai.guide.domain.geo.model.GeoCoordinate to) {
         double lat1 = Math.toRadians(from.latitude());
         double lat2 = Math.toRadians(to.latitude());
         double dLat = lat2 - lat1;

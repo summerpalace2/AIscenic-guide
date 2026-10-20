@@ -1,10 +1,11 @@
 package com.ai.guide.infrastructure.planner.amap;
 
 import com.ai.guide.domain.chat.service.SlotTrackingService;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.model.RouteOutcome;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
+import com.ai.guide.testing.InMemoryUserPreferenceStore;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRouteOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,8 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.redis.core.HashOperations;
-import org.springframework.data.redis.core.RedisTemplate;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -39,34 +38,7 @@ public class P1GovernanceAssaultTest {
 
     @BeforeEach
     void setUp() {
-        @SuppressWarnings("unchecked")
-        RedisTemplate<String, String> mockRedis = mock(RedisTemplate.class);
-        @SuppressWarnings("rawtypes")
-        HashOperations hashOps = mock(HashOperations.class);
-        Map<String, Map<String, String>> memoryDb = new ConcurrentHashMap<>();
-
-        when(mockRedis.opsForHash()).thenReturn(hashOps);
-        doAnswer(invocation -> {
-            String key = invocation.getArgument(0);
-            String hashKey = invocation.getArgument(1);
-            String val = invocation.getArgument(2);
-            memoryDb.computeIfAbsent(key, k -> new ConcurrentHashMap<>()).put(hashKey, val);
-            return null;
-        }).when(hashOps).put(anyString(), anyString(), anyString());
-
-        when(hashOps.entries(anyString())).thenAnswer(invocation -> {
-            String key = invocation.getArgument(0);
-            return memoryDb.getOrDefault(key, Map.of());
-        });
-
-        when(hashOps.get(anyString(), anyString())).thenAnswer(invocation -> {
-            String key = invocation.getArgument(0);
-            String hashKey = invocation.getArgument(1);
-            Map<String, String> h = memoryDb.get(key);
-            return h != null ? h.get(hashKey) : null;
-        });
-
-        slotTrackingService = new SlotTrackingService(mockRedis);
+        slotTrackingService = new SlotTrackingService(new InMemoryUserPreferenceStore(), new ObjectMapper(), new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
     }
 
     // =========================================================================
@@ -146,6 +118,8 @@ public class P1GovernanceAssaultTest {
     @Test
     @DisplayName("战役 2A：【防御验证】复合否定语态精准识别，杜绝错误区域写入")
     void testAttack2A_NegationFailureForCompoundPrefixes() throws Exception {
+        assertTrue(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter().getAreaNames().contains("南岸"),
+                "taxonomy fixture should expose the configured district alias");
         String testUser1 = "attacker-slot-1-" + UUID.randomUUID();
         String testUser2 = "attacker-slot-2-" + UUID.randomUUID();
 
@@ -220,8 +194,8 @@ public class P1GovernanceAssaultTest {
                 try {
                     startLatch.await();
                     // 每一个并发请求使用不同的关键词，穿透缓存直接打到线程池
-                    PoiOutcome outcome = stressService.searchPoi("测试景点" + idx, "重庆市");
-                    if (outcome.status() == OutcomeStatus.SUCCESS) {
+                    GeoPoiOutcome outcome = stressService.searchPoi("测试景点" + idx, "重庆市");
+                    if (outcome.status() == GeoOutcomeStatus.SUCCESS) {
                         successCount.incrementAndGet();
                     } else {
                         failCount.incrementAndGet();

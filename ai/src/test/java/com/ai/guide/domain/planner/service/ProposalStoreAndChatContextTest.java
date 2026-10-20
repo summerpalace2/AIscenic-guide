@@ -1,6 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.PlanAdjustmentProposal;
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,29 +17,30 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("ProposalStore 缓存与并发治理测试")
 class ProposalStoreAndChatContextTest {
 
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @BeforeEach
     void setUp() {
-        proposalStore = new ProposalStore();
-        proposalStore.clear();
+        proposalStore = new CaffeineRedisProposalRepository();
+        proposalStore.clearLocalCache();
     }
 
     @Test
     @DisplayName("ProposalStore: 正常存储、读取与移除")
     void testBasicPutAndGet() {
+        long createdAt = System.currentTimeMillis();
         PlanAdjustmentProposal proposal = PlanAdjustmentProposal.builder()
                 .proposalId("prop-test-1")
                 .sessionId("session-1")
                 .baseRevision(1)
                 .feasible(true)
-                .createdAt(System.currentTimeMillis())
-                .expiresAt(System.currentTimeMillis() + 900_000L)
+                .createdAt(createdAt)
+                .expiresAt(createdAt + PlanAdjustmentProposal.DEFAULT_TTL_MS)
                 .proposedTrip(Map.of("id", "trip-1"))
                 .build();
 
         proposalStore.put(proposal);
-        assertEquals(1, proposalStore.size());
+        assertEquals(1, proposalStore.localSize());
 
         PlanAdjustmentProposal retrieved = proposalStore.get("prop-test-1");
         assertNotNull(retrieved);
@@ -77,13 +79,14 @@ class ProposalStoreAndChatContextTest {
             final int id = i;
             pool.submit(() -> {
                 try {
+                    long createdAt = System.currentTimeMillis();
                     PlanAdjustmentProposal p = PlanAdjustmentProposal.builder()
                             .proposalId("prop-" + id)
                             .sessionId("session-" + (id % 10))
                             .baseRevision(1)
                             .feasible(true)
-                            .createdAt(System.currentTimeMillis())
-                            .expiresAt(System.currentTimeMillis() + 900_000L)
+                            .createdAt(createdAt)
+                            .expiresAt(createdAt + PlanAdjustmentProposal.DEFAULT_TTL_MS)
                             .build();
                     proposalStore.put(p);
                     successCount.incrementAndGet();
@@ -97,7 +100,7 @@ class ProposalStoreAndChatContextTest {
         pool.shutdown();
 
         assertEquals(count, successCount.get());
-        assertTrue(proposalStore.size() >= count, "所有 1000 条未过期提案均应保留，严禁容量溢出随机剔除");
+        assertTrue(proposalStore.localSize() >= count, "所有 1000 条未过期提案均应保留，严禁容量溢出随机剔除");
         assertNotNull(proposalStore.get("prop-0"));
         assertNotNull(proposalStore.get("prop-500"));
         assertNotNull(proposalStore.get("prop-999"));

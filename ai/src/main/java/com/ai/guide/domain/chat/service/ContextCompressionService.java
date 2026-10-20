@@ -1,8 +1,8 @@
 package com.ai.guide.domain.chat.service;
 
-import org.springframework.ai.chat.messages.*;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.data.redis.core.RedisTemplate;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.chat.gateway.ChatSummaryStorePort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.util.*;
@@ -20,20 +20,18 @@ public class ContextCompressionService {
     private final int lazyCompressMin;
     private static final int MAX_SUMMARY_LENGTH = 2000;
     private static final int COMPRESS_RESET_THRESHOLD = 5;
-    private static final String SUMMARY_KEY_SUFFIX = ":summary";
     private static final String SUMMARY_PREFIX = "[历史对话摘要] ";
-    private static final String COMPRESS_COUNT_SUFFIX = ":compress_count";
 
-    private final RedisTemplate<String, String> redisTemplate;
-    private final ChatClient chatClient;
+    private final ChatSummaryStorePort summaryStore;
+    private final LanguageModelPort modelGateway;
     private final SlotTrackingService slotTrackingService;
 
-    public ContextCompressionService(RedisTemplate<String, String> redisTemplate,
-                                    ChatClient.Builder builder,
+    public ContextCompressionService(ChatSummaryStorePort summaryStore,
+                                    LanguageModelPort modelGateway,
                                     SlotTrackingService slotTrackingService,
                                     @Value("${context.keep-recent:12}") int keepRecent) {
-        this.redisTemplate = redisTemplate;
-        this.chatClient = builder.build();
+        this.summaryStore = summaryStore;
+        this.modelGateway = modelGateway;
         this.slotTrackingService = slotTrackingService;
         this.keepRecent = keepRecent;
         this.lazyCompressMin = keepRecent;
@@ -45,25 +43,25 @@ public class ContextCompressionService {
      * @param allHistory 历史消息列表
      * @param userId 用户 ID（用于读取槽位偏好）
      */
-    public List<Message> getContext(String sessionId, List<Message> allHistory, String userId) {
+    public List<LanguageModelMessage> getContext(String sessionId, List<LanguageModelMessage> allHistory, String userId) {
         String summary = getSummary(sessionId);
-        int compressedCount = getCompressedCount(sessionId);
+        int compressedCount = summaryStore.getCompressedCount(sessionId);
         return getContextWithData(sessionId, allHistory, summary, compressedCount, userId);
     }
 
-    public List<Message> getContextWithData(String sessionId, List<Message> allHistory,
+    public List<LanguageModelMessage> getContextWithData(String sessionId, List<LanguageModelMessage> allHistory,
                                              String summary, int compressedCount,
                                              String userId) {
-        List<Message> result = new ArrayList<>();
+        List<LanguageModelMessage> result = new ArrayList<>();
         if (allHistory.size() <= keepRecent) {
             result.addAll(allHistory);
             return result;
         }
-        List<Message> recent;
-        List<Message> toCompress;
+        List<LanguageModelMessage> recent;
+        List<LanguageModelMessage> toCompress;
         if (summary != null) {
             int newMsgCount = allHistory.size() - compressedCount;
-            int compressCount = getCompressCount(sessionId);
+            int compressCount = summaryStore.getCompressionCount(sessionId);
             boolean needReset = summary.length() > MAX_SUMMARY_LENGTH || compressCount >= COMPRESS_RESET_THRESHOLD;
             if (!needReset && newMsgCount <= lazyCompressMin) {
                 summaryMsg(result, summary);
@@ -71,19 +69,19 @@ public class ContextCompressionService {
                 return result;
             }
             if (needReset) {
-                List<Message> allToCompress = new ArrayList<>(allHistory.size() + 1);
-                allToCompress.add(new SystemMessage("旧摘要: " + summary));
+                List<LanguageModelMessage> allToCompress = new ArrayList<>(allHistory.size() + 1);
+                allToCompress.add(new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, "旧摘要: " + summary));
                 allToCompress.addAll(allHistory.subList(compressedCount, allHistory.size()));
                 String resetSummary = compress(allToCompress, null, userId);
                 if (resetSummary == null) {
                     toCompress = allHistory.subList(compressedCount, allHistory.size() - keepRecent);
                     recent = allHistory.subList(allHistory.size() - keepRecent, allHistory.size());
                 } else {
-                    saveSummary(sessionId, resetSummary, allHistory.size() - keepRecent);
-                    resetCompressCount(sessionId);
+                    summaryStore.saveSummary(sessionId, resetSummary, allHistory.size() - keepRecent);
+                    summaryStore.resetCompressionCount(sessionId);
                     summaryMsg(result, resetSummary);
                     String ss = slotTrackingService.toPromptContext(userId);
-                    if (!ss.isEmpty()) result.add(new SystemMessage(ss));
+                    if (!ss.isEmpty()) result.add(new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, ss));
                     result.addAll(allHistory.subList(Math.max(0, allHistory.size() - keepRecent), allHistory.size()));
                     return result;
                 }
@@ -106,16 +104,16 @@ public class ContextCompressionService {
             result.addAll(allHistory.subList(Math.max(0, allHistory.size() - keepRecent), allHistory.size()));
             return result;
         }
-        saveSummary(sessionId, newSummary, allHistory.size() - keepRecent);
-        incrementCompressCount(sessionId, false);
+        summaryStore.saveSummary(sessionId, newSummary, allHistory.size() - keepRecent);
+        summaryStore.incrementCompressionCount(sessionId);
         summaryMsg(result, newSummary);
         String ss = slotTrackingService.toPromptContext(userId);
-        if (ss != null && !ss.isEmpty()) result.add(new SystemMessage(ss));
+        if (ss != null && !ss.isEmpty()) result.add(new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, ss));
         result.addAll(recent);
         return result;
     }
 
-    private String compress(List<Message> messages, String existingSummary, String userId) {
+    private String compress(List<LanguageModelMessage> messages, String existingSummary, String userId) {
         StringBuilder sb = new StringBuilder();
         if (existingSummary != null && !existingSummary.isEmpty()) {
             sb.append("已有的对话摘要：\n").append(existingSummary).append("\n\n");
@@ -125,67 +123,29 @@ public class ContextCompressionService {
         if (slots != null && !slots.isEmpty()) {
             sb.append("\n用户偏好快照：\n").append(slots);
         }
-        for (Message msg : messages) {
-            String role = msg.getMessageType() == MessageType.USER ? "用户" : "助手";
-            sb.append(role).append(": ").append(msg.getContent()).append("\n");
+        for (LanguageModelMessage msg : messages) {
+            String role = msg.role() == LanguageModelMessage.Role.USER ? "用户" : "助手";
+            sb.append(role).append(": ").append(msg.content()).append("\n");
         }
         try {
-            String result = chatClient.prompt()
-                .messages(new SystemMessage("你是对话摘要生成器。生成150字内中文摘要。"), new UserMessage(sb.toString()))
-                .call().content();
+            String result = modelGateway.completeText(List.of(
+                    new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, "你是对话摘要生成器。生成150字内中文摘要。"),
+                    new LanguageModelMessage(LanguageModelMessage.Role.USER, sb.toString())));
             return (result != null && !result.isBlank()) ? result : "对话已发生";
         } catch (Exception e) {
             return null;
         }
     }
 
-    private void summaryMsg(List<Message> result, String summary) {
-        if (summary != null && !summary.isEmpty()) result.add(new SystemMessage(SUMMARY_PREFIX + summary));
+    private void summaryMsg(List<LanguageModelMessage> result, String summary) {
+        if (summary != null && !summary.isEmpty()) result.add(new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, SUMMARY_PREFIX + summary));
     }
 
     private String getSummary(String sessionId) {
-        try { return redisTemplate.opsForValue().get(sessionId + SUMMARY_KEY_SUFFIX); }
-        catch (Exception e) { return null; }
+        return summaryStore.getSummary(sessionId);
     }
-
-    private void saveSummary(String sessionId, String summary, int compressedCount) {
-        try {
-            redisTemplate.opsForValue().set(sessionId + SUMMARY_KEY_SUFFIX, summary);
-            redisTemplate.opsForValue().set(sessionId + ":compressed_count", String.valueOf(compressedCount));
-        } catch (Exception e) {}
-    }
-
-    private int getCompressedCount(String sessionId) {
-        try {
-            String v = redisTemplate.opsForValue().get(sessionId + ":compressed_count");
-            return v != null ? Integer.parseInt(v) : 0;
-        } catch (Exception e) { return 0; }
-    }
-
-    private int getCompressCount(String sessionId) {
-        try {
-            String v = redisTemplate.opsForValue().get(sessionId + COMPRESS_COUNT_SUFFIX);
-            return v != null ? Integer.parseInt(v) : 0;
-        } catch (Exception e) { return 0; }
-    }
-
-    private void incrementCompressCount(String sessionId, boolean reset) {
-        try {
-            if (reset) {
-                redisTemplate.opsForValue().set(sessionId + COMPRESS_COUNT_SUFFIX, "0");
-            } else {
-                redisTemplate.opsForValue().increment(sessionId + COMPRESS_COUNT_SUFFIX, 1);
-            }
-        } catch (Exception ignored) {}
-    }
-
-    private void resetCompressCount(String sessionId) { incrementCompressCount(sessionId, true); }
 
     public void clearSummary(String sessionId) {
-        try {
-            redisTemplate.delete(sessionId + SUMMARY_KEY_SUFFIX);
-            redisTemplate.delete(sessionId + ":compressed_count");
-            redisTemplate.delete(sessionId + COMPRESS_COUNT_SUFFIX);
-        } catch (Exception ignored) {}
+        summaryStore.clear(sessionId);
     }
 }

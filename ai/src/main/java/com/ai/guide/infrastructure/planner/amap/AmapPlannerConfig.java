@@ -16,13 +16,15 @@ import org.springframework.web.client.RestTemplate;
 @Configuration
 public class AmapPlannerConfig {
 
-    @Value("${amap.web-service.base-url:https://restapi.amap.com}")
+    // Context-slice tests may import this configuration without loading application.yml;
+    // the provider client normalizes an absent value to its protocol default.
+    @Value("${amap.web-service.base-url:}")
     private String baseUrl;
 
     @Value("${amap.web-service.key:}")
     private String apiKey;
 
-    @Value("${amap.web-service.timeout-ms:6000}")
+    @Value("${amap.web-service.timeout-ms:5000}")
     private int timeoutMs;
 
     @Bean

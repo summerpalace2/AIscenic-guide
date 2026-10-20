@@ -2,7 +2,7 @@
   "adjustmentWindows": [
     {
       "key": "MORNING",
-      "startMinute": 0,
+      "startMinute": 300,
       "endMinute": 720,
       "aliases": [
         "上午",
@@ -68,6 +68,54 @@
       "endMinute": 1380,
       "idealMinute": 1290,
       "label": "21:30"
+    }
+  },
+  "diningSearch": {
+    "proximityRadiusMeters": 1000,
+    "nearbyRadiusMeters": 1500,
+    "expansionStepMeters": 500,
+    "fallbackRadiusMeters": 1800,
+    "breakfastTypes": "中餐厅|快餐厅",
+    "mealTypes": "中餐厅|风味餐厅|快餐厅",
+    "teaBreakTypes": "咖啡厅|茶艺馆|冷饮店|甜品店|风味餐厅",
+    "genericMealKeyword": "餐厅",
+    "genericTeaBreakKeyword": "餐饮",
+    "fallbackPoiType": "餐饮服务",
+    "diningTypePrefix": "05",
+    "nonMealTypeKeywords": [
+      "咖啡厅",
+      "冷饮店",
+      "甜品店",
+      "糕点店"
+    ],
+    "proximityTimeBudgetMinutes": 600,
+    "proximityMaxDistanceKm": 2.8,
+    "sameDistrictMaxDistanceKm": 5.0,
+    "suburbanMaxDistanceKm": 15.0,
+    "crossDistrictMaxDistanceKm": 3.5,
+    "localFallbackMaxDistanceKm": 5.0,
+    "veryNearDistanceMeters": 600,
+    "nearDistanceKm": 1.0,
+    "mediumDistanceKm": 1.5,
+    "districtMatchScore": 100,
+    "exactFlavorScore": 150,
+    "citySignatureScore": 80,
+    "mismatchPenalty": 100,
+    "distanceBandScores": [
+      60,
+      45,
+      30,
+      15
+    ],
+    "elderFriendlyBonus": 25,
+    "lowWalkingBonus": 20,
+    "lowWalkingDistanceKm": 0.5,
+    "mealDurationsMinutes": {
+      "BREAKFAST": 30,
+      "LUNCH": 60,
+      "DINNER": 60,
+      "NIGHT_SNACK": 45,
+      "TEA_BREAK": 50
     }
   },
   "cityCuisineProfiles": {
@@ -136,9 +184,1403 @@
     }
   },
   "legacyHints": {
-    "defaultDestination": ["重庆"],
-    "nonSpicyFlavors": ["清淡不辣", "清淡", "不辣"],
-    "nonMealCategories": ["特色甜品", "休闲茶歇", "市井茶歇早点", "特色小吃早点"],
+    "defaultDestination": [
+      "重庆"
+    ],
+    "defaultDurationDays": [
+      "2"
+    ],
+    "defaultMealSlot": [
+      "LUNCH"
+    ],
+    "defaultDiningPreference": [
+      "本地菜优先"
+    ],
+    "defaultDiningDisplayLabel": [
+      "特色美食"
+    ],
+    "nightSnackCategoryLabel": [
+      "夜市特色"
+    ],
+    "teaBreakCategoryLabel": [
+      "休闲茶歇"
+    ],
+    "genericDiningCategoryLabel": [
+      "周边精选美食"
+    ],
+    "dinnerTagLabel": [
+      "晚餐"
+    ],
+    "diningStopCategories": ["美食"],
+    "diningStopIcons": ["餐"],
+    "defaultStopCategory": ["景点"],
+    "mealRelativeAfterLunch": ["午餐后", "午饭后"],
+    "mealRelativeBeforeLunch": ["午餐前", "午饭前"],
+    "breakfastCategoryLabel": ["晨间早点"],
+    "mealDisplayPrefixBreakfast": ["【早餐推荐】"],
+    "mealDisplayPrefixLunch": ["【午餐推荐】"],
+    "mealDisplayPrefixDinner": ["【晚餐推荐】"],
+    "mealDisplayPrefixTeaBreak": ["【特色茶歇】"],
+    "mealDisplayPrefixNightSnack": ["【宵夜推荐】"],
+    "searchCategoryCoreLandmark": ["核心地标"],
+    "searchCategoryScenicLandmark": ["景区地标"],
+    "searchCategoryWebNews": ["全网资讯"],
+    "runtimePoiFallbackSearchKeyword": ["景点"],
+    "diningFallbackCandidateLimit": ["6"],
+    "diningReplacementSupplementThreshold": ["3"],
+    "diningReplacementSupplementLimit": ["5"],
+    "diningDefaultResultLimit": ["3"],
+    "diningAmapMaxResults": ["5"],
+    "supportedMealSlots": [
+      "BREAKFAST",
+      "LUNCH",
+      "DINNER",
+      "NIGHT_SNACK",
+      "TEA_BREAK",
+      "AFTERNOON_TEA"
+    ],
+    "defaultInterests": [
+      "城市",
+      "人文",
+      "夜景"
+    ],
+    "baselineCity": [
+      "重庆"
+    ],
+    "baselineDayThemes": [
+      "母城地标与两江夜景",
+      "文博探索与山城魔幻",
+      "江岸开阔视野与工业文创",
+      "千年古镇与巴渝风情"
+    ],
+    "genericDayThemes": [
+      "城市地标与夜景",
+      "文博探索",
+      "自然与文创",
+      "历史与当地风情"
+    ],
+    "runtimeNatureInterestFeatures": [
+      "公园",
+      "植物园",
+      "风景",
+      "峡谷",
+      "江",
+      "山",
+      "湖",
+      "岛",
+      "林",
+      "滨江"
+    ],
+    "runtimeHistoryInterestFeatures": [
+      "博物馆",
+      "纪念馆",
+      "古镇",
+      "旧址",
+      "遗址",
+      "寺",
+      "阁",
+      "书院",
+      "文博",
+      "历史"
+    ],
+    "plannerHistoryCategories": [
+      "人文"
+    ],
+    "plannerFoodCategories": [
+      "美食"
+    ],
+    "plannerNatureCategories": [
+      "自然"
+    ],
+    "runtimeThermalInterestFeatures": [
+      "温泉",
+      "汤池",
+      "度夏",
+      "疗养"
+    ],
+    "runtimeLocalCultureInterestFeatures": [
+      "老街",
+      "市井",
+      "巷",
+      "码头",
+      "坊",
+      "里",
+      "街区"
+    ],
+    "runtimeProminentPoiFeatures": [
+      "古镇",
+      "老街",
+      "森林公园",
+      "植物园",
+      "湿地公园",
+      "文化公园",
+      "风景区",
+      "国家级",
+      "观景台",
+      "步道",
+      "俯瞰"
+    ],
+    "runtimeSecondaryPoiFeatures": [
+      "博物馆",
+      "纪念馆",
+      "陈列馆",
+      "美术馆",
+      "寺",
+      "庙",
+      "观",
+      "阁",
+      "塔",
+      "公园",
+      "湖"
+    ],
+    "runtimeHistoricPoiFeatures": [
+      "旧址",
+      "遗址",
+      "故居",
+      "旧居"
+    ],
+    "runtimeFamilyFriendlyFeatures": [
+      "公园",
+      "博物馆",
+      "纪念馆",
+      "植物园",
+      "展馆"
+    ],
+    "runtimeStrenuousFeatures": [
+      "险",
+      "攀",
+      "台阶",
+      "悬崖",
+      "陡"
+    ],
+    "poiCategorySquareNameTokens": [
+      "广场"
+    ],
+    "poiCategoryLandmarkNameTokens": [
+      "索道",
+      "观景",
+      "瞰江",
+      "步道",
+      "绿道",
+      "大桥",
+      "滨江",
+      "江岸",
+      "单轨",
+      "轻轨",
+      "码头",
+      "渡口"
+    ],
+    "poiCategoryLandmarkTypeTokens": [
+      "观景点",
+      "摄影"
+    ],
+    "poiCategoryHistoryNameTokens": [
+      "古镇",
+      "老街",
+      "民俗",
+      "古村",
+      "旧址",
+      "遗址",
+      "故居",
+      "旧居",
+      "博物馆",
+      "纪念馆",
+      "陈列馆",
+      "美术馆",
+      "艺术馆",
+      "书院",
+      "文博",
+      "文物",
+      "历史"
+    ],
+    "poiCategoryHistoryTypeTokens": [
+      "文物古迹",
+      "博物馆",
+      "纪念馆"
+    ],
+    "poiCategoryCommercialNameTokens": [
+      "步行街",
+      "商业街",
+      "夜市",
+      "市集",
+      "集市"
+    ],
+    "poiCategoryCommercialTypeTokens": [
+      "商业街"
+    ],
+    "poiCategoryReligionNameTokens": [
+      "寺庙",
+      "道观",
+      "寺院",
+      "古刹"
+    ],
+    "poiCategoryReligionNameSuffixes": [
+      "寺",
+      "庙",
+      "观",
+      "阁",
+      "塔",
+      "庵",
+      "祠"
+    ],
+    "poiCategoryReligionTypeTokens": [
+      "寺庙道观",
+      "宗教名胜"
+    ],
+    "poiCategoryNatureNameTokens": [
+      "公园",
+      "植物园",
+      "动物园",
+      "森林",
+      "湿地",
+      "风景区",
+      "景区",
+      "自然",
+      "峡",
+      "谷",
+      "山",
+      "峰",
+      "湖",
+      "池",
+      "瀑布",
+      "泉"
+    ],
+    "poiCategoryNatureTypeTokens": [
+      "风景名胜",
+      "公园广场"
+    ],
+    "localCultureTags": [
+      "市井",
+      "市井烟火",
+      "老街",
+      "古镇",
+      "在地文化",
+      "地方生活"
+    ],
+    "dietRestrictionKeywords": [
+      "过敏",
+      "忌口",
+      "清真",
+      "素食",
+      "純素",
+      "纯素",
+      "乳糖不耐",
+      "不吃",
+      "不喝",
+      "不想吃",
+      "不想喝",
+      "不能吃",
+      "免葱",
+      "忌内脏",
+      "不喜欢",
+      "不爱",
+      "讨厌"
+    ],
+    "dietNegationExceptions": [
+      "不是不",
+      "并非不",
+      "不会不",
+      "没有不"
+    ],
+    "spicyPositiveAliases": [
+      "麻辣",
+      "喜辣",
+      "爱吃辣",
+      "辣味",
+      "吃辣",
+      "重辣",
+      "嗜辣",
+      "无辣不欢"
+    ],
+    "spicyNegativeAliases": [
+      "清淡",
+      "少辣",
+      "不吃辣",
+      "不能吃辣",
+      "免辣",
+      "不辣",
+      "怕辣"
+    ],
+    "lowWalkingPreferenceAliases": [
+      "少走路",
+      "少爬坡",
+      "平路",
+      "避台阶"
+    ],
+    "highWalkingPreferenceAliases": [
+      "特种兵",
+      "暴走",
+      "多走走"
+    ],
+    "walkingHighPreferenceSynonyms": [
+      "体力有限",
+      "体力一般",
+      "省力",
+      "省腿"
+    ],
+    "memoryAccessibility": [
+      "轮椅",
+      "无障碍",
+      "婴儿车",
+      "推车",
+      "腿脚不便",
+      "行动不便",
+      "拄拐",
+      "拐杖",
+      "术后",
+      "台阶高"
+    ],
+    "memoryPaceLow": [
+      "少走",
+      "少走路",
+      "不想走",
+      "走不动",
+      "爬不动",
+      "懒得走",
+      "有点懒",
+      "很懒",
+      "太懒",
+      "偷懒",
+      "犯懒",
+      "不想动",
+      "少爬坡",
+      "少台阶",
+      "轻松一点",
+      "不爱走路",
+      "体力有限",
+      "慢节奏",
+      "休闲",
+      "不想太累",
+      "别太赶",
+      "不要特种兵",
+      "不特种兵",
+      "平地",
+      "平路",
+      "省力",
+      "省腿"
+    ],
+    "memoryPaceHigh": [
+      "特种兵",
+      "多走走",
+      "充实",
+      "暴走",
+      "多看几个",
+      "多安排点",
+      "多逛几个",
+      "深度游",
+      "不怕累",
+      "精力充沛",
+      "徒步"
+    ],
+    "memoryTransportTaxi": [
+      "打车",
+      "出租车",
+      "网约车",
+      "滴滴",
+      "包车",
+      "自驾",
+      "租车",
+      "晕车",
+      "不想挤"
+    ],
+    "memoryTransportTransit": [
+      "地铁",
+      "公交",
+      "公共交通",
+      "轻轨",
+      "轨道交通",
+      "体验轻轨",
+      "低碳出行"
+    ],
+    "memoryBudgetLow": [
+      "预算有限",
+      "省钱",
+      "性价比",
+      "免费",
+      "穷游",
+      "学生党",
+      "平价",
+      "实惠"
+    ],
+    "memoryBudgetHigh": [
+      "品质",
+      "高端",
+      "讲究品质",
+      "黑珍珠",
+      "预算充足",
+      "不差钱",
+      "高档"
+    ],
+    "memoryWeather": [
+      "怕晒",
+      "怕热",
+      "容易中暑",
+      "雨天",
+      "下雨",
+      "避雨",
+      "避暑",
+      "防晒",
+      "吹空调"
+    ],
+    "memoryTime": [
+      "不喜欢早起",
+      "睡到自然醒",
+      "晚起",
+      "起不来",
+      "夜猫子",
+      "上午不出发",
+      "下午才出门"
+    ],
+    "memoryStay": [
+      "酒店安静",
+      "住宿安静",
+      "住得方便",
+      "靠近地铁住",
+      "住江景"
+    ],
+    "memoryCompanionChild": [
+      "带娃",
+      "孩子",
+      "宝宝",
+      "小朋友",
+      "亲子",
+      "游乐场",
+      "童趣",
+      "推车出行"
+    ],
+    "memoryCompanionSenior": [
+      "父母",
+      "长辈",
+      "老人",
+      "爸妈",
+      "带老人",
+      "老年人"
+    ],
+    "memoryCompanionFriends": [
+      "情侣",
+      "对象",
+      "爱人",
+      "两个人",
+      "闺蜜",
+      "朋友",
+      "蜜月"
+    ],
+    "memoryInterestPhotography": [
+      "拍照",
+      "摄影",
+      "出片",
+      "机位",
+      "找角度",
+      "打卡地",
+      "美照",
+      "好看",
+      "旅拍",
+      "汉服"
+    ],
+    "memoryInterestNight": [
+      "夜景",
+      "江景",
+      "赛博朋克",
+      "天台"
+    ],
+    "preferenceNegationMarkers": [
+      "不喜欢",
+      "不太喜欢",
+      "不爱",
+      "讨厌",
+      "不想",
+      "不看",
+      "避免",
+      "避开",
+      "不要"
+    ],
+    "memoryInterestHistory": [
+      "博物馆",
+      "美术馆",
+      "展览",
+      "人文",
+      "历史",
+      "古迹",
+      "老建筑",
+      "非遗",
+      "红色",
+      "文化",
+      "古镇",
+      "老街",
+      "文创",
+      "书店"
+    ],
+    "memoryInterestNature": [
+      "自然",
+      "徒步",
+      "爬山",
+      "山水",
+      "公园",
+      "江岸",
+      "森林",
+      "峡谷",
+      "天坑",
+      "地质",
+      "吸氧"
+    ],
+    "ragStopwords": [
+      "旅行",
+      "行程",
+      "景点",
+      "希望",
+      "需要",
+      "可以"
+    ],
+    "centralUrbanDistricts": [
+      "渝中区",
+      "江北区",
+      "南岸区",
+      "沙坪坝区",
+      "九龙坡区",
+      "大渡口区",
+      "渝北区",
+      "巴南区",
+      "北碚区"
+    ],
+    "budgetLowAliases": [
+      "预算有限",
+      "预算友好",
+      "预算不高",
+      "省钱",
+      "经济"
+    ],
+    "walkingLowAliases": [
+      "低",
+      "少走路",
+      "低步行",
+      "低体力",
+      "不爬坡",
+      "避免台阶"
+    ],
+    "walkingHighAliases": [
+      "高"
+    ],
+    "walkingNormalAliases": [
+      "正常步行"
+    ],
+    "transportTransitAliases": [
+      "地铁",
+      "轻轨",
+      "轻轨地铁优先"
+    ],
+    "transportPublicAliases": [
+      "公交",
+      "公共交通"
+    ],
+    "transportTaxiAliases": [
+      "打车",
+      "出租车",
+      "打车为主"
+    ],
+    "companionSeniorAliases": [
+      "父母",
+      "长辈",
+      "老人"
+    ],
+    "companionChildAliases": [
+      "亲子出游",
+      "亲子家庭",
+      "亲子",
+      "带小孩",
+      "小孩",
+      "孩子"
+    ],
+    "companionCoupleAliases": [
+      "情侣结伴",
+      "情侣双人",
+      "情侣"
+    ],
+    "companionFriendAliases": [
+      "朋友结伴",
+      "朋友"
+    ],
+    "companionSoloAliases": [
+      "独自出发",
+      "独自",
+      "一个人",
+      "自由行"
+    ],
+    "replanIndoorAliases": [
+      "室内",
+      "雨",
+      "避暑"
+    ],
+    "replanLowWalkingAliases": [
+      "少走路",
+      "不想走",
+      "轻松",
+      "老人",
+      "长辈",
+      "低步行"
+    ],
+    "replanUrgencyAliases": [
+      "时间变少",
+      "赶时间",
+      "快",
+      "短停留"
+    ],
+    "replanNightAliases": [
+      "夜景",
+      "晚上",
+      "灯光"
+    ],
+    "replanCultureAliases": [
+      "文创",
+      "艺术",
+      "拍照"
+    ],
+    "candidateLowWalkingFeatures": [
+      "少走路",
+      "长辈友好",
+      "视野开阔",
+      "直达",
+      "短步行",
+      "平街",
+      "扶梯"
+    ],
+    "shortVisitDurationTokens": [
+      "45",
+      "60"
+    ],
+    "chengduTopoHighNameTokens": [
+      "青城山",
+      "西岭雪山",
+      "龙泉山",
+      "天台山"
+    ],
+    "chengduTopoHighIdTokens": [
+      "qingchengshan",
+      "xiling-snow-mountain",
+      "longquanshan",
+      "tiantaishan"
+    ],
+    "chengduTopoOutskirtDistrictTokens": [
+      "都江堰",
+      "崇州",
+      "大邑"
+    ],
+    "chengduTopoOutskirtNameTokens": [
+      "青城山"
+    ],
+    "chengduTopoZigzagPenalty": [
+      "70"
+    ],
+    "xianTopoHighNameTokens": [
+      "华山",
+      "终南山",
+      "翠华山"
+    ],
+    "xianTopoHighIdTokens": [
+      "huashan",
+      "zhongnanshan",
+      "cuihuashan"
+    ],
+    "xianTopoInnerDistrictTokens": [
+      "碑林",
+      "莲湖"
+    ],
+    "xianTopoInnerNameTokens": [
+      "钟楼",
+      "鼓楼",
+      "回民街",
+      "书院门",
+      "碑林"
+    ],
+    "xianTopoOutskirtDistrictTokens": [
+      "临潼"
+    ],
+    "xianTopoOutskirtNameTokens": [
+      "兵马俑",
+      "华清宫"
+    ],
+    "xianTopoZigzagPenalty": [
+      "80"
+    ],
+    "chongqingTopoHighNameTokens": [
+      "南山",
+      "一棵树",
+      "黄桷垭",
+      "大金鹰",
+      "植物园",
+      "泉水鸡",
+      "歌乐山",
+      "白公馆",
+      "渣滓洞",
+      "缙云山",
+      "仙女山",
+      "天生三桥"
+    ],
+    "chongqingTopoHighIdTokens": [
+      "nanshan",
+      "huangjueya",
+      "geleshani"
+    ],
+    "chongqingTopoLowlandNameTokens": [
+      "洪崖洞",
+      "李子坝",
+      "朝天门",
+      "来福士",
+      "菜园坝",
+      "白象街",
+      "南滨路",
+      "海棠烟雨",
+      "龙门浩",
+      "弹子石",
+      "大剧院",
+      "北滨路",
+      "江滩",
+      "码头",
+      "滨江"
+    ],
+    "chongqingTopoLowlandIdTokens": [
+      "hongyadong",
+      "liziba",
+      "longmenhao",
+      "danzishi",
+      "grand-theatre",
+      "chaotianmen"
+    ],
+    "chongqingTopoUpperDistricts": [
+      "渝中区"
+    ],
+    "chongqingTopoUpperNameTokens": [
+      "解放碑",
+      "两路口",
+      "大坪",
+      "时代天街",
+      "三峡博物馆",
+      "人民大礼堂",
+      "中山四路",
+      "文化宫",
+      "琵琶山",
+      "观音桥",
+      "九街"
+    ],
+    "chongqingTopoUpperIdTokens": [
+      "jiefangbei",
+      "museum",
+      "great-hall",
+      "eling"
+    ],
+    "chongqingTopoUpperRidgeNameTokens": [
+      "鹅岭",
+      "二厂"
+    ],
+    "chongqingTopoJialingSouthDistricts": [
+      "渝中区",
+      "沙坪坝区"
+    ],
+    "chongqingTopoJialingNorthDistricts": [
+      "江北区",
+      "渝北区"
+    ],
+    "chongqingTopoYangtzeNorthDistricts": [
+      "渝中区",
+      "九龙坡区",
+      "大渡口区"
+    ],
+    "chongqingTopoYangtzeSouthDistricts": [
+      "南岸区",
+      "巴南区"
+    ],
+    "chongqingTopoConfluenceDistrictPairs": [
+      "江北区|南岸区"
+    ],
+    "chongqingTopoDownhillPairs": [
+      "鹅岭,鹅岭二厂|李子坝",
+      "解放碑|洪崖洞",
+      "解放碑|十八梯",
+      "南山|南滨路,龙门浩,弹子石",
+      "两路口|菜园坝"
+    ],
+    "chongqingTopoZigzagPenalties": [
+      "MOUNTAIN_BOUNCE|60",
+      "RIVER_BOUNCE|45"
+    ],
+    "chongqingTopoTransitHintRules": [
+      "鹅岭,鹅岭二厂|李子坝|顺山势从山脊步道下行至江畔观景区域，具体道路与通行状态以实时导航为准。",
+      "两路口|菜园坝|可查询当地垂直交通设施与实时路线，确认开放后再选择乘坐。",
+      "CROSSING_PRIMARY|*|两地跨越当地主要河流，请根据实时交通路线选择桥梁、轨道或网约车通行。",
+      "CROSSING_SECONDARY|*|两地跨越当地河流，请根据实时交通路线选择桥梁、轨道或网约车通行。",
+      "CROSSING_BOTH|*|此段跨越水域交汇区域，请根据实时交通路线核实通行方式。",
+      "南山|南滨路,龙门浩,弹子石|从高处前往江岸请优先核验道路与交通方式，避免夜间徒步山路。",
+      "南滨路,龙门浩|南山|前往山地景点请核验坡度、开放状态与接驳路线。"
+    ],
+    "startPlaceDistrictRules": [
+      "江津区|江津,白沙,四面山|120",
+      "南岸区|南岸,重邮,邮电,南山|80",
+      "沙坪坝区|沙坪坝,重大,重庆大学,大学城|80",
+      "渝中区|渝中,解放碑,朝天门|60",
+      "江北区|江北,观音桥|60",
+      "九龙坡区|九龙坡,杨家坪|80",
+      "巴南区|巴南|80",
+      "北碚区|北碚|80",
+      "大渡口区|大渡口|80",
+      "渝北区|渝北|60"
+    ],
+    "startPlaceDistrictBoostRules": [
+      "南岸区|南山,龙门浩,马鞍山|40"
+    ],
+    "baselineRequiredAttractionIds": [
+      "cq-jiefangbei",
+      "cq-hongyadong",
+      "cq-museum",
+      "cq-liziba",
+      "cq-shibati"
+    ],
+    "catalogOrder": [
+      "cq-hongyadong",
+      "cq-jiefangbei",
+      "cq-museum",
+      "cq-liziba",
+      "cq-grand-theatre",
+      "cq-ciqikou",
+      "cq-kuixinglou",
+      "cq-shibati",
+      "cq-erling",
+      "cq-changjiang-cable",
+      "cq-nanshan-yikeshu",
+      "cq-danzi-shi",
+      "cq-guanyinqiao",
+      "cq-luohan-temple",
+      "cq-huguang-guild",
+      "cq-zhongshan-road",
+      "cq-baiheliang",
+      "cq-wulong-tiankeng",
+      "cq-dazu-rock",
+      "cq-ronghui-hotspring",
+      "cq-south-hotspring",
+      "cq-geleyuan",
+      "cq-maanshan",
+      "cq-beicang"
+    ],
+    "baselineDayLabels": [
+      "母城地标与山城夜景",
+      "文博静谧与城市穿楼",
+      "江岸视野与工业文创",
+      "古镇与地方风情"
+    ],
+    "baselineDay1": [
+      "day1-jiefangbei|cq-jiefangbei|14:30",
+      "day1-hongyadong|cq-hongyadong|19:30"
+    ],
+    "baselineDay2": [
+      "day2-museum|cq-museum|10:00",
+      "day2-liziba|cq-liziba|14:30",
+      "day2-shibati|cq-shibati|18:00"
+    ],
+    "baselineDay3": [
+      "day3-erling|cq-erling|14:00",
+      "day3-grand-theatre|cq-grand-theatre|19:30"
+    ],
+    "baselineDay4": [
+      "day4-ciqikou|cq-ciqikou|10:30",
+      "day4-danzi-shi|cq-danzi-shi|17:30"
+    ],
+    "scheduleArrivalNight": [
+      "19:30|NIGHT"
+    ],
+    "scheduleArrivalAfternoon": [
+      "14:30|DAY",
+      "19:30|NIGHT"
+    ],
+    "scheduleDepartureMorning": [
+      "10:00|DAY"
+    ],
+    "scheduleDepartureMidday": [
+      "10:00|DAY",
+      "14:30|DAY"
+    ],
+    "scheduleStandardDay": [
+      "10:00|DAY",
+      "14:30|DAY",
+      "18:30|NIGHT"
+    ],
+    "plannerNightCategories": [
+      "夜景"
+    ],
+    "plannerNightTags": [
+      "夜景",
+      "夜游",
+      "夜间"
+    ],
+    "plannerNightTimeWindow": [
+      "1080|1440"
+    ],
+    "plannerNightWords": [
+      "晚上",
+      "夜间",
+      "夜景",
+      "夜游"
+    ],
+    "plannerNightInterestLabels": [
+      "夜景",
+      "山城夜景"
+    ],
+    "chongqingTerrainInterestLabels": [
+      "8D魔幻"
+    ],
+    "chongqingTerrainInterestFeatures": [
+      "8D魔幻",
+      "单轨",
+      "天桥",
+      "空中连廊",
+      "空中巴士"
+    ],
+    "chongqingTerrainReason": [
+      "具备当地地形特色"
+    ],
+    "runtimeScenicTypeCode": [
+      "110000"
+    ],
+    "runtimeDefaultStartTime": [
+      "09:30"
+    ],
+    "runtimeDefaultMorningTime": [
+      "09:30"
+    ],
+    "runtimeDefaultNoonTime": [
+      "12:00"
+    ],
+    "runtimeDefaultAfternoonTime": [
+      "14:00"
+    ],
+    "runtimeDefaultEveningTime": [
+      "19:00"
+    ],
+    "runtimeDefaultNightTime": [
+      "18:30"
+    ],
+    "runtimeActiveWindow": [
+      "07:30|18:30"
+    ],
+    "runtimeLatestNightStartTime": [
+      "20:00"
+    ],
+    "runtimeNightKeywords": [
+      "夜",
+      "今晚",
+      "晚上",
+      "夜景",
+      "夜市",
+      "酒吧"
+    ],
+    "runtimeTimeZone": [
+      "Asia/Shanghai"
+    ],
+    "runtimeTimeRoundingMinutes": [
+      "10"
+    ],
+    "nonDiningDiningOverrides": [
+      "吃",
+      "喝",
+      "餐",
+      "饭",
+      "美食",
+      "茶",
+      "咖啡",
+      "甜品",
+      "糖水"
+    ],
+    "slotBreakfast": [
+      "早餐",
+      "早饭",
+      "早点",
+      "早上"
+    ],
+    "slotLunch": [
+      "午餐",
+      "午饭",
+      "中午"
+    ],
+    "slotDinner": [
+      "晚餐",
+      "晚饭",
+      "晚上"
+    ],
+    "slotNightSnack": [
+      "夜市",
+      "烧烤",
+      "烤肉",
+      "宵夜",
+      "夜宵"
+    ],
+    "slotTeaBreak": [
+      "茶",
+      "茶馆",
+      "茶室",
+      "茶楼",
+      "盖碗茶",
+      "品茗",
+      "喝茶",
+      "老茶馆",
+      "咖啡",
+      "下午茶",
+      "茶歇",
+      "小憩",
+      "歇脚",
+      "甜",
+      "糖水",
+      "冰粉",
+      "凉糕",
+      "糍粑",
+      "麻花",
+      "点心",
+      "蛋糕",
+      "烘焙"
+    ],
+    "chatSafetyRevisionSignals": [
+      "取消", "撤销", "更正", "纠正", "说错", "恢复", "康复", "不再", "改为",
+      "no longer", "correction", "recovered", "cancel", "remove restriction"
+    ],
+    "chatFoodIntent": [
+      "吃",
+      "餐",
+      "美食",
+      "饭店",
+      "餐厅",
+      "茶馆",
+      "茶楼",
+      "喝茶",
+      "甜品",
+      "甜食",
+      "糖水",
+      "火锅",
+      "串串",
+      "小吃",
+      "烧烤",
+      "咖啡",
+      "奶茶",
+      "饮品",
+      "清吧",
+      "酒吧",
+      "西餐",
+      "日料",
+      "披萨",
+      "小面",
+      "快餐",
+      "早点",
+      "早餐",
+      "夜市"
+    ],
+    "chatAttractionIntent": [
+      "玩",
+      "好玩",
+      "游玩",
+      "打卡",
+      "景点",
+      "逛逛",
+      "看头",
+      "拍照",
+      "看景",
+      "观景",
+      "夜景",
+      "散步",
+      "遛弯",
+      "溜达",
+      "买买买",
+      "购物",
+      "商场",
+      "展",
+      "博物馆",
+      "艺术馆",
+      "大剧院",
+      "剧场"
+    ],
+    "chatNearbyIntent": [
+      "附近",
+      "周边",
+      "周围",
+      "这块",
+      "片区",
+      "一带",
+      "路段",
+      "有没有",
+      "有什么"
+    ],
+    "chatNearbySearchPrefix": ["附近"],
+    "chatNearbyAttractionSuffix": ["附近景点"],
+    "chatNearbyDiningSuffix": ["附近餐饮"],
+    "foodOpenQuestion": [
+      "附近",
+      "周边",
+      "有没有",
+      "有什么"
+    ],
+    "chatTeaIntent": [
+      "茶馆",
+      "茶楼",
+      "喝茶",
+      "盖碗茶"
+    ],
+    "chatSweetIntent": [
+      "甜品",
+      "甜食",
+      "糖水",
+      "冰粉",
+      "凉糕"
+    ],
+    "chatHotpotIntent": [
+      "火锅",
+      "串串",
+      "九宫格"
+    ],
+    "chatGrillIntent": [
+      "烧烤",
+      "夜市",
+      "烤脑花",
+      "大排档"
+    ],
+    "nonSpicyFlavors": [
+      "清淡不辣",
+      "清淡",
+      "不辣"
+    ],
+    "spicyFlavors": [
+      "火锅",
+      "重庆火锅",
+      "江湖菜",
+      "老火锅",
+      "辣子鸡",
+      "毛血旺"
+    ],
+    "foodTags": [
+      "美食",
+      "小吃",
+      "老字号",
+      "街头小吃",
+      "非遗小吃"
+    ],
+    "nonMealCategories": [
+      "特色甜品",
+      "休闲茶歇",
+      "市井茶歇早点",
+      "特色小吃早点"
+    ],
+    "slotInterestFoodKeywords": [
+      "美食",
+      "好吃的",
+      "餐厅",
+      "吃饭",
+      "小吃",
+      "素斋",
+      "素食",
+      "甜品",
+      "甜食",
+      "甜点",
+      "甜的",
+      "吃甜"
+    ],
+    "teaBreakFlavorKeywords": [
+      "茶",
+      "甜",
+      "咖啡",
+      "糖水",
+      "品茗",
+      "小憩"
+    ],
+    "teaVenueNameKeywords": [
+      "茶",
+      "咖啡",
+      "糖水",
+      "冰粉"
+    ],
+    "teaBreakDiningTypes": [
+      "休闲茶歇"
+    ],
+    "nonDiningNameKeywords": [
+      "餐厅",
+      "食堂",
+      "咖啡",
+      "茶馆",
+      "茶楼",
+      "茶室",
+      "面馆",
+      "饭庄",
+      "小吃"
+    ],
+    "shadowPacing": [
+      "RELAXED|慢节奏游览",
+      "不想太赶",
+      "慢节奏",
+      "悠闲",
+      "轻松",
+      "别太累",
+      "不赶时间"
+    ],
+    "shadowCrowd": [
+      "AVOID_CROWDED|小众清幽",
+      "避开网红",
+      "不去人多",
+      "小众",
+      "清幽",
+      "人少",
+      "清静"
+    ],
+    "shadowExperience": [
+      "AUTHENTIC_LOCAL|在地文化体验",
+      "市井",
+      "地道",
+      "本地风情",
+      "烟火气",
+      "老街坊"
+    ],
+    "shadowPhotography": [
+      "PHOTO_FOCUS|摄影取景",
+      "拍照出片",
+      "拍照",
+      "摄影",
+      "机位",
+      "打卡",
+      "旅拍"
+    ],
+    "diningSlotNames": [
+      "午餐",
+      "晚餐",
+      "早餐",
+      "就餐"
+    ],
+    "diningType": [
+      "餐饮",
+      "美食",
+      "茶艺",
+      "冷饮"
+    ],
+    "theater": [
+      "剧场",
+      "演艺",
+      "大剧院",
+      "川剧",
+      "盛典",
+      "大戏",
+      "实景演出",
+      "歌舞",
+      "演出"
+    ],
+    "shopping": [
+      "天街",
+      "商圈",
+      "购物",
+      "步行街"
+    ],
+    "transit": [
+      "索道",
+      "大扶梯",
+      "缆车",
+      "轮渡"
+    ],
+    "hotel": [
+      "酒店",
+      "民宿",
+      "客栈"
+    ],
+    "areaNames": [
+      "洪崖洞",
+      "解放碑",
+      "李子坝",
+      "鹅岭二厂",
+      "鹅岭",
+      "山城巷",
+      "湖广会馆",
+      "长江索道",
+      "三峡博物馆",
+      "磁器口",
+      "南山一棵树",
+      "朝天门",
+      "重庆大剧院",
+      "大剧院",
+      "白象居",
+      "龙门浩",
+      "下浩老街",
+      "魁星楼",
+      "两路口",
+      "三峡广场",
+      "观音桥",
+      "中山四路",
+      "重庆人民大礼堂",
+      "重庆美术馆",
+      "南滨路",
+      "弹子石",
+      "融汇温泉",
+      "红岩革命纪念馆",
+      "歌乐山",
+      "渣滓洞",
+      "白公馆",
+      "南岸",
+      "南岸区",
+      "九龙坡区",
+      "沙坪坝",
+      "沙坪坝区",
+      "渝中区",
+      "江北区",
+      "渝北区",
+      "巴南区",
+      "北碚区",
+      "大渡口区"
+    ],
+    "planAttractionMarkers": [
+      "陈列馆",
+      "美术馆",
+      "博物馆",
+      "科技馆",
+      "动物园",
+      "大礼堂"
+    ],
+    "genericDiningPhrases": [
+      "附近",
+      "周边",
+      "同片区",
+      "其他",
+      "别的",
+      "或者",
+      "还是",
+      "随便",
+      "推荐",
+      "老字号",
+      "中餐",
+      "正餐",
+      "美食",
+      "快餐",
+      "吃点",
+      "来点",
+      "来个",
+      "吃个",
+      "想吃",
+      "想喝",
+      "去吃",
+      "品尝"
+    ],
+    "establishmentSuffixes": [
+      "餐馆",
+      "餐厅",
+      "食堂",
+      "酒楼",
+      "大酒楼",
+      "饭店",
+      "大饭店",
+      "茶舍",
+      "茶馆",
+      "茶楼",
+      "茶室",
+      "咖啡馆",
+      "咖啡厅",
+      "甜品店",
+      "糖水铺",
+      "糕点铺",
+      "大排档",
+      "火锅馆",
+      "面庄",
+      "面馆",
+      "小吃店",
+      "饮品店",
+      "烤肉店",
+      "烤鱼店"
+    ],
     "dining": [
       "餐",
       "饭",
@@ -227,13 +1669,6 @@
       "050800",
       "050900"
     ],
-    "suburbanDistricts": [
-      "武隆",
-      "大足",
-      "江津",
-      "涪陵",
-      "巴南"
-    ],
     "genericFlavors": [
       "本地菜优先",
       "特色美食",
@@ -244,13 +1679,935 @@
       "早餐",
       "早点",
       "餐厅"
+    ],
+    "plannerSeniorFriendlyFeatures": [
+      "长辈最爱",
+      "长辈友好",
+      "少走路"
+    ],
+    "plannerChildFriendlyFeatures": [
+      "亲子",
+      "科普"
+    ],
+    "sameDistrictRequestAliases": [
+      "同片区",
+      "同区"
+    ],
+    "plannerScoreWeights": [
+      "sameDistrictPreferred=100",
+      "sameDistrictDefault=30",
+      "differentDistrictPenalty=-100",
+      "candidateLowWalking=25",
+      "sameCategory=15",
+      "candidateSeniorFriendly=20",
+      "candidateChildFriendly=20",
+      "candidateIndoor=70",
+      "candidateOutdoorPenalty=-80",
+      "candidateLowWalkingPreference=30",
+      "candidateHistoryPreference=30",
+      "candidateNightPreference=30",
+      "candidateFoodPreference=30",
+      "candidateNaturePreference=30",
+      "replacementIndoor=20",
+      "replacementIndoorFeature=10",
+      "replacementLowWalking=20",
+      "replacementLowWalkingEvidence=10",
+      "replacementLowWalkingTag=10",
+      "replacementUrgencyDuration=20",
+      "replacementShortVisitTag=10",
+      "replacementNight=25",
+      "replacementFood=25",
+      "replacementCulture=20",
+      "replacementNightLowWalking=30",
+      "replacementSameDistrict=5",
+      "routeExplicitMention=200",
+      "routeMustVisit=300",
+      "routeAvoidPenalty=-500",
+      "routeInterestNature=55",
+      "routeInterestHistory=45",
+      "routeInterestTerrain=55",
+      "routeInterestNight=45",
+      "routeInterestThermal=60",
+      "routeInterestLocal=45",
+      "routeInterestGeneric=40",
+      "routeWalkEasy=35",
+      "routeWalkAccessible=25",
+      "routeWalkHard=-50",
+      "routeWalkMedium=-15",
+      "routeCompanionIndoor=25",
+      "routeSeniorFriendly=35",
+      "routeSeniorLowWalking=30",
+      "routeSeniorHard=-40",
+      "routeChildEducation=45",
+      "routeChildNature=35",
+      "routeChildTerrain=30",
+      "routeCoupleRomance=35",
+      "routeCoupleThermal=45",
+      "routeCoupleScenic=30",
+      "routeFriendsActive=35",
+      "routeSoloCalm=30",
+      "routeDiningNonSpicy=30",
+      "routeDiningSpicyPenalty=-20",
+      "routeDiningFlavor=40",
+      "builderExplicitMention=200",
+      "builderMustVisit=300",
+      "builderAvoidPenalty=-500",
+      "builderInterestNature=55",
+      "builderInterestHistory=45",
+      "builderInterestTerrain=55",
+      "builderInterestNight=45",
+      "builderInterestThermal=60",
+      "builderInterestLocal=45",
+      "builderInterestGeneric=40",
+      "builderDiningPeaceful=30",
+      "builderDiningSpicyPenalty=-20",
+      "builderDiningPreference=40",
+      "builderDiningFood=30",
+      "builderWalkEasy=35",
+      "builderWalkAccessible=25",
+      "builderWalkHard=-50",
+      "builderWalkMedium=-15",
+      "builderWalkActive=30",
+      "builderCompanionIndoor=25",
+      "builderChildEducation=45",
+      "builderChildNature=35",
+      "builderChildTerrain=30",
+      "builderSeniorFriendly=35",
+      "builderSeniorLowWalking=30",
+      "builderSeniorHard=-40",
+      "builderCoupleRomance=35",
+      "builderCoupleThermal=45",
+      "builderCoupleScenic=30",
+      "builderFriendsActive=35",
+      "builderSoloCalm=30",
+      "routeDiningFood=40",
+      "routeTimePreference=25",
+      "routeTravelPenaltyPerMinute=0.4",
+      "routeLowWalkingPenaltyPerMeter=0.03",
+      "routeTopographyDownhill=25",
+      "routeTopographyUphill=-30",
+      "rainIndoor=70",
+      "rainMixed=42",
+      "rainSameAsOriginal=80",
+      "rainSameAsPrevious=18",
+      "rainSameAsNext=18",
+      "rainLowWalking=15",
+      "rainRouteErrorPenalty=-40",
+      "rainRouteUnavailablePenalty=-20",
+      "rainMaximumRouteMinutes=150",
+      "rainInfeasibleScore=-10000",
+      "rainRoutePenaltyCapMinutes=180",
+      "rainRoutePenaltyPerMinute=0.45"
+    ],
+    "plannerLimits": [
+      "maxTripDays=7",
+      "maxDailyScheduleMinutes=660",
+      "maxReplanNonDiningStops=4",
+      "maxRepairableScenicStops=2",
+      "maxSingleTransferMinutes=150",
+      "maxShortTripSquareCandidates=2",
+      "maxShortTripNeighborhoodCandidates=2",
+      "maxShortTripNearbyClusterCandidates=2"
+    ],
+    "runtimeCulturalTypeAliases": [
+      "博物馆",
+      "展览馆",
+      "美术馆",
+      "图书馆",
+      "科技馆",
+      "天文馆"
+    ],
+    "runtimeExcludedTypeAliases": [
+      "公共厕所",
+      "变电站",
+      "售票处",
+      "洗手间",
+      "停车场",
+      "服务设施",
+      "报刊亭",
+      "公用电话",
+      "公司企业",
+      "商务住宅",
+      "生活服务",
+      "购物服务",
+      "餐饮服务",
+      "住宿服务",
+      "学校",
+      "科研机构",
+      "公园内部设施"
+    ],
+    "runtimeScenicTypeAliases": [
+      "风景名胜"
+    ],
+    "runtimeDiningTypeAliases": [
+      "餐饮",
+      "咖啡",
+      "茶艺"
+    ],
+    "runtimeBuildingNamePatterns": [
+      ".*(?:[一二三四五六七八九十\\d]+[栋幢号单元楼教]|教学楼|实训楼|实验楼).*"
+    ],
+    "runtimeStationSquareSuffixes": [
+      "东广场",
+      "西广场",
+      "南广场",
+      "北广场"
+    ],
+    "runtimeCampusFacilityAliases": [
+      "广场",
+      "操场",
+      "体育",
+      "教学",
+      "楼",
+      "公寓",
+      "一教",
+      "二教",
+      "三教"
+    ],
+    "runtimeCampusNameSuffixes": [
+      "大学",
+      "学院"
+    ],
+    "runtimeNeighborhoodSuffixes": [
+      "老街",
+      "古镇",
+      "古村",
+      "步行街",
+      "商圈",
+      "风景区",
+      "植物园",
+      "森林公园",
+      "文化公园"
+    ],
+    "runtimePrimaryVenueSuffixes": [
+      "大学",
+      "学院",
+      "中学",
+      "公园",
+      "古镇",
+      "老街",
+      "风景区",
+      "植物园"
+    ],
+    "replacementIndoorFeatures": [
+      "室内"
+    ],
+    "shortVisitTags": [
+      "短停留"
+    ],
+    "plannerCreativeCategories": [
+      "文创"
+    ],
+    "plannerCreativeTags": [
+      "文创",
+      "拍照"
+    ],
+    "plannerNightLowWalkingFeatures": [
+      "少走路",
+      "视野开阔"
+    ],
+    "plannerNatureInterestLabels": [
+      "自然",
+      "自然奇观"
+    ],
+    "plannerNatureFeatures": [
+      "自然",
+      "自然奇观",
+      "峡谷",
+      "喀斯特峡谷"
+    ],
+    "plannerHistoryInterestLabels": [
+      "人文",
+      "人文历史"
+    ],
+    "plannerHistoryFeatures": [
+      "人文",
+      "历史",
+      "古建",
+      "抗战遗址",
+      "千年古刹",
+      "世界文化遗产"
+    ],
+    "plannerThermalInterestLabels": [
+      "温泉",
+      "天然温泉"
+    ],
+    "plannerThermalCategories": [
+      "温泉"
+    ],
+    "plannerThermalFeatures": [
+      "温泉",
+      "天然地热温泉",
+      "古温泉",
+      "养生放松"
+    ],
+    "plannerThermalNameTerms": [
+      "温泉"
+    ],
+    "plannerLocalInterestLabels": [
+      "市井",
+      "市井烟火"
+    ],
+    "plannerLocalCategories": [
+      "市井"
+    ],
+    "plannerWalkingAccessibleFeatures": [
+      "少走路",
+      "长辈友好",
+      "平街",
+      "无障碍"
+    ],
+    "plannerWalkingHighFeatures": [
+      "深度打卡",
+      "徒步",
+      "徒步摄影"
+    ],
+    "plannerLowWalkingPromptAliases": [
+      "少走",
+      "轻松",
+      "坡"
+    ],
+    "plannerCompanionChildAliases": [
+      "带孩子",
+      "亲子家庭",
+      "亲子"
+    ],
+    "plannerCompanionSeniorAliases": [
+      "带父母",
+      "带老人",
+      "长辈同行"
+    ],
+    "plannerCompanionCoupleAliases": [
+      "情侣出游",
+      "情侣双人",
+      "情侣"
+    ],
+    "plannerCompanionFriendsAliases": [
+      "朋友出游",
+      "朋友结伴"
+    ],
+    "plannerCompanionSoloAliases": [
+      "独自出发",
+      "一个人",
+      "自由行"
+    ],
+    "plannerCompanionChildEducationFeatures": [
+      "亲子",
+      "科普",
+      "国宝级"
+    ],
+    "plannerCompanionChildNatureFeatures": [
+      "自然",
+      "峡谷",
+      "森林氧吧",
+      "地质奇观"
+    ],
+    "plannerCompanionSeniorFeatures": [
+      "长辈最爱",
+      "长辈友好",
+      "无障碍",
+      "少走路"
+    ],
+    "plannerCompanionSeniorEasyFeatures": [
+      "少走路",
+      "长辈友好",
+      "街区",
+      "视野开阔",
+      "开埠文化"
+    ],
+    "plannerCompanionCoupleRomanceFeatures": [
+      "夜景",
+      "浪漫"
+    ],
+    "plannerCompanionCoupleThermalFeatures": [
+      "温泉",
+      "天然地热温泉"
+    ],
+    "plannerCompanionCoupleScenicFeatures": [
+      "俯瞰全城",
+      "开埠文化"
+    ],
+    "plannerCompanionFriendsFeatures": [
+      "美食",
+      "打卡",
+      "夜生活"
+    ],
+    "plannerCompanionSoloFeatures": [
+      "地标",
+      "文创",
+      "城市书房"
+    ],
+    "plannerDiningPeacefulCategories": [
+      "人文",
+      "文创",
+      "休闲"
+    ],
+    "plannerDiningPeacefulFeatures": [
+      "最美林荫道",
+      "清淡友好"
+    ],
+    "plannerDiningAvoidSpicyIndoorFeatures": [
+      "最美林荫道",
+      "静谧散步",
+      "养生放松",
+      "城市书房",
+      "清淡友好"
+    ],
+    "plannerDiningFoodCategories": [
+      "美食"
+    ],
+    "plannerWalkingExtendedFeatures": [
+      "少走路",
+      "长辈友好",
+      "平街",
+      "无障碍",
+      "扶梯全覆盖",
+      "多级户外扶梯"
+    ],
+    "plannerWalkingActiveFeatures": [
+      "深度打卡",
+      "徒步",
+      "徒步摄影"
+    ],
+    "plannerCompanionChildExtendedFeatures": [
+      "亲子",
+      "科普",
+      "国宝级",
+      "水下博物馆",
+      "三峡变迁"
+    ],
+    "plannerCompanionKidNatureExtendedFeatures": [
+      "自然",
+      "峡谷",
+      "森林氧吧",
+      "地质奇观"
+    ],
+    "plannerCompanionSeniorExtendedFeatures": [
+      "长辈最爱",
+      "长辈友好",
+      "无障碍",
+      "少走路",
+      "养生放松"
+    ],
+    "plannerCompanionSeniorWalkingFeatures": [
+      "少走路",
+      "长辈友好",
+      "街区",
+      "视野开阔",
+      "开埠文化"
+    ],
+    "plannerCompanionCoupleRomanceExtendedFeatures": [
+      "夜景",
+      "浪漫",
+      "清幽",
+      "拍照出片"
+    ],
+    "plannerCompanionCoupleScenicExtendedFeatures": [
+      "俯瞰全城",
+      "夜景大片",
+      "开埠文化",
+      "工业风",
+      "文创艺术"
+    ],
+    "plannerCompanionFriendsCategories": [
+      "城市",
+      "美食"
+    ],
+    "plannerCompanionSoloExtendedFeatures": [
+      "地标",
+      "文创",
+      "城市书房",
+      "文艺社区",
+      "空中连廊",
+      "短停留",
+      "清幽"
+    ],
+    "walkingEasyLevels": [
+      "低"
+    ],
+    "walkingMediumLevels": [
+      "中"
+    ],
+    "walkingHardLevels": [
+      "高"
+    ],
+    "supportedAccessibilityLevels": [
+      "SUPPORTED"
+    ],
+    "partialAccessibilityLevels": [
+      "PARTIAL"
+    ],
+    "unsupportedAccessibilityLevels": [
+      "UNSUPPORTED"
+    ],
+    "indoorEnvironmentValues": [
+      "INDOOR"
+    ],
+    "missingPreferenceValues": [
+      "未提供"
+    ],
+    "plannerNightScoringFeatures": [
+      "夜景",
+      "夜游",
+      "夜间",
+      "临江",
+      "江岸夜景",
+      "俯瞰全城",
+      "浪漫",
+      "清幽",
+      "拍照出片"
+    ],
+    "plannerLocalCultureScoringFeatures": [
+      "市井",
+      "市井烟火",
+      "老街",
+      "古镇",
+      "在地文化",
+      "地方生活",
+      "老重庆"
+    ],
+    "runtimeProminentHeatFeatures": [
+      "国家级",
+      "著名",
+      "世界遗产",
+      "名胜",
+      "古迹"
+    ],
+    "runtimeScoringParameters": [
+      "baseScore=100",
+      "interestNature=40",
+      "interestHistory=40",
+      "interestTerrain=40",
+      "interestNight=40",
+      "interestThermal=40",
+      "interestLocal=40",
+      "interestGeneric=30",
+      "prominentPoi=35",
+      "secondaryPoi=25",
+      "historicPoi=20",
+      "squarePenalty=-10",
+      "ratingExcellentThreshold=4.5",
+      "ratingExcellent=35",
+      "ratingGoodThreshold=4.2",
+      "ratingGood=20",
+      "ratingAverageThreshold=4.0",
+      "ratingAverage=10",
+      "ratingLowThreshold=3.5",
+      "ratingLowPenalty=-25",
+      "officialHeat=20",
+      "lowWalkingCloseDistanceKm=1.5",
+      "lowWalkingClose=35",
+      "lowWalkingMediumDistanceKm=3.0",
+      "lowWalkingMedium=15",
+      "lowWalkingDistancePenaltyPerKm=10",
+      "normalCloseDistanceKm=2.5",
+      "normalClose=15",
+      "normalFarDistanceKm=4.5",
+      "normalFarDistancePenaltyPerKm=8",
+      "familyFriendly=20",
+      "strenuousPenalty=-30",
+      "ratingReasonThreshold=4.3"
+    ],
+    "plannerPreferenceIndoorTerms": [
+      "室内",
+      "避雨",
+      "馆内",
+      "博物馆",
+      "展馆",
+      "文化室内",
+      "美术馆",
+      "室内线"
+    ],
+    "plannerPreferenceLowWalkingTerms": [
+      "少走路",
+      "平街",
+      "轻松",
+      "不爬坡",
+      "不费力",
+      "低体力",
+      "缓坡",
+      "低步行",
+      "不方便走路",
+      "不便走路",
+      "走不了",
+      "走不动",
+      "不能走",
+      "手术",
+      "康复",
+      "腿脚",
+      "膝盖",
+      "腰疼",
+      "轮椅",
+      "拐杖",
+      "推车",
+      "带娃",
+      "老人",
+      "孕妇",
+      "脚痛",
+      "脚扭",
+      "可久坐",
+      "久坐",
+      "文化室内",
+      "室内线",
+      "避免爬台阶",
+      "电梯下行",
+      "平路"
+    ],
+    "plannerPreferenceAccessibilityTerms": [
+      "手术",
+      "康复",
+      "腿脚",
+      "膝盖",
+      "腰疼",
+      "轮椅",
+      "拐杖",
+      "不便",
+      "残障",
+      "行动不便",
+      "骨折",
+      "病后"
+    ],
+    "plannerPreferenceHistoryTerms": [
+      "人文",
+      "历史",
+      "古镇",
+      "老街",
+      "遗址",
+      "古迹",
+      "红色",
+      "抗战",
+      "文化",
+      "陈列馆"
+    ],
+    "plannerPreferenceNightViewTerms": [
+      "夜景",
+      "江景",
+      "灯光",
+      "临江"
+    ],
+    "plannerPreferenceNatureTerms": [
+      "自然",
+      "峡谷",
+      "天坑",
+      "山水",
+      "森林",
+      "公园"
+    ],
+    "plannerPreferenceFamilyTerms": [
+      "亲子",
+      "孩子",
+      "科普",
+      "动物园"
+    ],
+    "plannerPreferenceSameDistrictTerms": [
+      "同片区",
+      "同区",
+      "同行政区",
+      "本片区",
+      "附近片区",
+      "顺路"
+    ],
+    "plannerPreferenceNicheTerms": [
+      "小众",
+      "平替",
+      "秘境",
+      "冷门"
+    ],
+    "plannerPreferenceTheaterTerms": [
+      "演出",
+      "剧场",
+      "剧院",
+      "看剧",
+      "观演",
+      "大剧院",
+      "看戏"
+    ],
+    "plannerPreferenceShoppingTerms": [
+      "逛街",
+      "购物",
+      "商圈",
+      "步行街",
+      "买买买"
+    ],
+    "plannerConditionRainTerms": [
+      "下雨",
+      "雨天",
+      "避雨",
+      "暴雨"
+    ],
+    "plannerConditionHighTemperatureTerms": [
+      "太热",
+      "太晒",
+      "避暑",
+      "高温"
+    ],
+    "plannerPreferenceReduceDensityTerms": [
+      "太赶",
+      "太累",
+      "太满",
+      "走不动",
+      "喘口气",
+      "少推荐",
+      "少安排",
+      "少去",
+      "少逛",
+      "少看",
+      "减少景点",
+      "轻松一点",
+      "节奏慢一点",
+      "少一个"
+    ],
+    "diningProximityPromptTerms": ["小时", "半天", "就近", "附近", "短途", "定时", "一日游"],
+    "diningBreakfastFlavorTerms": ["早", "晨"],
+    "diningNightSnackFlavorTerms": ["宵夜", "夜市"],
+    "diningDinnerFlavorTerms": ["晚"],
+    "teaVenueCategoryKeywords": ["茶", "咖啡", "糖水", "冰粉"],
+    "plannerReplanLowWalkingTerms": [
+      "避免爬台阶",
+      "电梯下行"
     ]
   },
+  "suburbanDistrictsByCity": {
+    "重庆市": [
+      "武隆",
+      "大足",
+      "江津",
+      "涪陵",
+      "巴南"
+    ]
+  },
+  "interestKeywords": [
+    {
+      "label": "自然",
+      "aliases": [
+        "自然奇观",
+        "自然"
+      ]
+    },
+    {
+      "label": "人文",
+      "aliases": [
+        "人文历史",
+        "人文",
+        "历史"
+      ]
+    },
+    {
+      "label": "8D魔幻",
+      "aliases": [
+        "8D魔幻"
+      ]
+    },
+    {
+      "label": "夜景",
+      "aliases": [
+        "山城夜景",
+        "夜景"
+      ]
+    },
+    {
+      "label": "市井",
+      "aliases": [
+        "市井烟火",
+        "市井",
+        "烟火"
+      ]
+    },
+    {
+      "label": "温泉",
+      "aliases": [
+        "天然温泉",
+        "温泉"
+      ]
+    },
+    {
+      "label": "城市",
+      "aliases": [
+        "城市",
+        "地标"
+      ]
+    },
+    {
+      "label": "文创",
+      "aliases": [
+        "文创"
+      ]
+    },
+    {
+      "label": "休闲",
+      "aliases": [
+        "休闲"
+      ]
+    },
+    {
+      "label": "拍照",
+      "aliases": [
+        "拍照"
+      ]
+    },
+    {
+      "label": "美食",
+      "aliases": [
+        "美食",
+        "火锅"
+      ]
+    },
+    {
+      "label": "本地菜",
+      "aliases": [
+        "本地菜"
+      ]
+    }
+  ],
+  "dietPreferenceKeywords": [
+    {
+      "label": "素食",
+      "aliases": [
+        "素食"
+      ]
+    },
+    {
+      "label": "清真",
+      "aliases": [
+        "清真"
+      ]
+    },
+    {
+      "label": "清淡不辣",
+      "aliases": [
+        "清淡不辣",
+        "清淡"
+      ]
+    },
+    {
+      "label": "火锅",
+      "aliases": [
+        "九宫格老火锅",
+        "九宫格火锅",
+        "火锅"
+      ]
+    },
+    {
+      "label": "地道江湖菜",
+      "aliases": [
+        "地道江湖菜",
+        "江湖菜"
+      ]
+    },
+    {
+      "label": "街头小吃",
+      "aliases": [
+        "街头小吃小面",
+        "小吃",
+        "小面"
+      ]
+    },
+    {
+      "label": "本地菜优先",
+      "aliases": [
+        "本地菜优先",
+        "本地菜",
+        "美食",
+        "吃"
+      ]
+    }
+  ],
   "memoryProjection": {
-    "presentationWords": ["饮食偏好", "口味偏好", "喜好", "偏好", "喜欢", "爱吃", "特色", "风味", "口味", "饮食", "我", "平常", "平时", "通常", "现在", "一般", "比较", "更", "与", "和", "、", "，", ",", "；", ";", "。", "."],
+    "presentationWords": [
+      "饮食偏好",
+      "口味偏好",
+      "喜好",
+      "偏好",
+      "喜欢",
+      "爱吃",
+      "特色",
+      "风味",
+      "口味",
+      "饮食",
+      "我",
+      "平常",
+      "平时",
+      "通常",
+      "现在",
+      "一般",
+      "比较",
+      "更",
+      "与",
+      "和",
+      "、",
+      "，",
+      ",",
+      "；",
+      ";",
+      "。",
+      "."
+    ],
     "facets": [
-      {"category": "DIET", "key": "SWEET", "summary": "喜欢甜口、甜品与糖水", "aliases": ["甜品糖水", "甜口", "甜味", "甜食", "甜品", "甜点", "糖水"]},
-      {"category": "DIET", "key": "SPICY", "summary": "喜欢辣口", "aliases": ["辣的食物", "吃辣", "辣口", "辣味", "麻辣", "喜辣"]}
+      {
+        "category": "DIET",
+        "key": "SWEET",
+        "summary": "喜欢甜口、甜品与糖水",
+        "aliases": [
+          "甜品糖水",
+          "甜口",
+          "甜味",
+          "甜食",
+          "甜品",
+          "甜点",
+          "糖水",
+          "冰粉",
+          "凉糕"
+        ]
+      },
+      {
+        "category": "DIET",
+        "key": "SPICY",
+        "summary": "喜欢辣口",
+        "aliases": [
+          "辣的食物",
+          "吃辣",
+          "辣口",
+          "辣味",
+          "麻辣",
+          "喜辣",
+          "爱吃辣",
+          "无辣不欢"
+        ]
+      },
+      {
+        "category": "DIET",
+        "key": "HOTPOT",
+        "summary": "偏好火锅与串串",
+        "aliases": [
+          "火锅",
+          "串串",
+          "汤锅"
+        ]
+      },
+      {
+        "category": "DIET",
+        "key": "TEA",
+        "summary": "偏好茶饮与茶歇",
+        "aliases": [
+          "茶馆",
+          "茶楼",
+          "盖碗茶",
+          "喝茶",
+          "品茗",
+          "茶歇"
+        ]
+      },
+      {
+        "category": "DIET",
+        "key": "COFFEE",
+        "summary": "偏好咖啡与下午茶",
+        "aliases": [
+          "咖啡",
+          "咖啡馆",
+          "拿铁",
+          "下午茶"
+        ]
+      }
     ]
   },
   "flavorAliases": [
@@ -272,7 +2629,11 @@
     {
       "label": "特色甜品糖水",
       "searchKeyword": "甜品",
-      "poiTypeKeywords": ["甜品店", "糕点店", "冷饮店"],
+      "poiTypeKeywords": [
+        "甜品店",
+        "糕点店",
+        "冷饮店"
+      ],
       "keywords": [
         "甜",
         "甜食",

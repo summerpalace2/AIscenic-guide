@@ -36,11 +36,11 @@ public record ItineraryStop(
         Map<String, Object> extraAttributes
 ) {
     public String formattedTime() {
-        return startTime == null ? "09:00" : startTime.toString();
+        return startTime == null ? "待安排" : startTime.toString();
     }
 
     public String formattedDuration() {
-        if (duration == null) return "约 90 分钟";
+        if (duration == null) return "待安排";
         long mins = duration.toMinutes();
         return mins >= 60 && mins % 60 == 0 ? "约 " + (mins / 60) + " 小时" : "约 " + mins + " 分钟";
     }

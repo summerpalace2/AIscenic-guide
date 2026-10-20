@@ -1,13 +1,13 @@
 package com.ai.guide.domain.memory.service;
 
 import com.ai.guide.domain.memory.model.TravelMemory;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class MemoryPreferenceProjectorTest {
-    private final MemoryPreferenceProjector projector = new MemoryPreferenceProjector(new TaxonomyProvider());
+    private final MemoryPreferenceProjector projector = new MemoryPreferenceProjector(new JsonTaxonomyAdapter());
     private TravelMemory memory(String content) {
         return new TravelMemory("id", "DIET", content, "CHAT_CONFIRMED", "原始对话", "CONFIRMED", 1, 1, 2);
     }

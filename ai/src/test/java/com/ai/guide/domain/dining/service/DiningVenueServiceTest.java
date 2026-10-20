@@ -1,14 +1,25 @@
 package com.ai.guide.domain.dining.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.planner.service.AttractionDiningKnowledge.DiningOption;
+import com.ai.guide.domain.dining.model.DiningOption;
+import com.ai.guide.domain.dining.model.DiningSearchContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.List;
+import java.util.HashMap;
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -18,7 +29,40 @@ class DiningVenueServiceTest {
 
     @BeforeEach
     void setUp() {
-        diningVenueService = new DiningVenueService();
+        diningVenueService = new DiningVenueService(new com.ai.guide.infrastructure.dining.repository.PackagedDiningVenueCatalogAdapter(new com.fasterxml.jackson.databind.ObjectMapper()), null, new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+    }
+
+    @Test
+    void liveDinnerRecommendationUsesDinnerDurationPolicy() {
+        var taxonomy = spy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        var base = taxonomy.getDiningSearchPolicy();
+        Map<String, Integer> durations = new HashMap<>(base.mealDurationsMinutes());
+        durations.put("LUNCH", 41);
+        durations.put("DINNER", 93);
+        doReturn(new com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.DiningSearchPolicy(
+                base.proximityRadiusMeters(), base.nearbyRadiusMeters(), base.expansionStepMeters(), base.fallbackRadiusMeters(),
+                base.breakfastTypes(), base.mealTypes(), base.teaBreakTypes(), base.genericMealKeyword(), base.genericTeaBreakKeyword(),
+                base.fallbackPoiType(), base.diningTypePrefix(), base.nonMealTypeKeywords(), base.proximityTimeBudgetMinutes(),
+                base.proximityMaxDistanceKm(), base.sameDistrictMaxDistanceKm(), base.suburbanMaxDistanceKm(),
+                base.crossDistrictMaxDistanceKm(), base.localFallbackMaxDistanceKm(), base.veryNearDistanceMeters(),
+                base.nearDistanceKm(), base.mediumDistanceKm(), base.districtMatchScore(), base.exactFlavorScore(),
+                base.citySignatureScore(), base.mismatchPenalty(), base.distanceBandScores(), base.elderFriendlyBonus(),
+                base.lowWalkingBonus(), base.lowWalkingDistanceKm(), durations)).when(taxonomy).getDiningSearchPolicy();
+
+        var gateway = mock(com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort.class);
+        when(gateway.isConfigured()).thenReturn(true);
+        var poi = new com.ai.guide.domain.geo.model.GeoPoiCandidate("dinner-poi", "Dinner Restaurant",
+                new com.ai.guide.domain.geo.model.GeoCoordinate(116.4, 39.9), "address", "餐饮服务",
+                null, null, null, null, null);
+        when(gateway.searchAround(anyString(), anyInt(), anyString(), anyString(), anyString()))
+                .thenReturn(new com.ai.guide.domain.geo.model.GeoPoiOutcome(
+                        com.ai.guide.domain.geo.model.GeoOutcomeStatus.SUCCESS, List.of(poi), "", Instant.now()));
+        var service = new DiningVenueService(null, gateway, taxonomy);
+        Attraction anchor = Attraction.builder().id("anchor").name("anchor").district("district").location("116.4,39.9").build();
+
+        DiningOption dinner = service.resolveNearbyDining(anchor, "DINNER", null);
+
+        assertEquals("约 93 分钟", dinner.duration());
     }
 
     @Test
@@ -88,11 +132,10 @@ class DiningVenueServiceTest {
                 .build();
 
         DiningOption option = diningVenueService.resolveNearbyDining(chengkouAttraction, "LUNCH", null);
-        assertNotNull(option);
+        assertNull(option);
         // 因为距离主城区与各分店均超过 15km 甚至 300km，本地候选被严格距离截断
         // 未配置高德真实密钥或未命中时，平滑转入 fallbackOption，绝不出现向城口推荐解放碑火锅的荒谬情况
-        assertEquals("dining-fallback-default", option.id());
-        assertTrue(option.summary().contains("周边精选"));
+        assertNull(option);
     }
 
     @Test
@@ -105,9 +148,7 @@ class DiningVenueServiceTest {
                 .location("106.502300,29.511800")
                 .build();
 
-        TravelConstraints constraints = new TravelConstraints();
-        constraints.setCompanions("带父母");
-        constraints.setDietPreference("清淡不辣");
+        DiningSearchContext constraints = new DiningSearchContext("", "清淡不辣", 0, 0, null, null, "带父母");
 
         DiningOption option = diningVenueService.resolveNearbyDining(jiulongpoAttraction, "LUNCH", constraints);
         assertNotNull(option);
@@ -156,9 +197,8 @@ class DiningVenueServiceTest {
                 .location("106.471000,29.565000")
                 .build();
 
-        TravelConstraints shortConstraints = new TravelConstraints();
-        shortConstraints.setTimeBudgetMinutes(600); // 10小时同城游
-        shortConstraints.setRawPrompt("重大思群广场与三峡广场10小时游，就近吃地道江湖菜");
+        DiningSearchContext shortConstraints = new DiningSearchContext("重庆", null, 600, 1,
+                null, "重大思群广场与三峡广场10小时游，就近吃地道江湖菜", null);
 
         DiningOption option = diningVenueService.resolveNearbyDining(cqu, "LUNCH", shortConstraints);
         assertNotNull(option);
@@ -185,9 +225,7 @@ class DiningVenueServiceTest {
                 .location("106.577054,29.557161")
                 .build();
 
-        TravelConstraints constraints = new TravelConstraints();
-        constraints.setTimeBudgetMinutes(360); // 6小时限时游
-        constraints.setDietPreference("清淡不辣");
+        DiningSearchContext constraints = new DiningSearchContext("重庆", "清淡不辣", 360, 1, null, null, null);
 
         DiningOption option = diningVenueService.resolveNearbyDining(jiefangbei, "LUNCH", constraints);
         assertNotNull(option);

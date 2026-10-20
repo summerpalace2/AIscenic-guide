@@ -3,6 +3,7 @@ package com.ai.guide.domain.trip.service;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
+import com.ai.guide.application.planner.PlannerSaveApplicationService;
 import com.ai.guide.domain.planner.service.PlannerService;
 import com.ai.guide.infrastructure.trip.repository.TripRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,7 +60,9 @@ class PlannerSaveConsistencyTest {
             if (old.currentVersion()!=current.get().currentVersion()) return false;
             current.set(session(old.currentVersion(),new LinkedHashMap<>(call.getArgument(1)))); return true;
         });
-        var planner = new PlannerService(null,null,repo,trips,new ObjectMapper(),null,null,null);
+        var saveUseCase = new PlannerSaveApplicationService(repo, trips);
+        var planner = new PlannerService(null,null,repo,trips,new ObjectMapper(),null,null,null,
+                null,null,true,saveUseCase);
         UserContext.set("owner","owner","USER");
         try {
             var first = planner.save("save-session","");

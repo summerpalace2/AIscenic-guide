@@ -1,0 +1,816 @@
+{
+  "schemaVersion": "ai-evaluation-v1",
+  "annotationPolicy": "Agent-authored provisional labels, peer reviewed before first execution; no human ground-truth claim. Template families are correlated. Labels freeze before execution; future corrections need a new version and explicit reason.",
+  "sourcePolicy": {
+    "source": "manually authored synthetic user requests, not real user data",
+    "labels": "agent-authored, peer-reviewed provisional task interpretation; no output-derived labels",
+    "network": "no external calls; deterministic production components only",
+    "catalog": "Actual bundled attractions.json and taxonomy/cities/{city}.json; missing coordinates remain missing; no fabricated coordinates or route verification",
+    "feasibility": "PlanVerifier checks estimated/static schedule only; not real-world reachability, preference quality or real provider evaluation"
+  },
+  "datasetVersion": "2026-10-17-v2",
+  "suite": "planning",
+  "cases": [
+    {
+      "id": "planning-001",
+      "city": "重庆",
+      "query": "去重庆玩一天，2026-10-20上午到达，2026-10-20晚上离开，喜欢人文历史",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 1,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "history-one-day"
+    },
+    {
+      "id": "planning-002",
+      "city": "重庆",
+      "query": "重庆两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，少走路",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 2,
+        "walkingTolerance": "低",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "maxWalkingDifficulty": "低"
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "low-walking-two-days"
+    },
+    {
+      "id": "planning-003",
+      "city": "重庆",
+      "query": "去重庆三天，2026-10-20下午到达，2026-10-22晚上离开，想看夜景",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 3,
+        "interestsContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "night-three-days"
+    },
+    {
+      "id": "planning-004",
+      "city": "重庆",
+      "query": "去重庆一日游，2026-10-20上午到达，2026-10-20晚上离开，必须去三峡博物馆",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 1,
+        "mustVisitContains": "三峡博物馆",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "requiredVenueNames": [
+          "三峡博物馆"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "must-visit"
+    },
+    {
+      "id": "planning-005",
+      "city": "重庆",
+      "query": "在重庆玩两天，2026-10-20上午到达，2026-10-21晚上离开，不看夜景，喜欢人文历史",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-interest"
+    },
+    {
+      "id": "planning-006",
+      "city": "重庆",
+      "query": "重庆一天，2026-10-20上午到达，2026-10-20晚上离开，不要打车，只坐地铁",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 1,
+        "transportPreferenceNotContains": "打车",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-taxi"
+    },
+    {
+      "id": "planning-007",
+      "city": "重庆",
+      "query": "重庆一天，2026-10-20上午到达，2026-10-20晚上离开，预算300元，带孩子",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 1,
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "budget-child"
+    },
+    {
+      "id": "planning-008",
+      "city": "重庆",
+      "query": "去重庆玩，具体什么时候走还没决定",
+      "expected": {
+        "destination": "重庆",
+        "needsClarification": true,
+        "outcome": "CLARIFICATION"
+      },
+      "requirements": {
+        "mustClarify": true
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "missing-schedule"
+    },
+    {
+      "id": "planning-009",
+      "city": "重庆",
+      "query": "去重庆两天，2026-10-20上午到达，2026-10-21晚上离开，喜欢博物馆与人文历史，行程别太赶",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 2,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "relaxed-history"
+    },
+    {
+      "id": "planning-010",
+      "city": "重庆",
+      "query": "去重庆玩两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，喜欢人文历史，不看夜景，预算300元",
+      "expected": {
+        "destination": "重庆",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels. v2 independent review: accompanying parents alone does not explicitly imply low walking tolerance; removed this unsupported label without replacing it with parser output.",
+      "familyId": "long-composite"
+    },
+    {
+      "id": "planning-011",
+      "city": "北京",
+      "query": "去北京玩一天，2026-10-20上午到达，2026-10-20晚上离开，喜欢人文历史",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 1,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "history-one-day"
+    },
+    {
+      "id": "planning-012",
+      "city": "北京",
+      "query": "北京两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，少走路",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 2,
+        "walkingTolerance": "低",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "maxWalkingDifficulty": "低"
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "low-walking-two-days"
+    },
+    {
+      "id": "planning-013",
+      "city": "北京",
+      "query": "去北京三天，2026-10-20下午到达，2026-10-22晚上离开，想看夜景",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 3,
+        "interestsContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "night-three-days"
+    },
+    {
+      "id": "planning-014",
+      "city": "北京",
+      "query": "去北京一日游，2026-10-20上午到达，2026-10-20晚上离开，必须去中国国家博物馆",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 1,
+        "mustVisitContains": "中国国家博物馆",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "requiredVenueNames": [
+          "中国国家博物馆"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "must-visit"
+    },
+    {
+      "id": "planning-015",
+      "city": "北京",
+      "query": "在北京玩两天，2026-10-20上午到达，2026-10-21晚上离开，不看夜景，喜欢人文历史",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-interest"
+    },
+    {
+      "id": "planning-016",
+      "city": "北京",
+      "query": "北京一天，2026-10-20上午到达，2026-10-20晚上离开，不要打车，只坐地铁",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 1,
+        "transportPreferenceNotContains": "打车",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-taxi"
+    },
+    {
+      "id": "planning-017",
+      "city": "北京",
+      "query": "北京一天，2026-10-20上午到达，2026-10-20晚上离开，预算300元，带孩子",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 1,
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "budget-child"
+    },
+    {
+      "id": "planning-018",
+      "city": "北京",
+      "query": "去北京玩，具体什么时候走还没决定",
+      "expected": {
+        "destination": "北京",
+        "needsClarification": true,
+        "outcome": "CLARIFICATION"
+      },
+      "requirements": {
+        "mustClarify": true
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "missing-schedule"
+    },
+    {
+      "id": "planning-019",
+      "city": "北京",
+      "query": "去北京两天，2026-10-20上午到达，2026-10-21晚上离开，喜欢博物馆与人文历史，行程别太赶",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 2,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "relaxed-history"
+    },
+    {
+      "id": "planning-020",
+      "city": "北京",
+      "query": "去北京玩两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，喜欢人文历史，不看夜景，预算300元",
+      "expected": {
+        "destination": "北京",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels. v2 independent review: accompanying parents alone does not explicitly imply low walking tolerance; removed this unsupported label without replacing it with parser output.",
+      "familyId": "long-composite"
+    },
+    {
+      "id": "planning-021",
+      "city": "杭州",
+      "query": "去杭州玩一天，2026-10-20上午到达，2026-10-20晚上离开，喜欢人文历史",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 1,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "history-one-day"
+    },
+    {
+      "id": "planning-022",
+      "city": "杭州",
+      "query": "杭州两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，少走路",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 2,
+        "walkingTolerance": "低",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "maxWalkingDifficulty": "低"
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "low-walking-two-days"
+    },
+    {
+      "id": "planning-023",
+      "city": "杭州",
+      "query": "去杭州三天，2026-10-20下午到达，2026-10-22晚上离开，想看夜景",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 3,
+        "interestsContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "night-three-days"
+    },
+    {
+      "id": "planning-024",
+      "city": "杭州",
+      "query": "去杭州一日游，2026-10-20上午到达，2026-10-20晚上离开，必须去中国丝绸博物馆",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 1,
+        "mustVisitContains": "中国丝绸博物馆",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "requiredVenueNames": [
+          "中国丝绸博物馆"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "must-visit"
+    },
+    {
+      "id": "planning-025",
+      "city": "杭州",
+      "query": "在杭州玩两天，2026-10-20上午到达，2026-10-21晚上离开，不看夜景，喜欢人文历史",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-interest"
+    },
+    {
+      "id": "planning-026",
+      "city": "杭州",
+      "query": "杭州一天，2026-10-20上午到达，2026-10-20晚上离开，不要打车，只坐地铁",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 1,
+        "transportPreferenceNotContains": "打车",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-taxi"
+    },
+    {
+      "id": "planning-027",
+      "city": "杭州",
+      "query": "杭州一天，2026-10-20上午到达，2026-10-20晚上离开，预算300元，带孩子",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 1,
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "budget-child"
+    },
+    {
+      "id": "planning-028",
+      "city": "杭州",
+      "query": "去杭州玩，具体什么时候走还没决定",
+      "expected": {
+        "destination": "杭州",
+        "needsClarification": true,
+        "outcome": "CLARIFICATION"
+      },
+      "requirements": {
+        "mustClarify": true
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "missing-schedule"
+    },
+    {
+      "id": "planning-029",
+      "city": "杭州",
+      "query": "去杭州两天，2026-10-20上午到达，2026-10-21晚上离开，喜欢博物馆与人文历史，行程别太赶",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 2,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "relaxed-history"
+    },
+    {
+      "id": "planning-030",
+      "city": "杭州",
+      "query": "去杭州玩两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，喜欢人文历史，不看夜景，预算300元",
+      "expected": {
+        "destination": "杭州",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels. v2 independent review: accompanying parents alone does not explicitly imply low walking tolerance; removed this unsupported label without replacing it with parser output.",
+      "familyId": "long-composite"
+    },
+    {
+      "id": "planning-031",
+      "city": "西安",
+      "query": "去西安玩一天，2026-10-20上午到达，2026-10-20晚上离开，喜欢人文历史",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 1,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "history-one-day"
+    },
+    {
+      "id": "planning-032",
+      "city": "西安",
+      "query": "西安两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，少走路",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 2,
+        "walkingTolerance": "低",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "maxWalkingDifficulty": "低"
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "low-walking-two-days"
+    },
+    {
+      "id": "planning-033",
+      "city": "西安",
+      "query": "去西安三天，2026-10-20下午到达，2026-10-22晚上离开，想看夜景",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 3,
+        "interestsContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "night-three-days"
+    },
+    {
+      "id": "planning-034",
+      "city": "西安",
+      "query": "去西安一日游，2026-10-20上午到达，2026-10-20晚上离开，必须去陕西历史博物馆",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 1,
+        "mustVisitContains": "陕西历史博物馆",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "requiredVenueNames": [
+          "陕西历史博物馆"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "must-visit"
+    },
+    {
+      "id": "planning-035",
+      "city": "西安",
+      "query": "在西安玩两天，2026-10-20上午到达，2026-10-21晚上离开，不看夜景，喜欢人文历史",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-interest"
+    },
+    {
+      "id": "planning-036",
+      "city": "西安",
+      "query": "西安一天，2026-10-20上午到达，2026-10-20晚上离开，不要打车，只坐地铁",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 1,
+        "transportPreferenceNotContains": "打车",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-taxi"
+    },
+    {
+      "id": "planning-037",
+      "city": "西安",
+      "query": "西安一天，2026-10-20上午到达，2026-10-20晚上离开，预算300元，带孩子",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 1,
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "budget-child"
+    },
+    {
+      "id": "planning-038",
+      "city": "西安",
+      "query": "去西安玩，具体什么时候走还没决定",
+      "expected": {
+        "destination": "西安",
+        "needsClarification": true,
+        "outcome": "CLARIFICATION"
+      },
+      "requirements": {
+        "mustClarify": true
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "missing-schedule"
+    },
+    {
+      "id": "planning-039",
+      "city": "西安",
+      "query": "去西安两天，2026-10-20上午到达，2026-10-21晚上离开，喜欢博物馆与人文历史，行程别太赶",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 2,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "relaxed-history"
+    },
+    {
+      "id": "planning-040",
+      "city": "西安",
+      "query": "去西安玩两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，喜欢人文历史，不看夜景，预算300元",
+      "expected": {
+        "destination": "西安",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels. v2 independent review: accompanying parents alone does not explicitly imply low walking tolerance; removed this unsupported label without replacing it with parser output.",
+      "familyId": "long-composite"
+    },
+    {
+      "id": "planning-041",
+      "city": "武汉",
+      "query": "去武汉玩一天，2026-10-20上午到达，2026-10-20晚上离开，喜欢人文历史",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 1,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "history-one-day"
+    },
+    {
+      "id": "planning-042",
+      "city": "武汉",
+      "query": "武汉两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，少走路",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 2,
+        "walkingTolerance": "低",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "maxWalkingDifficulty": "低"
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "low-walking-two-days"
+    },
+    {
+      "id": "planning-043",
+      "city": "武汉",
+      "query": "去武汉三天，2026-10-20下午到达，2026-10-22晚上离开，想看夜景",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 3,
+        "interestsContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "night-three-days"
+    },
+    {
+      "id": "planning-044",
+      "city": "武汉",
+      "query": "去武汉一日游，2026-10-20上午到达，2026-10-20晚上离开，必须去湖北省博物馆",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 1,
+        "mustVisitContains": "湖北省博物馆",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "requiredVenueNames": [
+          "湖北省博物馆"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "must-visit"
+    },
+    {
+      "id": "planning-045",
+      "city": "武汉",
+      "query": "在武汉玩两天，2026-10-20上午到达，2026-10-21晚上离开，不看夜景，喜欢人文历史",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-interest"
+    },
+    {
+      "id": "planning-046",
+      "city": "武汉",
+      "query": "武汉一天，2026-10-20上午到达，2026-10-20晚上离开，不要打车，只坐地铁",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 1,
+        "transportPreferenceNotContains": "打车",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "negated-taxi"
+    },
+    {
+      "id": "planning-047",
+      "city": "武汉",
+      "query": "武汉一天，2026-10-20上午到达，2026-10-20晚上离开，预算300元，带孩子",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 1,
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "budget-child"
+    },
+    {
+      "id": "planning-048",
+      "city": "武汉",
+      "query": "去武汉玩，具体什么时候走还没决定",
+      "expected": {
+        "destination": "武汉",
+        "needsClarification": true,
+        "outcome": "CLARIFICATION"
+      },
+      "requirements": {
+        "mustClarify": true
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "missing-schedule"
+    },
+    {
+      "id": "planning-049",
+      "city": "武汉",
+      "query": "去武汉两天，2026-10-20上午到达，2026-10-21晚上离开，喜欢博物馆与人文历史，行程别太赶",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 2,
+        "interestsContains": "人文",
+        "outcome": "PLAN"
+      },
+      "requirements": {},
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels.",
+      "familyId": "relaxed-history"
+    },
+    {
+      "id": "planning-050",
+      "city": "武汉",
+      "query": "去武汉玩两天，2026-10-20上午到达，2026-10-21晚上离开，带父母，喜欢人文历史，不看夜景，预算300元",
+      "expected": {
+        "destination": "武汉",
+        "durationDays": 2,
+        "interestsNotContains": "夜景",
+        "budgetContains": "300",
+        "outcome": "PLAN"
+      },
+      "requirements": {
+        "forbiddenCategories": [
+          "夜景"
+        ]
+      },
+      "annotationReason": "City, duration, explicit negations and required venues are labeled from the request before execution. No default slots or engine outputs used as labels. v2 independent review: accompanying parents alone does not explicitly imply low walking tolerance; removed this unsupported label without replacing it with parser output.",
+      "familyId": "long-composite"
+    }
+  ],
+  "revisionJournal": [
+    {
+      "fromVersion": "2026-10-17-v1",
+      "previousSha256": "477dac95150e84c6b97f9ad2198db766a679596841b3c064ca85a0a4cd2478aa",
+      "caseIds": [
+        "planning-010",
+        "planning-020",
+        "planning-030",
+        "planning-040",
+        "planning-050"
+      ],
+      "change": "Removed expected.walkingTolerance=低; all requests, other labels and requirements unchanged.",
+      "reason": "Input says 带父母, not 少走路 or a physical limitation; unsupported label was identified independently after v1 run. This is a label correction, not a production improvement.",
+      "reviewers": [
+        "eval_faithfulness_review",
+        "eval_intent_planning",
+        "root"
+      ],
+      "priorRun": "baseline-20261017-02"
+    }
+  ]
+}

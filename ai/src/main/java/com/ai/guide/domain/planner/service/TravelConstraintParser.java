@@ -3,8 +3,8 @@ package com.ai.guide.domain.planner.service;
 import com.ai.guide.domain.planner.model.ConstraintConflict;
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
 @Service
 public class TravelConstraintParser implements TravelConstraintParserPort {
 
-    private static final Pattern ARRIVAL = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:到重庆|抵达重庆|到达重庆|出发|到达|抵渝)");
-    private static final Pattern DEPARTURE = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回重庆以外|回家|回)");
+    private static final Pattern ARRIVAL = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:到达|抵达|到|出发)");
+    private static final Pattern DEPARTURE = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回家|回)");
     private static final Pattern DAYS = Pattern.compile("([一二三四五六七八九十\\d]+)\\s*天");
     private static final Pattern TIME_BUDGET = Pattern.compile("(半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟))");
     private static final Pattern CLOCK_DEPARTURE_CLAUSE = Pattern.compile(
@@ -44,26 +44,14 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
     private static final Pattern STAY = Pattern.compile("(?:住在|住宿|酒店在)\\s*([^，。；;]+)");
     private static final Pattern MUST_VISIT = Pattern.compile("(?:必须|一定要|务必)(?:去|看|逛|体验)?\\s*([^，。；;]+)");
 
-    private static final List<Keyword> INTERESTS = List.of(
-            new Keyword("自然奇观", "自然"), new Keyword("自然", "自然"),
-            new Keyword("人文历史", "人文"), new Keyword("人文", "人文"), new Keyword("历史", "人文"),
-            new Keyword("8D魔幻", "8D魔幻"), new Keyword("魔幻", "8D魔幻"),
-            new Keyword("山城夜景", "夜景"), new Keyword("夜景", "夜景"),
-            new Keyword("市井烟火", "市井"), new Keyword("市井", "市井"), new Keyword("烟火", "市井"),
-            new Keyword("天然温泉", "温泉"), new Keyword("温泉", "温泉"),
-            new Keyword("城市", "城市"), new Keyword("地标", "城市"),
-            new Keyword("文创", "文创"), new Keyword("休闲", "休闲"),
-            new Keyword("拍照", "拍照"), new Keyword("美食", "美食"),
-            new Keyword("火锅", "美食"), new Keyword("本地菜", "本地菜"));
-
     private static final String NEGATION = "不喜欢|不想要|不要|不看|不去|不坐|不乘|不吃|避开|避免|排除|拒绝";
 
     private final ConstraintConflictDetector conflictDetector;
     private final LlmShadowPreferenceExtractor shadowExtractor;
-    private TaxonomyPort taxonomy = new TaxonomyProvider();
+    private PlannerTaxonomyPort taxonomy = TaxonomyPort.empty();
 
     @Autowired(required = false)
-    public void setTaxonomy(TaxonomyPort taxonomy) {
+    public void setTaxonomy(PlannerTaxonomyPort taxonomy) {
         if (taxonomy != null) this.taxonomy = taxonomy;
     }
 
@@ -169,25 +157,25 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
                 : (intervalDeparture != null ? intervalDeparture : "未提供");
 
         int dowDays = calculateDaysFromDayOfWeek(arrivalAt, departureAt);
-        int durationDays = 2;
+        int durationDays = taxonomy.getDefaultDurationDays();
         boolean durationSpecified = false;
         if (timeBudgetMinutes > 0) {
             // 小时级或时间区间级需求永远是单日短途，不得沿用默认的两天规划。
             durationDays = 1;
             durationSpecified = true;
-        } else if (source.matches(".*(全天|单天|当天|1天|一天|一日|半天).*")) {
+        } else if (activeSource.matches(".*(全天|单天|当天|1天|一天|一日|半天).*")) {
             durationDays = 1;
             durationSpecified = true;
-        } else if (source.matches(".*(2天|两天|两日|二天).*")) {
+        } else if (activeSource.matches(".*(2天|两天|两日|二天).*")) {
             durationDays = 2;
             durationSpecified = true;
-        } else if (source.matches(".*(3天|三天|三日).*")) {
+        } else if (activeSource.matches(".*(3天|三天|三日).*")) {
             durationDays = 3;
             durationSpecified = true;
-        } else if (source.matches(".*(4天|四天|四日).*")) {
+        } else if (activeSource.matches(".*(4天|四天|四日).*")) {
             durationDays = 4;
             durationSpecified = true;
-        } else if (source.matches(".*(5天|五天|五日).*")) {
+        } else if (activeSource.matches(".*(5天|五天|五日).*")) {
             durationDays = 5;
             durationSpecified = true;
         } else if (daysFound) {
@@ -197,48 +185,46 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
             durationDays = dowDays;
             durationSpecified = true;
         }
-        if (durationDays <= 0) durationDays = 2;
 
         Set<String> interests = new LinkedHashSet<>();
         Set<String> avoid = new LinkedHashSet<>();
-        for (Keyword keyword : INTERESTS) {
-            if (positiveKeyword(source, keyword.keyword())) interests.add(keyword.label());
-            if (negatedKeyword(source, keyword.keyword())) avoid.add(keyword.label());
+        for (TaxonomyPort.InterestKeyword keyword : taxonomy.getInterestKeywords()) {
+            if (keyword.aliases().stream().anyMatch(alias -> positiveKeyword(source, alias))) interests.add(keyword.label());
+            if (keyword.aliases().stream().anyMatch(alias -> negatedKeyword(source, alias))) avoid.add(keyword.label());
         }
         boolean explicitInterests = !interests.isEmpty();
-        if (interests.isEmpty()) interests.addAll(List.of("城市", "人文", "夜景"));
+        if (interests.isEmpty()) interests.addAll(taxonomy.getHints("defaultInterests"));
         interests.removeAll(avoid);
 
-        String budget = source.matches(".*(预算有限|预算友好|预算不高|省钱|经济).*")
+        String budget = matchesAnyPositive(source, "budgetLowAliases")
                 ? "有限" : amountFound ? "约 " + amount.group(1) + " 元 / 人 / 天" : "未提供";
         boolean explicitBudget = !"未提供".equals(budget);
         String stayArea = stayFound ? stay.group(1).trim() : "未提供";
 
         // Dietary restrictions take precedence over generic food keywords.
-        String diet = positiveKeyword(source, "素食") ? "素食"
-                : positiveKeyword(source, "清真") ? "清真"
-                : positiveKeyword(source, "清淡不辣") || positiveKeyword(source, "清淡") ? "清淡不辣"
-                : positiveKeyword(source, "九宫格老火锅") || positiveKeyword(source, "九宫格火锅") || positiveKeyword(source, "火锅") ? "火锅"
-                : positiveKeyword(source, "地道江湖菜") || positiveKeyword(source, "江湖菜") ? "地道江湖菜"
-                : positiveKeyword(source, "街头小吃小面") || positiveKeyword(source, "小吃") || positiveKeyword(source, "小面") ? "街头小吃"
-                : positiveKeyword(source, "本地菜优先") || positiveKeyword(source, "本地菜") || positiveKeyword(source, "美食") || positiveKeyword(source, "吃") ? "本地菜优先" : "未提供";
+        String diet = taxonomy.getDietPreferenceKeywords().stream()
+                .filter(rule -> rule.aliases().stream().anyMatch(alias -> positiveKeyword(source, alias)))
+                .map(TaxonomyPort.InterestKeyword::label).findFirst().orElse("未提供");
         boolean explicitDiet = !"未提供".equals(diet);
 
-        String companions = positiveKeyword(source, "父母") || positiveKeyword(source, "长辈") || positiveKeyword(source, "老人") ? "带父母"
-                : positiveKeyword(source, "亲子出游") || positiveKeyword(source, "亲子家庭") || positiveKeyword(source, "亲子") || positiveKeyword(source, "带小孩") || positiveKeyword(source, "小孩") || positiveKeyword(source, "孩子") ? "带孩子"
-                : positiveKeyword(source, "情侣结伴") || positiveKeyword(source, "情侣双人") || positiveKeyword(source, "情侣") ? "情侣出游"
-                : positiveKeyword(source, "朋友结伴") || positiveKeyword(source, "朋友") ? "朋友出游"
-                : positiveKeyword(source, "独自出发") || positiveKeyword(source, "独自") || positiveKeyword(source, "一个人") || positiveKeyword(source, "自由行") ? "独自出发" : "未提供";
+        boolean seniorCompanion = matchesAnyPositive(source, "companionSeniorAliases");
+        boolean childCompanion = matchesAnyPositive(source, "companionChildAliases");
+        boolean coupleCompanion = matchesAnyPositive(source, "companionCoupleAliases");
+        boolean friendCompanion = matchesAnyPositive(source, "companionFriendAliases");
+        boolean soloCompanion = matchesAnyPositive(source, "companionSoloAliases");
+        String companions = seniorCompanion ? "带父母" : childCompanion ? "带孩子"
+                : coupleCompanion ? "情侣出游" : friendCompanion ? "朋友出游"
+                : soloCompanion ? "独自出发" : "未提供";
         boolean explicitCompanions = !"未提供".equals(companions);
 
-        boolean lowWalking = source.matches(".*(少走路|不想走太多路|少爬坡|轻松少走台阶|轻松步行|少台阶).*");
-        boolean highWalking = !lowWalking && source.matches(".*(不怕多走路|多走路|深度打卡|徒步).*");
+        boolean lowWalking = matchesAnyPositive(source, "walkingLowAliases");
+        boolean highWalking = !lowWalking && matchesAnyPositive(source, "walkingHighAliases");
         String walkingTolerance = lowWalking ? "低" : highWalking ? "高" : "正常";
-        boolean explicitWalking = lowWalking || highWalking || source.matches(".*正常步行.*");
+        boolean explicitWalking = lowWalking || highWalking || matchesAnyPositive(source, "walkingNormalAliases");
 
-        boolean explicitTransit = positiveKeyword(source, "地铁") || positiveKeyword(source, "轻轨") || positiveKeyword(source, "轻轨地铁优先");
-        boolean explicitPublicTransport = positiveKeyword(source, "公交") || positiveKeyword(source, "公共交通");
-        boolean explicitTaxi = positiveKeyword(source, "打车") || positiveKeyword(source, "出租车") || positiveKeyword(source, "打车为主");
+        boolean explicitTransit = matchesAnyPositive(source, "transportTransitAliases");
+        boolean explicitPublicTransport = matchesAnyPositive(source, "transportPublicAliases");
+        boolean explicitTaxi = matchesAnyPositive(source, "transportTaxiAliases");
         String transport = explicitTransit ? "地铁优先"
                 : explicitPublicTransport ? "公共交通优先"
                 : explicitTaxi ? "打车优先" : "未提供";
@@ -310,8 +296,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         }
         if (cities.size() == 1) return new Destination(cities.iterator().next(), true);
         if (cities.size() > 1) return new Destination(null, true);
-        List<String> defaults = taxonomy.getHints("defaultDestination");
-        return new Destination(defaults.isEmpty() ? null : defaults.get(0), false);
+        return new Destination(null, false);
     }
 
     private int calculateDaysFromDayOfWeek(String arrivalAt, String departureAt) {
@@ -416,7 +401,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         boolean arrival = !"未提供".equals(constraints.getArrivalAt());
         boolean departure = !"未提供".equals(constraints.getDepartureAt());
         boolean duration = constraints.originOf("durationDays") != ConstraintOrigin.DEFAULT
-                || constraints.getTimeBudgetMinutes() > 0 || arrival || departure;
+                || constraints.getTimeBudgetMinutes() > 0;
         List<String> missing = criticalMissing(arrival, departure, duration);
         if (constraints.getDestination() == null || constraints.getDestination().isBlank()) missing.add("destination");
         constraints.setCriticalMissingFields(missing);
@@ -427,7 +412,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
         List<String> missing = new ArrayList<>();
         if (!arrivalFound) missing.add("arrivalAt");
         if (!departureFound) missing.add("departureAt");
-        if (!durationKnown && !arrivalFound && !departureFound) missing.add("durationDays");
+        if (!durationKnown) missing.add("durationDays");
         return missing;
     }
 
@@ -460,6 +445,10 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
             if (!value.isBlank()) result.add(value.split("[和与、]")[0].trim());
         }
         return result.stream().filter(value -> !value.isBlank()).distinct().toList();
+    }
+
+    private boolean matchesAnyPositive(String source, String taxonomyKey) {
+        return taxonomy.getHints(taxonomyKey).stream().anyMatch(alias -> positiveKeyword(source, alias));
     }
 
     private boolean positiveKeyword(String source, String keyword) {
@@ -610,5 +599,4 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private String nullToEmpty(String value) { return value == null ? "" : value; }
 
-    private record Keyword(String keyword, String label) { }
 }

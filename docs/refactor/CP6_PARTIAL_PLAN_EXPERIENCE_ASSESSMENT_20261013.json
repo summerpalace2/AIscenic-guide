@@ -1,0 +1,23 @@
+{
+  "evidence": [
+    {
+      "role": "change",
+      "path": "D:\\scenic-guide\\ai\\src\\main\\java\\com\\ai\\guide\\application\\planner\\PlannerApplicationService.java"
+    },
+    {
+      "role": "change",
+      "path": "D:\\scenic-guide\\ai\\src\\main\\java\\com\\ai\\guide\\infrastructure\\rag\\amap\\AmapWebServiceClient.java"
+    },
+    {
+      "role": "verification",
+      "path": "D:\\scenic-guide\\partial-app-entry-full-final.log"
+    },
+    {
+      "role": "verification",
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP6_PARTIAL_PLAN_BROWSER_RESULT_20261013.json"
+    }
+  ],
+  "outcome": "benefited",
+  "reason": "采用FQ2实际跨层合同核验，区分领域兼容方法与实际应用入口、URI mock与真实HTTP字节，发现并修复应用回执遗漏及编码缺陷，同时拒绝为测试错误增加冗余生产字段。",
+  "effect": "部分生成行程的预览、应用、持久保存重开与继续编辑在实际浏览器/BFF/Java/临时SQLite及受控本地HTTP链路通过；结论不扩展至真实供应商、PostgreSQL、专用Redis/Qdrant或多实例。"
+}

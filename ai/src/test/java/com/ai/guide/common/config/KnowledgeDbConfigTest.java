@@ -1,5 +1,7 @@
 package com.ai.guide.common.config;
 
+import com.ai.guide.infrastructure.persistence.config.KnowledgeDbConfig;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 

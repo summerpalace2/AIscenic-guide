@@ -4,6 +4,9 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.engine.RouteCost;
 import com.ai.guide.domain.planner.model.ScoreBreakdown;
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +18,11 @@ import java.util.List;
  */
 @Service
 public class PlanNarrativeService {
+    private final PlannerTaxonomyPort taxonomy;
+
+    @Autowired
+    public PlanNarrativeService(PlannerTaxonomyPort taxonomy) { this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy; }
+    public PlanNarrativeService() { this(TaxonomyPort.empty()); }
 
     public String buildStopReason(Attraction attraction,
                                   ScoreBreakdown scoreBreakdown,
@@ -27,34 +35,40 @@ public class PlanNarrativeService {
         // 1. Interest & Category Evidence
         if (constraints != null && constraints.getInterests() != null) {
             for (String interest : constraints.getInterests()) {
-                if ("自然".equals(interest) || "自然奇观".equals(interest)) {
-                    if ("自然".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("自然", "峡谷", "喀斯特峡谷")) {
+                if (taxonomy.getHints("plannerNatureInterestLabels").contains(interest)) {
+                    if (taxonomy.getHints("plannerNatureInterestLabels").contains(attraction.getCategory())
+                            || attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerNatureFeatures").toArray(String[]::new))) {
                         evidenceParts.add("符合自然山水偏好");
                         break;
                     }
-                } else if ("人文".equals(interest) || "人文历史".equals(interest)) {
-                    if ("人文".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("人文", "历史", "古建", "抗战遗址", "千年古刹")) {
+                } else if (taxonomy.getHints("plannerHistoryInterestLabels").contains(interest)) {
+                    if (taxonomy.getHints("plannerHistoryInterestLabels").contains(attraction.getCategory())
+                            || attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerHistoryFeatures").toArray(String[]::new))) {
                         evidenceParts.add("符合历史人文偏好");
                         break;
                     }
-                } else if ("8D魔幻".equals(interest)) {
-                    if ("8D魔幻".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("8D魔幻", "单轨", "天桥", "空中连廊")) {
-                        evidenceParts.add("具备8D魔幻地形特色");
+                } else if (taxonomy.getHints("chongqingTerrainInterestLabels").contains(interest) && usesCityStrategy(constraints.getDestination(), "CHONGQING")) {
+                    if (taxonomy.getHints("chongqingTerrainInterestFeatures").stream().anyMatch(attraction::matchesAnyTagOrFeature)) {
+                        evidenceParts.add(taxonomy.getHints("chongqingTerrainReason").stream().findFirst().orElse(""));
                         break;
                     }
-                } else if ("夜景".equals(interest) || "山城夜景".equals(interest)) {
-                    if ("夜景".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("夜景", "临江", "江岸夜景")) {
-                        evidenceParts.add("契合山城夜景需求");
+                } else if (taxonomy.getHints("plannerNightInterestLabels").contains(interest)) {
+                    if (taxonomy.getHints("plannerNightCategories").contains(attraction.getCategory())
+                            || attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerNightTags").toArray(String[]::new))) {
+                        evidenceParts.add("契合夜景观赏需求");
                         break;
                     }
-                } else if ("温泉".equals(interest) || "天然温泉".equals(interest)) {
-                    if ("温泉".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("温泉", "天然地热温泉") || attraction.getName().contains("温泉")) {
+                } else if (taxonomy.getHints("plannerThermalInterestLabels").contains(interest)) {
+                    if (taxonomy.getHints("plannerThermalCategories").contains(attraction.getCategory())
+                            || attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerThermalFeatures").toArray(String[]::new))
+                            || taxonomy.getHints("plannerThermalNameTerms").stream().anyMatch(attraction.getName()::contains)) {
                         evidenceParts.add("契合温泉康养需求");
                         break;
                     }
-                } else if ("市井".equals(interest) || "市井烟火".equals(interest)) {
-                    if ("市井".equals(attraction.getCategory()) || attraction.matchesAnyTagOrFeature("市井", "市井烟火", "老街", "老重庆")) {
-                        evidenceParts.add("展现巴渝市井烟火气息");
+                } else if (taxonomy.getHints("plannerLocalInterestLabels").contains(interest)) {
+                    if (taxonomy.getHints("plannerLocalCategories").contains(attraction.getCategory())
+                            || attraction.matchesAnyTagOrFeature(taxonomy.getHints("localCultureTags").toArray(String[]::new))) {
+                        evidenceParts.add("体现当地街区生活特色");
                         break;
                     }
                 }
@@ -73,11 +87,14 @@ public class PlanNarrativeService {
         // 3. Companion Fit Evidence
         if (constraints != null && constraints.getCompanions() != null) {
             String companions = constraints.getCompanions();
-            if ("带父母".equals(companions) && attraction.matchesAnyTagOrFeature("长辈最爱", "长辈友好", "少走路")) {
+            if (matchesAny(companions, "plannerCompanionSeniorAliases")
+                    && attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerCompanionSeniorFeatures").toArray(String[]::new))) {
                 evidenceParts.add("对随行长辈友好");
-            } else if ("带孩子".equals(companions) && attraction.matchesAnyTagOrFeature("亲子", "科普", "国宝级")) {
+            } else if (matchesAny(companions, "plannerCompanionChildAliases")
+                    && attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerCompanionChildEducationFeatures").toArray(String[]::new))) {
                 evidenceParts.add("具备良好亲子研学科普属性");
-            } else if ("情侣出游".equals(companions) && attraction.matchesAnyTagOrFeature("浪漫", "夜景", "开埠文化")) {
+            } else if (matchesAny(companions, "plannerCompanionCoupleAliases")
+                    && attraction.matchesAnyTagOrFeature(taxonomy.getHints("plannerCompanionCoupleRomanceFeatures").toArray(String[]::new))) {
                 evidenceParts.add("景观开阔具有浪漫氛围");
             }
         }
@@ -95,5 +112,17 @@ public class PlanNarrativeService {
         }
 
         return "安排“" + attraction.getName() + "”是因为它" + String.join("，", evidenceParts) + "。";
+    }
+
+    private boolean usesCityStrategy(String city, String strategy) {
+        if (city == null || city.isBlank()) return false;
+        return taxonomy.getCityStrategyMappings().entrySet().stream()
+                .anyMatch(entry -> entry.getValue().equalsIgnoreCase(strategy)
+                        && entry.getKey().replace("市", "").equalsIgnoreCase(city.trim().replace("市", "")));
+    }
+
+    private boolean matchesAny(String value, String taxonomyKey) {
+        return value != null && taxonomy.getHints(taxonomyKey).stream().anyMatch(alias ->
+                value.equalsIgnoreCase(alias) || value.contains(alias));
     }
 }

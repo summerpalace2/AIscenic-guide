@@ -1,7 +1,7 @@
 package com.ai.guide.application.rag;
 
 import com.ai.guide.common.model.Result;
-import org.springframework.web.multipart.MultipartFile;
+import com.ai.guide.domain.rag.model.KnowledgeDocumentUpload;
 import java.util.Map;
 
 /**
@@ -25,7 +25,7 @@ public interface RagApplicationService {
 
     Result<String> clearCache();
 
-    Result<String> importFile(MultipartFile file);
+    Result<String> importFile(KnowledgeDocumentUpload file);
 
     Result<Map<String, Object>> getCacheStats();
 

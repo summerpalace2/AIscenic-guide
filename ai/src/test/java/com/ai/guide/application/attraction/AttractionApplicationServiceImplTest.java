@@ -6,8 +6,8 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionMediaService;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService;
-import com.ai.guide.domain.rag.service.ProductionV2FactQueryService;
-import com.ai.guide.domain.trip.service.TripPlanService;
+import com.ai.guide.domain.rag.gateway.ProductionV2FactQueryPort;
+import com.ai.guide.domain.trip.gateway.TripPlanStorePort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,8 +25,8 @@ class AttractionApplicationServiceImplTest {
 
     private final AttractionService attractionService = mock(AttractionService.class);
     private final AttractionMediaService attractionMediaService = mock(AttractionMediaService.class);
-    private final TripPlanService tripPlanService = mock(TripPlanService.class);
-    private final ProductionV2FactQueryService productionV2FactQueryService = mock(ProductionV2FactQueryService.class);
+    private final TripPlanStorePort tripPlanService = mock(TripPlanStorePort.class);
+    private final ProductionV2FactQueryPort productionV2FactQueryService = mock(ProductionV2FactQueryPort.class);
     private final RuntimeAttractionDetailService runtimeAttractionDetailService = mock(RuntimeAttractionDetailService.class);
 
     private final AttractionApplicationService service = new AttractionApplicationServiceImpl(

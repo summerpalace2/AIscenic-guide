@@ -2,6 +2,7 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.dining.service.DiningVenueService;
+import com.ai.guide.domain.dining.model.DiningOption;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -17,21 +18,7 @@ import java.util.List;
 @Component
 public final class AttractionDiningKnowledge {
 
-    public record DiningOption(
-            String id,
-            String name,
-            String specialtyDish,
-            String diningType,
-            String averageCost,
-            String duration,
-            String distanceFromAttraction,
-            String summary,
-            String recommendationReason,
-            String tone,
-            String location
-    ) {}
-
-    private static volatile DiningVenueService delegate = new DiningVenueService();
+    private static volatile DiningVenueService delegate;
 
     @Autowired
     public void setDiningVenueService(DiningVenueService diningVenueService) {
@@ -52,15 +39,17 @@ public final class AttractionDiningKnowledge {
      * 根据邻近景区实体与用户偏好，匹配最佳周边餐饮推荐。
      */
     public static DiningOption resolveNearbyDining(Attraction anchorAttraction, String slotType, TravelConstraints constraints) {
-        return delegate.resolveNearbyDining(anchorAttraction, slotType, constraints);
+        DiningVenueService current = delegate;
+        return current == null ? null : current.resolveNearbyDining(anchorAttraction, slotType, PlannerDiningContextMapper.from(constraints));
     }
 
     public static DiningOption resolveNearbyDining(Attraction anchorAttraction, String slotType, TravelConstraints constraints, java.util.Set<String> excludedNames) {
-        return delegate.resolveNearbyDining(anchorAttraction, slotType, constraints, excludedNames);
+        DiningVenueService current = delegate;
+        return current == null ? null : current.resolveNearbyDining(anchorAttraction, slotType, PlannerDiningContextMapper.from(constraints), excludedNames);
     }
 
     /**
-     * 为餐饮节点生成局部替换候选列表（覆盖火锅、小面/早点、江湖菜、清淡汤锅/小吃、休闲茶歇等）
+     * 为餐饮节点生成局部替换候选列表（覆盖用户指定风味、早点、汤品和茶歇等）
      */
     public static List<DiningOption> resolveDiningReplacementCandidates(
             String district,
@@ -69,7 +58,9 @@ public final class AttractionDiningKnowledge {
             String slotType,
             Attraction anchorAttraction
     ) {
-        return delegate.resolveDiningReplacementCandidates(
+        DiningVenueService current = delegate;
+        if (current == null) return List.of();
+        return current.resolveDiningReplacementCandidates(
                 district, currentDiningName, requestedFlavor, slotType, anchorAttraction, null);
     }
 
@@ -81,7 +72,9 @@ public final class AttractionDiningKnowledge {
             Attraction anchorAttraction,
             TravelConstraints constraints
     ) {
-        return delegate.resolveDiningReplacementCandidates(
-                district, currentDiningName, requestedFlavor, slotType, anchorAttraction, constraints);
+        DiningVenueService current = delegate;
+        if (current == null) return List.of();
+        return current.resolveDiningReplacementCandidates(
+                district, currentDiningName, requestedFlavor, slotType, anchorAttraction, PlannerDiningContextMapper.from(constraints));
     }
 }

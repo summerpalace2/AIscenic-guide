@@ -18,6 +18,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class JwtAuthFilterTest {
+    @Test
+    void anonymousRagCannotEnterModelCallingChain() throws Exception {
+        var request = new MockHttpServletRequest("POST", "/ai/rag/retrieve");
+        var response = new MockHttpServletResponse();
+        var chain = new MockFilterChain();
+        filter.doFilterInternal(request, response, chain);
+        assertEquals(401, response.getStatus());
+        assertEquals(null, chain.getRequest());
+    }
 
     private final JwtUtil jwtUtil = mock(JwtUtil.class);
     private final UserService userService = mock(UserService.class);

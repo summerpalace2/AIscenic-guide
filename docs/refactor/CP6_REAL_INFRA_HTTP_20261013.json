@@ -1,0 +1,13 @@
+{
+  "passed": [
+    "shared-user-authority-across-instances",
+    "same-key-create-one-trip-one-version",
+    "same-version-overlapping-edit-one-winner-one-conflict",
+    "surviving-http-instance-reads-committed-trip-after-peer-kill"
+  ],
+  "instances": 2,
+  "schema": "cp6_dd61ae840e4142078256c4241317c46f",
+  "directory": "C:\\Users\\summer\\AppData\\Local\\Temp\\cp6-http-instances-svfx92qf",
+  "scope": "Actual HTTP backends; not BFF, provider, or database-service crash recovery",
+  "jarSha256": "4C1156FF566483DA997A789D619100601C46FEBBA8465B55AE541BDD61D81205"
+}

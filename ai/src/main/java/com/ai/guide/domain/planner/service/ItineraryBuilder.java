@@ -2,10 +2,17 @@ package com.ai.guide.domain.planner.service;
 
 import com.ai.guide.domain.planner.model.ConstraintOrigin;
 import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.model.GeoCoordinates;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.attraction.service.AttractionPoiIdentityMatcher;
+import com.ai.guide.common.context.OperationDeadline;
 import com.ai.guide.domain.planner.engine.LocalPlanRepairer;
 import com.ai.guide.domain.planner.engine.MealGapSolver;
+import com.ai.guide.domain.planner.engine.PlannerScoringPolicy;
 import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
 import com.ai.guide.domain.dining.service.DiningVenueService;
 import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
 import com.ai.guide.domain.planner.service.util.ChineseDateTimeParser;
@@ -19,6 +26,7 @@ import com.ai.guide.domain.planner.narrative.PlanNarrativeService;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -47,18 +55,10 @@ import java.util.regex.Pattern;
 @Service
 public class ItineraryBuilder implements ItineraryBuilderPort {
 
-    /**
-     * Keep tie-breaking aligned with the legacy Node catalog order without
-     * duplicating attraction metadata in the Planner domain.
-     */
-    private static final List<String> CATALOG_ORDER = List.of(
-            "cq-hongyadong", "cq-jiefangbei", "cq-museum", "cq-liziba",
-            "cq-grand-theatre", "cq-ciqikou", "cq-kuixinglou", "cq-shibati",
-            "cq-erling", "cq-changjiang-cable", "cq-nanshan-yikeshu", "cq-danzi-shi",
-            "cq-guanyinqiao", "cq-luohan-temple", "cq-huguang-guild", "cq-zhongshan-road",
-            "cq-baiheliang", "cq-wulong-tiankeng", "cq-dazu-rock", "cq-ronghui-hotspring",
-            "cq-south-hotspring", "cq-geleyuan", "cq-maanshan", "cq-beicang"
-    );
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ItineraryBuilder.class);
+
+    @org.springframework.beans.factory.annotation.Value("${planner.catalog-geocode.max-poi-lookups:12}")
+    private int maxCatalogGeocodeLookups = 12;
 
     private final AttractionService attractionService;
     private final RouteAwarePlanner routeAwarePlanner;
@@ -67,6 +67,13 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private final PlanNarrativeService planNarrativeService;
     private final com.ai.guide.domain.attraction.service.AttractionAliasMatcher aliasMatcher;
 
+    private GeoRouteGatewayPort geoRouteGateway;
+
+    @Autowired(required = false)
+    public void setGeoRouteGateway(GeoRouteGatewayPort geoRouteGateway) {
+        this.geoRouteGateway = geoRouteGateway;
+    }
+
     @Autowired(required = false)
     private com.ai.guide.domain.attraction.service.RuntimeAttractionDetailService runtimeAttractionDetailService;
 
@@ -74,14 +81,14 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private DiningVenueService diningVenueService;
 
     @Autowired
-    private TaxonomyPort taxonomy;
+    private PlannerTaxonomyPort taxonomy = TaxonomyPort.empty();
 
     @Autowired
     private MealGapSolver mealGapSolver;
 
-    public void setDiningScheduling(DiningVenueService diningVenueService, TaxonomyPort taxonomy, MealGapSolver mealGapSolver) {
+    public void setDiningScheduling(DiningVenueService diningVenueService, PlannerTaxonomyPort taxonomy, MealGapSolver mealGapSolver) {
         this.diningVenueService = diningVenueService;
-        this.taxonomy = taxonomy;
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
         this.mealGapSolver = mealGapSolver;
     }
 
@@ -100,34 +107,43 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         this.aliasMatcher = aliasMatcher != null ? aliasMatcher : new com.ai.guide.domain.attraction.service.AttractionAliasMatcher(attractionService);
     }
 
-    public ItineraryBuilder(AttractionService attractionService) {
-        PlanVerifier verifier = new PlanVerifier();
-        LocalPlanRepairer repairer = new LocalPlanRepairer();
-        RouteCostProvider costProvider = new RouteCostProvider(null);
-        this.attractionService = attractionService;
-        this.planVerifier = verifier;
-        this.localPlanRepairer = repairer;
-        this.routeAwarePlanner = new RouteAwarePlanner(costProvider, verifier, repairer);
-        this.planNarrativeService = new PlanNarrativeService();
-        this.aliasMatcher = new com.ai.guide.domain.attraction.service.AttractionAliasMatcher(attractionService);
-    }
-
     public Map<String, Object> build(int version, TravelConstraints constraints) {
         String destination = normalizedCity(constraints.getDestination());
-        boolean chongqingCatalog = "重庆".equals(destination);
+        boolean configuredBaselineCity = isBaselineCity(destination);
         List<Attraction> catalog = new ArrayList<>(attractionService.list(null, null).stream()
                 .filter(attraction -> belongsToCity(attraction, destination)).toList());
         catalog.sort(Comparator.comparingInt(a -> catalogRank(a.getId())));
         Map<String, Attraction> byId = new LinkedHashMap<>();
         for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
         List<String> explicitIds = explicitIds(constraints.getRawPrompt(), byId);
-        int requestedDays = constraints.getDurationDays() <= 0 ? 2 : constraints.getDurationDays();
-        int dayCount = Math.max(1, Math.min(7, requestedDays));
+        List<Attraction> lookupOrder = new ArrayList<>(catalog);
+        lookupOrder.sort(Comparator.comparingInt((Attraction attraction) ->
+                explicitIds.contains(attraction.getId()) ? 0
+                        : constraints.getMustVisit() != null && constraints.getMustVisit().stream()
+                            .anyMatch(name -> name != null && !name.isBlank()
+                                    && attraction.getName() != null && attraction.getName().contains(name)) ? 1 : 2)
+                .thenComparingInt(attraction -> catalogRank(attraction.getId())));
+        Map<String, Attraction> resolved = new LinkedHashMap<>();
+        int lookups = 0;
+        for (Attraction attraction : lookupOrder) {
+            if (GeoCoordinates.parse(attraction.getLocation()) != null) continue;
+            if (lookups >= Math.max(0, maxCatalogGeocodeLookups) || OperationDeadline.expired()) break;
+            lookups++;
+            resolved.put(attraction.getId(), resolveCoordinate(attraction, destination));
+        }
+        catalog.replaceAll(attraction -> resolved.getOrDefault(attraction.getId(), attraction));
+        byId.clear();
+        for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
+        int requestedDays = constraints.getDurationDays();
+        if (requestedDays <= 0) throw new IllegalArgumentException("durationDays must be confirmed or supplied by planner policy");
+        int maxDays = PlannerScoringPolicy.limit(taxonomy, "maxTripDays");
+        int dayCount = Math.max(1, maxDays > 0 ? Math.min(maxDays, requestedDays) : requestedDays);
         boolean hasStartPlace = constraints.getStartPlace() != null
                 && !constraints.getStartPlace().isBlank()
                 && !"未提供".equals(constraints.getStartPlace());
-        boolean isGoldenBaseline = chongqingCatalog && explicitIds.isEmpty() && dayCount == 2 && !hasStartPlace
-                && byId.keySet().containsAll(List.of("cq-jiefangbei", "cq-hongyadong", "cq-museum", "cq-liziba", "cq-shibati"));
+        List<String> requiredBaselineIds = taxonomy == null ? List.of() : taxonomy.getHints("baselineRequiredAttractionIds");
+        boolean isGoldenBaseline = configuredBaselineCity && explicitIds.isEmpty() && dayCount == 2 && !hasStartPlace
+                && !requiredBaselineIds.isEmpty() && byId.keySet().containsAll(requiredBaselineIds);
 
         List<Map<String, Object>> days = isGoldenBaseline
                 ? routeAwarePlanner.resolveAndVerifyDays(buildBaselineDays(dayCount, constraints, byId), byId, constraints)
@@ -138,7 +154,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
 
         String cityLabel = destination.isBlank() ? "目的地" : destination;
         String title = isGoldenBaseline
-                ? "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·山城漫游线"
+                ? destination + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·城市漫游线"
                 : hasStartPlace
                 ? "从" + constraints.getStartPlace() + "出发·" + cityLabel + dayCount + "天专属方案"
                 : cityLabel + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·专属定制方案";
@@ -182,7 +198,38 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
             trip.put("retrieval", Map.of("mode", "java-planner-local", "status", "当地目录无匹配景点", "facts", List.of(), "citations", List.of()));
             trip.put("citations", List.of());
         }
-        if (!chongqingCatalog) {
+        if (!catalog.isEmpty()) {
+            boolean missingCandidateCoordinates = catalog.stream()
+                    .anyMatch(attraction -> GeoCoordinates.parse(attraction.getLocation()) == null);
+            boolean underfilled = !isGoldenBaseline && java.util.stream.IntStream.range(0, days.size()).anyMatch(index -> {
+                Object rawStops = days.get(index).get("stops");
+                long attractions = rawStops instanceof List<?> stops ? stops.stream()
+                        .filter(stop -> stop instanceof Map<?, ?> entry && byId.containsKey(String.valueOf(entry.get("venueId"))))
+                        .count() : 0;
+                return attractions < routeAwarePlanner.expectedAttractionSlots(index + 1, dayCount, constraints);
+            });
+            List<String> selectedNames = days.stream().filter(day -> day.get("stops") instanceof List<?>)
+                    .flatMap(day -> ((List<?>) day.get("stops")).stream())
+                    .filter(stop -> stop instanceof Map<?, ?>)
+                    .map(stop -> String.valueOf(((Map<?, ?>) stop).get("name"))).toList();
+            boolean mustVisitMissing = constraints.getMustVisit() != null && constraints.getMustVisit().stream()
+                    .filter(name -> name != null && !name.isBlank())
+                    .anyMatch(name -> selectedNames.stream().noneMatch(selected -> selected.contains(name)));
+            boolean selectedCoordinateMissing = days.stream()
+                    .filter(day -> day.get("stops") instanceof List<?>)
+                    .flatMap(day -> ((List<?>) day.get("stops")).stream())
+                    .anyMatch(stop -> stop instanceof Map<?, ?> entry
+                            && GeoCoordinates.parse(String.valueOf(entry.get("location"))) == null);
+            List<String> reasons = new ArrayList<>();
+            if (selectedCoordinateMissing) reasons.add("POI_COORDINATES_UNVERIFIED");
+            if (missingCandidateCoordinates && (underfilled || mustVisitMissing))
+                reasons.add("CATALOG_CANDIDATES_UNRESOLVED");
+            if (!reasons.isEmpty()) {
+                trip.put("degraded", true);
+                trip.put("degradationReasons", reasons);
+            }
+        }
+        if (!configuredBaselineCity) {
             @SuppressWarnings("unchecked")
             Map<String, Object> context = (Map<String, Object>) trip.get("planContext");
             context.put("foodGuidance", "饮食策略：依据用户风味偏好检索当地餐厅，营业状态与路线待核验。");
@@ -193,7 +240,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
 
     @Override
     public Map<String, Object> buildLegacy(int version, TravelConstraints constraints) {
-        if (!"重庆".equals(normalizedCity(constraints.getDestination()))) {
+        if (!isBaselineCity(normalizedCity(constraints.getDestination()))) {
             Map<String, Object> trip = build(version, constraints);
             trip.put("plannerVersion", "legacy-v0");
             trip.put("explanationSource", "LEGACY_STATIC");
@@ -203,13 +250,14 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         List<Attraction> catalog = attractionService.list(null, null);
         Map<String, Attraction> byId = new LinkedHashMap<>();
         for (Attraction attraction : catalog) byId.put(attraction.getId(), attraction);
-        int requestedDays = constraints.getDurationDays() <= 0 ? 2 : constraints.getDurationDays();
+        int requestedDays = constraints.getDurationDays();
+        if (requestedDays <= 0) throw new IllegalArgumentException("durationDays must be confirmed or supplied by planner policy");
         int dayCount = Math.max(1, Math.min(7, requestedDays));
 
         // Legacy path uses pure baseline template without RouteAwarePlanner or route resolution
         List<Map<String, Object>> days = buildBaselineDays(dayCount, constraints, byId);
 
-        String title = "重庆" + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·传统基准方案";
+        String title = normalizedCity(constraints.getDestination()) + dayCount + "天" + (dayCount == 1 ? "" : "一夜") + "·传统基准方案";
         String subtitle = "传统规划引擎 · 演示基准";
 
         Map<String, Object> trip = new LinkedHashMap<>();
@@ -245,15 +293,52 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         return value.endsWith("市") && value.length() > 2 ? value.substring(0, value.length() - 1) : value;
     }
 
-    private static boolean belongsToCity(Attraction attraction, String city) {
+    @Override
+    public boolean belongsToCity(Attraction attraction, String city) {
+        city = normalizedCity(city);
         if (attraction == null || city.isBlank()) return false;
+        if (attraction.getCity() != null && !attraction.getCity().isBlank())
+            return city.equals(normalizedCity(attraction.getCity()));
         Object configuredCity = attraction.getAmapQuery() == null ? null : attraction.getAmapQuery().get("city");
         if (configuredCity != null && !String.valueOf(configuredCity).isBlank()) {
             return city.equals(normalizedCity(String.valueOf(configuredCity)));
         }
         // The legacy catalog predates its city field. This compatibility applies
         // only to its documented entries, never to arbitrary unclassified POIs.
-        return "重庆".equals(city) && CATALOG_ORDER.contains(attraction.getId());
+        return isBaselineCity(city) && taxonomy != null && taxonomy.getHints("catalogOrder").contains(attraction.getId());
+    }
+
+    /** Resolve at most one exact catalog identity per missing coordinate before route selection. */
+    private Attraction resolveCoordinate(Attraction attraction, String city) {
+        if (GeoCoordinates.parse(attraction.getLocation()) != null || geoRouteGateway == null
+                || !geoRouteGateway.isConfigured() || OperationDeadline.expired()
+                || city.isBlank() || attraction.getName() == null || attraction.getName().isBlank()) return attraction;
+        try {
+            var outcome = geoRouteGateway.searchPoi(attraction.getName(), city);
+            if (OperationDeadline.expired() || outcome == null || outcome.status() != GeoOutcomeStatus.SUCCESS
+                    || outcome.candidates() == null) {
+                log.info("[CATALOG_GEOCODE] attractionId={} status={}", attraction.getId(),
+                        OperationDeadline.expired() ? "DEADLINE_EXCEEDED" : outcome == null ? "NO_RESPONSE" : outcome.status());
+                return attraction;
+            }
+            var acceptedNames = AttractionPoiIdentityMatcher.acceptableExactNames(attraction);
+            var exact = outcome.candidates().stream().filter(poi ->
+                    AttractionPoiIdentityMatcher.isValidExactIdentity(poi, acceptedNames, city)).toList();
+            if (exact.size() == 1) {
+                Attraction resolved = new Attraction();
+                BeanUtils.copyProperties(attraction, resolved);
+                resolved.setLocation(exact.get(0).coordinate().longitude() + "," + exact.get(0).coordinate().latitude());
+                resolved.setResolvedPoiId(exact.get(0).poiId());
+                return resolved;
+            }
+            log.info("[CATALOG_GEOCODE] attractionId={} status={} matchingIdentities={}", attraction.getId(),
+                    exact.isEmpty() ? "NO_EXACT_MATCH" : "AMBIGUOUS_IDENTITY", exact.size());
+        } catch (RuntimeException failure) {
+            // A failed provider lookup never supplies coordinates or a fabricated route.
+            log.info("[CATALOG_GEOCODE] attractionId={} status=FAILED exceptionType={}",
+                    attraction.getId(), failure.getClass().getSimpleName());
+        }
+        return attraction;
     }
 
     public Map<String, Object> createStop(Attraction attraction, String stopId, String time,
@@ -283,7 +368,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("walk", effectiveWalk);
         stop.put("walkDifficulty", attraction.getWalkDifficulty());
         stop.put("walkingDifficulty", attraction.getWalkDifficulty());
-        stop.put("indoor", Boolean.TRUE.equals(attraction.getIndoor()));
+        stop.put("indoor", attraction.getIndoor());
         stop.put("ticket", attraction.getTicket());
         stop.put("bestTime", attraction.getBestTime());
         stop.put("openingHours", attraction.getOpeningHours());
@@ -299,10 +384,12 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("walkingInfo", Map.of("summary", effectiveWalk, "status", "未知"));
         stop.put("address", "");
         stop.put("location", attraction.getLocation());
-        stop.put("amapPoiId", "");
+        stop.put("amapPoiId", attraction.getResolvedPoiId() == null ? "" : attraction.getResolvedPoiId());
+        if (attraction.getResolvedPoiId() != null && !attraction.getResolvedPoiId().isBlank())
+            stop.put("preselectedPoiId", attraction.getResolvedPoiId());
         stop.put("mapContext", mapContext(attraction.getLocation()));
         stop.put("facts", defaultFacts(attraction));
-        stop.put("citations", citations());
+        stop.put("citations", officialSummaryCitation(attraction));
         if (scoreBreakdown != null) {
             stop.put("scoreBreakdown", scoreBreakdown.asMap());
         }
@@ -310,7 +397,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     @Override
-    public Map<String, Object> createDiningStop(AttractionDiningKnowledge.DiningOption dining, String stopId, String time, String district) {
+    public Map<String, Object> createDiningStop(com.ai.guide.domain.dining.model.DiningOption dining, String stopId, String time, String district) {
         Map<String, Object> stop = new LinkedHashMap<>();
         stop.put("id", stopId);
         stop.put("stableStopId", stopId);
@@ -323,8 +410,10 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         stop.put("startTime", time);
         stop.put("duration", dining.duration());
         boolean isTeaBreakStop = "TEA_BREAK".equalsIgnoreCase(dining.diningType())
-                || "休闲茶歇".equals(dining.diningType())
-                || (dining.name() != null && (dining.name().contains("茶") || dining.name().contains("咖啡")));
+                || (taxonomy != null && (taxonomy.getHints("teaBreakDiningTypes").stream()
+                        .anyMatch(type -> type.equalsIgnoreCase(dining.diningType()))
+                        || taxonomy.getHints("teaVenueNameKeywords").stream()
+                        .anyMatch(keyword -> dining.name() != null && dining.name().contains(keyword))));
         stop.put("type", "DINING");
         stop.put("category", isTeaBreakStop ? "茶歇" : "美食");
         stop.put("icon", isTeaBreakStop ? "茶" : "餐");
@@ -367,23 +456,31 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
 
     @Override
     public int catalogRank(String attractionId) {
-        int index = CATALOG_ORDER.indexOf(attractionId);
+        int index = taxonomy == null ? -1 : taxonomy.getHints("catalogOrder").indexOf(attractionId);
         return index >= 0 ? index : Integer.MAX_VALUE;
+    }
+
+    private boolean isBaselineCity(String city) {
+        return taxonomy != null && taxonomy.getHints("baselineCity").stream()
+                .map(ItineraryBuilder::normalizedCity).anyMatch(candidate -> candidate.equals(normalizedCity(city)));
     }
 
     private List<Map<String, Object>> buildBaselineDays(int dayCount, TravelConstraints constraints,
                                                           Map<String, Attraction> byId) {
-        List<List<Spec>> templates = List.of(
-                List.of(new Spec("day1-jiefangbei", "cq-jiefangbei", "14:30"),
-                        new Spec("day1-hongyadong", "cq-hongyadong", "19:30")),
-                List.of(new Spec("day2-museum", "cq-museum", "10:00"),
-                        new Spec("day2-liziba", "cq-liziba", "14:30"),
-                        new Spec("day2-shibati", "cq-shibati", "18:00")),
-                List.of(new Spec("day3-erling", "cq-erling", "14:00"),
-                        new Spec("day3-grand-theatre", "cq-grand-theatre", "19:30")),
-                List.of(new Spec("day4-ciqikou", "cq-ciqikou", "10:30"),
-                        new Spec("day4-danzi-shi", "cq-danzi-shi", "17:30")));
-        String[] labels = {"母城地标与山城夜景", "文博静谧与8D魔幻穿楼", "江岸开阔视野与工业文创", "千年古镇与巴渝风情"};
+        List<List<Spec>> templates = new ArrayList<>();
+        List<String> labels = taxonomy == null ? List.of() : taxonomy.getHints("baselineDayLabels");
+        for (int templateIndex = 1; taxonomy != null; templateIndex++) {
+            List<String> encoded = taxonomy.getHints("baselineDay" + templateIndex);
+            if (encoded.isEmpty()) break;
+            List<Spec> specs = new ArrayList<>();
+            for (String value : encoded) {
+                String[] parts = value.split("\\|", 3);
+                if (parts.length != 3) throw new IllegalStateException("Invalid city baseline stop template");
+                specs.add(new Spec(parts[0], parts[1], parts[2]));
+            }
+            templates.add(List.copyOf(specs));
+        }
+        if (templates.isEmpty()) return List.of();
         List<Map<String, Object>> days = new ArrayList<>();
         for (int day = 1; day <= dayCount; day++) {
             List<Spec> specs = templates.get((day - 1) % templates.size());
@@ -412,38 +509,14 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
             String itineraryDate = itineraryDate(constraints, day);
             dayMap.put("date", itineraryDate == null ? dateLabel(constraints, day) : itineraryDate);
             dayMap.put("dateLabel", itineraryDate == null
-                    ? "第" + day + "天 · " + labels[(day - 1) % labels.length]
-                    : itineraryDate + " · 第" + day + "天 · " + labels[(day - 1) % labels.length]);
+                    ? "第" + day + "天 · " + (labels.isEmpty() ? "城市游览" : labels.get((day - 1) % labels.size()))
+                    : itineraryDate + " · 第" + day + "天 · " + (labels.isEmpty() ? "城市游览" : labels.get((day - 1) % labels.size())));
             dayMap.put("weather", weather());
             dayMap.put("stops", stops);
             days.add(dayMap);
         }
         annotateStops(days, constraints);
         return days;
-    }
-
-    private record SlotSpec(String time, Predicate<Attraction> preferredPredicate) {}
-
-    private List<Map<String, Object>> buildCustomDays(int dayCount, TravelConstraints constraints,
-                                                      Map<String, Attraction> byId, List<String> explicitIds) {
-        List<Map<String, Object>> days = routeAwarePlanner.planDays(dayCount, constraints, byId, explicitIds, this);
-        annotateStops(days, constraints);
-        return days;
-    }
-
-    private List<SlotSpec> buildDaySlotSpecs(int day, TravelConstraints constraints) {
-        boolean isAfternoonStart = day == 1 && (constraints.getArrivalAt().contains("下午") || constraints.getArrivalAt().contains("晚上"));
-        if (isAfternoonStart) {
-            return List.of(
-                    new SlotSpec("14:30", attraction -> !isNightAttraction(attraction)),
-                    new SlotSpec("19:30", this::isNightAttraction)
-            );
-        }
-        return List.of(
-                new SlotSpec("10:00", attraction -> !isNightAttraction(attraction)),
-                new SlotSpec("14:30", attraction -> !isNightAttraction(attraction)),
-                new SlotSpec("18:30", this::isNightAttraction)
-        );
     }
 
     private Scored selectBestCandidateScored(List<Scored> scored, Set<String> used, Predicate<Attraction> preferred) {
@@ -470,194 +543,144 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
 
     public ScoreBreakdown score(Attraction a, TravelConstraints c, Set<String> explicitIds) {
         List<String> reasonCodes = new ArrayList<>();
-        int explicitBonus = explicitIds != null && explicitIds.contains(a.getId()) ? 200 : 0;
+        int explicitBonus = explicitIds != null && explicitIds.contains(a.getId()) ? scoreWeight("builderExplicitMention") : 0;
         if (explicitBonus > 0) reasonCodes.add("EXPLICIT_MENTION");
 
-        int mustVisitScore = (c.getMustVisit() != null && c.getMustVisit().stream().anyMatch(m -> a.getName().contains(m) || a.getId().contains(m))) ? 300 : 0;
+        int mustVisitScore = (c.getMustVisit() != null && c.getMustVisit().stream().anyMatch(m -> a.getName().contains(m) || a.getId().contains(m))) ? scoreWeight("builderMustVisit") : 0;
         if (mustVisitScore > 0) reasonCodes.add("MUST_VISIT");
 
-        int avoidPenalty = (c.getAvoid() != null && c.getAvoid().stream().anyMatch(av -> a.getName().contains(av) || a.getId().contains(av) || av.equals(a.getCategory()))) ? -500 : 0;
+        int avoidPenalty = (c.getAvoid() != null && c.getAvoid().stream().anyMatch(av -> a.getName().contains(av) || a.getId().contains(av) || av.equals(a.getCategory()))) ? scoreWeight("builderAvoidPenalty") : 0;
         if (avoidPenalty < 0) reasonCodes.add("AVOID_PENALTY");
 
         int interestScore = 0;
         for (String interest : c.getInterests()) {
-            if ("自然奇观".equals(interest) || "自然".equals(interest)) {
-                if ("自然".equals(a.getCategory()) || a.matchesAnyTagOrFeature("自然", "自然奇观", "峡谷", "喀斯特峡谷")) {
-                    interestScore += 55;
-                    reasonCodes.add("INTEREST_NATURE");
-                }
-            } else if ("人文历史".equals(interest) || "人文".equals(interest)) {
-                if ("人文".equals(a.getCategory()) || a.matchesAnyTagOrFeature("人文", "历史", "古建", "抗战遗址", "千年古刹", "世界文化遗产")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_HISTORY");
-                }
-            } else if ("8D魔幻".equals(interest)) {
-                if ("8D魔幻".equals(a.getCategory()) || a.matchesAnyTagOrFeature("8D魔幻", "单轨", "天桥", "空中连廊", "空中巴士")) {
-                    interestScore += 55;
-                    reasonCodes.add("INTEREST_8D_MAGIC");
-                }
-            } else if ("山城夜景".equals(interest) || "夜景".equals(interest)) {
-                if ("夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "临江", "江岸夜景", "俯瞰全城")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_NIGHT_VIEW");
-                }
-            } else if ("天然温泉".equals(interest) || "温泉".equals(interest)) {
-                if ("温泉".equals(a.getCategory()) || a.matchesAnyTagOrFeature("温泉", "天然地热温泉", "古温泉", "养生放松") || a.getName().contains("温泉")) {
-                    interestScore += 60;
-                    reasonCodes.add("INTEREST_HOTSPRING");
-                }
-            } else if ("市井烟火".equals(interest) || "市井".equals(interest)) {
-                if ("市井".equals(a.getCategory()) || a.matchesAnyTagOrFeature("市井", "市井烟火", "老街", "古镇", "老重庆")) {
-                    interestScore += 45;
-                    reasonCodes.add("INTEREST_LOCAL_LIFE");
-                }
+            if (taxonomy.getHints("plannerNatureInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerNatureCategories", "plannerNatureFeatures")) { interestScore += scoreWeight("builderInterestNature"); reasonCodes.add("INTEREST_NATURE"); }
+            } else if (taxonomy.getHints("plannerHistoryInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerHistoryCategories", "plannerHistoryFeatures")) { interestScore += scoreWeight("builderInterestHistory"); reasonCodes.add("INTEREST_HISTORY"); }
+            } else if (taxonomy.getHints("chongqingTerrainInterestLabels").contains(interest) && isBaselineCity(c.getDestination())) {
+                if (hasFeatures(a, "chongqingTerrainInterestFeatures")) { interestScore += scoreWeight("builderInterestTerrain"); reasonCodes.add("INTEREST_8D_MAGIC"); }
+            } else if (taxonomy.getHints("plannerNightInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerNightCategories", "plannerNightScoringFeatures")) { interestScore += scoreWeight("builderInterestNight"); reasonCodes.add("INTEREST_NIGHT_VIEW"); }
+            } else if (taxonomy.getHints("plannerThermalInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerThermalCategories", "plannerThermalFeatures") || nameMatches(a, "plannerThermalNameTerms")) { interestScore += scoreWeight("builderInterestThermal"); reasonCodes.add("INTEREST_HOTSPRING"); }
+            } else if (taxonomy.getHints("plannerLocalInterestLabels").contains(interest)) {
+                if (matchesConfigured(a, "plannerLocalCategories", "plannerLocalCultureScoringFeatures")) { interestScore += scoreWeight("builderInterestLocal"); reasonCodes.add("INTEREST_LOCAL_LIFE"); }
             } else if (a.matchesAnyTagOrFeature(interest) || interest.equals(a.getCategory()) || a.getName().contains(interest)) {
-                interestScore += 40;
-                reasonCodes.add("INTEREST_TAG_MATCH");
+                interestScore += scoreWeight("builderInterestGeneric"); reasonCodes.add("INTEREST_TAG_MATCH");
             }
         }
 
         int walkingScore = evaluateWalkingScore(a, c.getWalkingTolerance(), reasonCodes);
-        int companionScore = evaluateCompanionScore(a, c.getCompanions(), reasonCodes);
+        int companionScore = evaluateCompanionScore(a, c.getCompanions(), c.getDestination(), reasonCodes);
         int diningScore = evaluateDiningScore(a, c.getDietPreference(), reasonCodes);
-
         int totalScore = explicitBonus + mustVisitScore + avoidPenalty + interestScore + walkingScore + companionScore + diningScore;
         return new ScoreBreakdown(interestScore, companionScore, walkingScore, diningScore, mustVisitScore, avoidPenalty, explicitBonus, totalScore, reasonCodes);
     }
 
-    private int evaluateDiningScore(Attraction a, String dietPreference, List<String> reasonCodes) {
-        if ("清淡不辣".equals(dietPreference) || "清淡".equals(dietPreference)) {
-            boolean isPeacefulLeisure = ("人文".equals(a.getCategory()) || "文创".equals(a.getCategory()) || "休闲".equals(a.getCategory()) || "INDOOR".equals(a.getEffectiveEnvironment()) || a.matchesAnyTagOrFeature("最美林荫道", "静谧散步", "养生放松", "城市书房", "清淡友好"))
-                    && !a.matchesAnyTagOrFeature("火锅", "重庆火锅", "江湖菜", "老火锅");
-            if (isPeacefulLeisure) {
-                reasonCodes.add("DINING_NON_SPICY_FIT");
-                return 30;
+    private int evaluateDiningScore(Attraction attraction, String dietPreference, List<String> reasonCodes) {
+        boolean avoidsSpicy = dietPreference != null && taxonomy != null
+                && taxonomy.getHints("nonSpicyFlavors").stream().anyMatch(dietPreference::contains);
+        if (avoidsSpicy) {
+            boolean peacefulCategory = matchesCategory(attraction, "plannerDiningPeacefulCategories")
+                    || "INDOOR".equals(attraction.getEffectiveEnvironment())
+                    || hasFeatures(attraction, "plannerDiningPeacefulFeatures");
+            if (peacefulCategory && taxonomy.getHints("spicyFlavors").stream().noneMatch(attraction::matchesAnyTagOrFeature)) {
+                reasonCodes.add("DINING_NON_SPICY_FIT"); return scoreWeight("builderDiningPeaceful");
             }
-            if (a.matchesAnyTagOrFeature("火锅", "重庆火锅", "江湖菜", "老火锅")) {
-                reasonCodes.add("DINING_SPICY_PENALTY");
-                return -20;
+            if (taxonomy.getHints("spicyFlavors").stream().anyMatch(attraction::matchesAnyTagOrFeature)) {
+                reasonCodes.add("DINING_SPICY_PENALTY"); return scoreWeight("builderDiningSpicyPenalty");
             }
-        } else if ("重庆火锅".equals(dietPreference) || "九宫格老火锅".equals(dietPreference)) {
-            if ("美食".equals(a.getCategory()) || a.matchesAnyTagOrFeature("火锅", "重庆火锅", "美食", "街头小吃", "非遗小吃")) {
-                reasonCodes.add("DINING_HOTPOT_FIT");
-                return 40;
+        } else if (matchesConfiguredDiningFlavor(attraction, dietPreference)
+                || (taxonomy != null && taxonomy.getHints("genericFlavors").contains(dietPreference))) {
+            if (matchesConfigured(attraction, "plannerFoodCategories", "foodTags")) {
+                reasonCodes.add("DINING_PREFERENCE_FIT"); return scoreWeight("builderDiningPreference");
             }
-        } else if (!"未提供".equals(dietPreference)) {
-            if ("美食".equals(a.getCategory()) || a.matchesAnyTagOrFeature("美食", "小吃", "老字号")) {
-                reasonCodes.add("DINING_FOOD_FIT");
-                return 30;
+        } else if (!taxonomy.getHints("missingPreferenceValues").contains(dietPreference)) {
+            if (matchesConfigured(attraction, "plannerFoodCategories", "foodTags")) {
+                reasonCodes.add("DINING_FOOD_FIT"); return scoreWeight("builderDiningFood");
             }
         }
         return 0;
     }
 
-    private int evaluateWalkingScore(Attraction a, String walkingTolerance, List<String> reasonCodes) {
-        if ("低".equals(walkingTolerance)) {
+    private boolean matchesConfiguredDiningFlavor(Attraction attraction, String preference) {
+        if (attraction == null || preference == null || preference.isBlank() || taxonomy == null) return false;
+        return taxonomy.getFlavorAliases().stream()
+                .filter(alias -> alias.label().equals(preference) || alias.keywords().contains(preference))
+                .flatMap(alias -> alias.keywords().stream())
+                .anyMatch(keyword -> attraction.matchesAnyTagOrFeature(keyword));
+    }
+
+    private int evaluateWalkingScore(Attraction attraction, String walkingTolerance, List<String> reasonCodes) {
+        if (taxonomy.getHints("walkingLowAliases").contains(walkingTolerance)) {
             int delta = 0;
-            if ("低".equals(a.getWalkDifficulty()) || "SUPPORTED".equals(a.getEffectiveAccessibility())) {
-                delta += 35;
-                reasonCodes.add("WALKING_EASY");
+            if (taxonomy.getHints("walkingEasyLevels").contains(attraction.getWalkDifficulty()) || taxonomy.getHints("supportedAccessibilityLevels").contains(attraction.getEffectiveAccessibility())) {
+                delta += scoreWeight("builderWalkEasy"); reasonCodes.add("WALKING_EASY");
             }
-            if (a.matchesAnyTagOrFeature("少走路", "长辈友好", "平街", "无障碍", "扶梯全覆盖", "多级户外扶梯")) {
-                delta += 25;
-                reasonCodes.add("WALKING_ACCESSIBLE");
+            if (hasFeatures(attraction, "plannerWalkingExtendedFeatures")) { delta += scoreWeight("builderWalkAccessible"); reasonCodes.add("WALKING_ACCESSIBLE"); }
+            if (taxonomy.getHints("walkingHardLevels").contains(attraction.getWalkDifficulty()) || taxonomy.getHints("unsupportedAccessibilityLevels").contains(attraction.getEffectiveAccessibility())) {
+                delta += scoreWeight("builderWalkHard"); reasonCodes.add("WALKING_DIFFICULT_PENALTY");
             }
-            if ("高".equals(a.getWalkDifficulty()) || "UNSUPPORTED".equals(a.getEffectiveAccessibility())) {
-                delta -= 50;
-                reasonCodes.add("WALKING_DIFFICULT_PENALTY");
-            }
-            if ("中".equals(a.getWalkDifficulty()) || "PARTIAL".equals(a.getEffectiveAccessibility())) {
-                delta -= 15;
-            }
+            if (taxonomy.getHints("walkingMediumLevels").contains(attraction.getWalkDifficulty()) || taxonomy.getHints("partialAccessibilityLevels").contains(attraction.getEffectiveAccessibility())) delta += scoreWeight("builderWalkMedium");
             return delta;
         }
-        if ("高".equals(walkingTolerance) && (a.matchesAnyTagOrFeature("深度打卡", "徒步", "徒步摄影") || "高".equals(a.getWalkDifficulty()))) {
-            reasonCodes.add("WALKING_HIGH_TOLERANCE");
-            return 30;
+        if (taxonomy.getHints("walkingHighAliases").contains(walkingTolerance)
+                && (hasFeatures(attraction, "plannerWalkingActiveFeatures") || taxonomy.getHints("walkingHardLevels").contains(attraction.getWalkDifficulty()))) {
+            reasonCodes.add("WALKING_HIGH_TOLERANCE"); return scoreWeight("builderWalkActive");
         }
         return 0;
     }
 
-    private int evaluateCompanionScore(Attraction a, String companions, List<String> reasonCodes) {
-        return switch (companions) {
-            case "带孩子", "亲子家庭", "亲子" -> {
-                int delta = "INDOOR".equals(a.getEffectiveEnvironment()) ? 25 : 0;
-                if (a.matchesAnyTagOrFeature("亲子", "科普", "国宝级", "水下博物馆", "三峡变迁") || ("INDOOR".equals(a.getEffectiveEnvironment()) && "人文".equals(a.getCategory()))) {
-                    delta += 45;
-                    reasonCodes.add("COMPANION_KIDS_EDUCATION");
-                }
-                if ("自然".equals(a.getCategory()) || a.matchesAnyTagOrFeature("自然", "峡谷", "森林氧吧", "地质奇观")) {
-                    delta += 35;
-                    reasonCodes.add("COMPANION_KIDS_NATURE");
-                }
-                if (a.matchesAnyTagOrFeature("8D魔幻", "单轨", "交通", "空中巴士")) {
-                    delta += 30;
-                    reasonCodes.add("COMPANION_KIDS_MAGIC");
-                }
-                yield delta;
-            }
-            case "带父母", "带老人", "长辈同行" -> {
-                int delta = "INDOOR".equals(a.getEffectiveEnvironment()) ? 25 : 0;
-                if (a.matchesAnyTagOrFeature("长辈最爱", "长辈友好", "无障碍", "少走路", "养生放松")) {
-                    delta += 35;
-                    reasonCodes.add("COMPANION_SENIOR_FRIENDLY");
-                }
-                if ("低".equals(a.getWalkDifficulty()) && (a.matchesAnyTagOrFeature("少走路", "长辈友好", "街区", "视野开阔", "开埠文化") || "INDOOR".equals(a.getEffectiveEnvironment()))) {
-                    delta += 30;
-                    reasonCodes.add("COMPANION_SENIOR_EASY");
-                }
-                if ("高".equals(a.getWalkDifficulty())) {
-                    delta -= 40;
-                    reasonCodes.add("COMPANION_SENIOR_STEEP_PENALTY");
-                }
-                yield delta;
-            }
-            case "情侣出游", "情侣双人", "情侣" -> {
-                int delta = 0;
-                if ("夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "浪漫", "清幽", "拍照出片")) {
-                    delta += 35;
-                    reasonCodes.add("COMPANION_COUPLE_ROMANTIC");
-                }
-                if (a.matchesAnyTagOrFeature("温泉", "天然地热温泉", "养生放松") || a.getName().contains("温泉")) {
-                    delta += 45;
-                    reasonCodes.add("COMPANION_COUPLE_SPA");
-                }
-                if (a.matchesAnyTagOrFeature("俯瞰全城", "夜景大片", "开埠文化", "工业风", "文创艺术")) {
-                    delta += 30;
-                    reasonCodes.add("COMPANION_COUPLE_SCENIC");
-                }
-                yield delta;
-            }
-            case "朋友出游", "朋友结伴" -> {
-                if (a.matchesAnyTagOrFeature("8D魔幻", "美食", "打卡", "夜生活", "潮流活力", "非遗小吃") || "城市".equals(a.getCategory()) || "美食".equals(a.getCategory())) {
-                    reasonCodes.add("COMPANION_FRIENDS_VIBRANT");
-                    yield 35;
-                }
-                yield 0;
-            }
-            case "独自出发", "一个人", "自由行" -> {
-                if (a.matchesAnyTagOrFeature("地标", "文创", "城市书房", "文艺社区", "空中连廊", "短停留", "清幽") || "文创".equals(a.getCategory())) {
-                    reasonCodes.add("COMPANION_SOLO_CALM");
-                    yield 30;
-                }
-                yield 0;
-            }
-            default -> 0;
-        };
+    private int evaluateCompanionScore(Attraction attraction, String companions, String destination, List<String> reasonCodes) {
+        if (taxonomy.getHints("plannerCompanionChildAliases").contains(companions)) {
+            int delta = indoor(attraction) ? scoreWeight("builderCompanionIndoor") : 0;
+            if (hasFeatures(attraction, "plannerCompanionChildExtendedFeatures")
+                    || (indoor(attraction) && matchesCategory(attraction, "plannerHistoryCategories"))) { delta += scoreWeight("builderChildEducation"); reasonCodes.add("COMPANION_KIDS_EDUCATION"); }
+            if (matchesConfigured(attraction, "plannerNatureCategories", "plannerCompanionKidNatureExtendedFeatures")) { delta += scoreWeight("builderChildNature"); reasonCodes.add("COMPANION_KIDS_NATURE"); }
+            if (isBaselineCity(destination) && hasFeatures(attraction, "chongqingTerrainInterestFeatures")) { delta += scoreWeight("builderChildTerrain"); reasonCodes.add("COMPANION_KIDS_MAGIC"); }
+            return delta;
+        }
+        if (taxonomy.getHints("plannerCompanionSeniorAliases").contains(companions)) {
+            int delta = indoor(attraction) ? scoreWeight("builderCompanionIndoor") : 0;
+            if (hasFeatures(attraction, "plannerCompanionSeniorExtendedFeatures")) { delta += scoreWeight("builderSeniorFriendly"); reasonCodes.add("COMPANION_SENIOR_FRIENDLY"); }
+            if (taxonomy.getHints("walkingEasyLevels").contains(attraction.getWalkDifficulty())
+                    && (hasFeatures(attraction, "plannerCompanionSeniorWalkingFeatures") || indoor(attraction))) { delta += scoreWeight("builderSeniorLowWalking"); reasonCodes.add("COMPANION_SENIOR_EASY"); }
+            if (taxonomy.getHints("walkingHardLevels").contains(attraction.getWalkDifficulty())) { delta += scoreWeight("builderSeniorHard"); reasonCodes.add("COMPANION_SENIOR_STEEP_PENALTY"); }
+            return delta;
+        }
+        if (taxonomy.getHints("plannerCompanionCoupleAliases").contains(companions)) {
+            int delta = 0;
+            if (matchesConfigured(attraction, "plannerNightCategories", "plannerCompanionCoupleRomanceExtendedFeatures")) { delta += scoreWeight("builderCoupleRomance"); reasonCodes.add("COMPANION_COUPLE_ROMANTIC"); }
+            if (hasFeatures(attraction, "plannerCompanionCoupleThermalFeatures") || nameMatches(attraction, "plannerThermalNameTerms")) { delta += scoreWeight("builderCoupleThermal"); reasonCodes.add("COMPANION_COUPLE_SPA"); }
+            if (hasFeatures(attraction, "plannerCompanionCoupleScenicExtendedFeatures")) { delta += scoreWeight("builderCoupleScenic"); reasonCodes.add("COMPANION_COUPLE_SCENIC"); }
+            return delta;
+        }
+        if (taxonomy.getHints("plannerCompanionFriendsAliases").contains(companions)) {
+            if ((isBaselineCity(destination) && hasFeatures(attraction, "chongqingTerrainInterestFeatures"))
+                    || matchesCategory(attraction, "plannerCompanionFriendsCategories")) { reasonCodes.add("COMPANION_FRIENDS_VIBRANT"); return scoreWeight("builderFriendsActive"); }
+            return 0;
+        }
+        if (taxonomy.getHints("plannerCompanionSoloAliases").contains(companions)
+                && (hasFeatures(attraction, "plannerCompanionSoloExtendedFeatures") || matchesCategory(attraction, "plannerCreativeCategories"))) {
+            reasonCodes.add("COMPANION_SOLO_CALM"); return scoreWeight("builderSoloCalm");
+        }
+        return 0;
     }
 
-    private boolean isNightAttraction(Attraction a) {
-        String bestTime = String.valueOf(a.getBestTime() == null ? "" : a.getBestTime());
-        List<String> tags = a.getTags() == null ? List.of() : a.getTags();
-        return "夜景".equals(a.getCategory()) || tags.contains("夜景") || bestTime.contains("18:") || bestTime.contains("19:");
-    }
+    private int scoreWeight(String key) { return PlannerScoringPolicy.weight(taxonomy, key); }
+    private boolean hasFeatures(Attraction attraction, String key) { return attraction != null && attraction.matchesAnyTagOrFeature(taxonomy.getHints(key).toArray(String[]::new)); }
+    private boolean matchesCategory(Attraction attraction, String key) { return attraction != null && taxonomy.getHints(key).contains(attraction.getCategory()); }
+    private boolean matchesConfigured(Attraction attraction, String categoryKey, String featureKey) { return matchesCategory(attraction, categoryKey) || hasFeatures(attraction, featureKey); }
+    private boolean nameMatches(Attraction attraction, String key) { return attraction != null && taxonomy.getHints(key).stream().anyMatch(attraction.getName()::contains); }
+    private boolean indoor(Attraction attraction) { return taxonomy.getHints("indoorEnvironmentValues").contains(attraction.getEffectiveEnvironment()); }
 
     private void enrichDaysWithDining(List<Map<String, Object>> days, TravelConstraints constraints, Map<String, Attraction> byId) {
         if (days == null || days.isEmpty() || diningVenueService == null || taxonomy == null || mealGapSolver == null) return;
         Set<String> usedDiningNames = new HashSet<>();
         for (Map<String, Object> day : days) {
             for (Map<String, Object> stop : PlanAdjustmentHelper.dayStops(day)) {
-                if (PlanAdjustmentHelper.isDiningStop(stop)) usedDiningNames.add(PlanAdjustmentHelper.safe(stop.get("name")));
+                if (PlanAdjustmentHelper.isDiningStop(stop, taxonomy)) usedDiningNames.add(PlanAdjustmentHelper.safe(stop.get("name")));
             }
         }
         for (Map<String, Object> day : days) {
@@ -688,11 +711,11 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
                             || ("DINNER".equals(slotType) && (departure.contains("中午") || departure.contains("下午")))) continue;
                 }
                 if (start >= end) continue;
-                var window = new TaxonomyPort.MealWindow(start, end, configured.idealMinute(), configured.defaultLabel());
+                var window = new com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow(start, end, configured.idealMinute(), configured.defaultLabel());
                 Map<String, Object> anchorStop = null;
                 int closest = Integer.MAX_VALUE;
                 for (Map<String, Object> stop : stops) {
-                    if (PlanAdjustmentHelper.isDiningStop(stop)) continue;
+                    if (PlanAdjustmentHelper.isDiningStop(stop, taxonomy)) continue;
                     Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(PlanAdjustmentHelper.safe(stop.get("time")));
                     if (time != null && Math.abs(time - window.idealMinute()) < closest) {
                         anchorStop = stop;
@@ -702,7 +725,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
                 if (anchorStop == null) continue;
                 Attraction anchor = byId.get(PlanAdjustmentHelper.safe(anchorStop.get("venueId")));
                 if (anchor == null) anchor = PlanAdjustmentHelper.resolveStopAnchor(anchorStop, this);
-                var dining = diningVenueService.resolveNearbyDining(anchor, slotType, constraints, usedDiningNames);
+                var dining = diningVenueService.resolveNearbyDining(anchor, slotType, PlannerDiningContextMapper.from(constraints), usedDiningNames);
                 if (dining == null || dining.name() == null || usedDiningNames.contains(dining.name())
                         || !PlanAdjustmentHelper.isValidCoordinate(dining.location())) {
                     diagnostics.add(slotType + ":DINING_POI_UNRESOLVED");
@@ -728,9 +751,9 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
         }
     }
 
-    private boolean hasMeal(List<Map<String, Object>> stops, String slotType, TaxonomyPort.MealWindow window) {
+    private boolean hasMeal(List<Map<String, Object>> stops, String slotType, com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow window) {
         for (Map<String, Object> stop : stops) {
-            if (!PlanAdjustmentHelper.isDiningStop(stop)) continue;
+            if (!PlanAdjustmentHelper.isDiningStop(stop, taxonomy)) continue;
             if (slotType.equals(stop.get("mealSlot")) || slotType.equals(stop.get("diningType"))) return true;
             Integer time = ChineseDateTimeParser.extractExplicitTimeMinutes(PlanAdjustmentHelper.safe(stop.get("time")));
             if (time != null && time >= window.startMinute() && time < window.endMinute()) return true;
@@ -760,15 +783,7 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
             String departureContext;
             if (constraints.getStartPlace() != null && !constraints.getStartPlace().isBlank() && !"未提供".equals(constraints.getStartPlace())) {
                 String sp = constraints.getStartPlace();
-                if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("江津") || sp.contains("白沙") || sp.contains("四面山"))) {
-                    departureContext = "已确认行程起点【" + sp + "】。优先安排江津特色名胜（白沙古镇、四面山等），并规划沿线或经江跳线衔接主城的交通用时。";
-                } else if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("南岸") || sp.contains("重邮") || sp.contains("邮电") || sp.contains("南山"))) {
-                    departureContext = "已确认行程起点【" + sp + "】。首日优先衔接南山风景带与南岸沿江地标，减少跨江折返。";
-                } else if (PlanAdjustmentHelper.safe(constraints.getDestination()).contains("重庆") && (sp.contains("沙坪坝") || sp.contains("重大") || sp.contains("重庆大学") || sp.contains("大学城"))) {
-                    departureContext = "已确认行程起点【" + sp + "】。首日优先安排沙坪坝文化科教与磁器口古镇片区。";
-                } else {
-                    departureContext = "已确认行程起点【" + sp + "】。路线优先从出发地开始交通衔接与游览规划。";
-                }
+                departureContext = "已确认行程起点【" + sp + "】。首段优先衔接起点附近、符合用户偏好的站点，并按实时路线规划交通。";
             } else if (!"未提供".equals(constraints.getStayArea())) {
                 departureContext = "已将“" + constraints.getStayArea() + "”作为出发衔接参考，具体酒店地址仍需高德解析。";
             } else {
@@ -853,19 +868,22 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     }
 
     private String mealGuidance(TravelConstraints c) {
-        if ("清淡不辣".equals(c.getDietPreference()) || "清淡".equals(c.getDietPreference())) return "饮食策略：优选清淡温和餐品与非辣风味（如老字号酸菜鱼、清汤抄手、养生汤锅），避开重油重辣。";
-        if ("重庆火锅".equals(c.getDietPreference())) return "饮食策略：优先安排地道九宫格老火锅与防空洞火锅体验，具体店铺结合景区就近安排。";
-        if ("江湖菜".equals(c.getDietPreference())) return "饮食策略：精选景区周边老字号江湖菜馆，体验麻辣鲜香、市井镬气的巴渝风味。";
-        if ("街头小吃".equals(c.getDietPreference()) || "小吃小面".equals(c.getDietPreference())) return "饮食策略：穿插非遗小吃、地道重庆小面与名特名点，感受市井烟火。";
-        if ("素食".equals(c.getDietPreference())) return "饮食策略：优先筛选素食可选项，具体餐厅与营业状态出发前确认。";
-        if ("清真".equals(c.getDietPreference())) return "饮食策略：优先筛选清真可选项，具体餐厅与营业状态出发前确认。";
-        if ("本地菜优先".equals(c.getDietPreference())) return "饮食策略：优先安排重庆本地特色家常菜与名优名点，结合景区周边步程合理配置。";
-        return "饮食策略：结合景区周边精选地道特色美食，午晚两餐就近步行可达。";
+        String preference = c.getDietPreference() == null ? "" : c.getDietPreference().trim();
+        String defaultPreference = taxonomy.getHints("defaultDiningPreference").stream().findFirst().orElse("");
+        String defaultLabel = taxonomy.getHints("defaultDiningDisplayLabel").stream().findFirst().orElse("");
+        if (!preference.isBlank() && !defaultPreference.equals(preference)) {
+            return "饮食策略：按用户饮食偏好“" + preference + "”筛选实时餐饮候选，核实营业、菜单与位置后就近安排。";
+        }
+        if (defaultPreference.equals(preference) && !defaultPreference.isBlank()) return "饮食策略：结合" + (c.getDestination() == null || c.getDestination().isBlank() ? "目的地" : c.getDestination()) + "的本地风味与行程动线筛选餐饮候选，营业信息出发前核验。";
+        return "饮食策略：结合景区周边" + defaultLabel + "，午晚两餐就近步行可达。";
     }
 
     private Map<String, Object> qualityMetrics(TravelConstraints c, int requestedDays, List<Map<String, Object>> days) {
         List<Map<String, Object>> checks = new ArrayList<>();
-        checks.add(Map.of("key", "durationDays", "satisfied", requestedDays <= 7, "note", requestedDays <= 7 ? "排程覆盖请求天数" : "请求天数超过当前排程上限 7 天"));
+        int maxDays = PlannerScoringPolicy.limit(taxonomy, "maxTripDays");
+        boolean withinDayLimit = maxDays <= 0 || requestedDays <= maxDays;
+        checks.add(Map.of("key", "durationDays", "satisfied", withinDayLimit,
+                "note", withinDayLimit ? "排程覆盖请求天数" : "请求天数超过配置的排程上限 " + maxDays + " 天"));
         checks.add(Map.of("key", "duplicateVenues", "satisfied", noDuplicates(days), "note", "全行程景点不重复"));
 
         List<String> stopNames = days.stream()
@@ -928,9 +946,35 @@ public class ItineraryBuilder implements ItineraryBuilderPort {
     private String dateLabel(TravelConstraints c, int day) { return "未提供".equals(c.getArrivalAt()) ? "旅行第" + day + "天" : c.getArrivalAt() + "起第" + day + "天"; }
 
     private List<Map<String, Object>> defaultFacts(Attraction a) {
-        return List.of(fact("开放与营业", "未知·需实时确认", "未知", "当前规划未取得开放状态。", List.of(citation("高德 POI 详情接口", "/v5/place/detail"))),
+        List<Map<String, Object>> facts = new ArrayList<>();
+        if (a.getSummary() != null && !a.getSummary().isBlank())
+            facts.add(fact("景点简介", a.getSummary(), officialSummaryCitation(a).isEmpty() ? "未核验" : "来源已核验",
+                    "仅景点静态简介适用此来源；开放、票价和无障碍信息需另行确认。", officialSummaryCitation(a)));
+        facts.addAll(List.of(fact("开放与营业", "未知·需实时确认", "未知", "当前规划未取得开放状态。", List.of(citation("高德 POI 详情接口", "/v5/place/detail"))),
                 fact("门票与消费", "未知·需用户确认", "未知", "价格与预约规则可能变化。", List.of(citation("用户确认项", "用户输入"))),
-                fact("到达方式", a.getWalk(), "未知", "静态目录中的到达提示仅作回退，路线需由高德接口或出发前确认。", List.of(citation("高德路径规划接口", "/v5/direction/walking"))));
+                fact("到达方式", a.getWalk(), "未知", "静态目录中的到达提示仅作回退，路线需由高德接口或出发前确认。", List.of(citation("高德路径规划接口", "/v5/direction/walking")))));
+        return facts;
+    }
+
+    private List<Map<String, Object>> officialSummaryCitation(Attraction a) {
+        if (a.getVerifiedFields() == null || !a.getVerifiedFields().contains("summary") || !safeSourceUrl(a.getSourceUrl())) return List.of();
+        Map<String, Object> source = new LinkedHashMap<>();
+        source.put("title", "景点简介官方来源");
+        source.put("publisher", "景点目录官方来源");
+        source.put("url", a.getSourceUrl());
+        source.put("verifiedAt", a.getVerifiedAt() == null ? "" : a.getVerifiedAt());
+        source.put("verifiedFields", List.of("summary"));
+        source.put("status", "来源已核验");
+        source.put("note", "仅支持景点简介，不支持实时开放、票价、路线或无障碍结论。");
+        return List.of(source);
+    }
+
+    private boolean safeSourceUrl(String raw) {
+        try {
+            var uri = java.net.URI.create(raw);
+            return ("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null && !uri.getHost().isBlank() && uri.getUserInfo() == null;
+        } catch (RuntimeException ignored) { return false; }
     }
 
     private List<Map<String, Object>> citations() { return List.of(citation("高德 POI 搜索接口", "/v5/place/text"), citation("高德步行路线接口", "/v5/direction/walking"), citation("高德公交路线接口", "/v5/direction/transit/integrated")); }

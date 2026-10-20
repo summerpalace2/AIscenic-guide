@@ -1,0 +1,113 @@
+{
+  "checkpoint": "CP4.4-R4-java-open-capability-contract",
+  "capturedAt": "2026-10-09",
+  "status": "frozen pending independent B/C review; not accepted",
+  "repositories": {
+    "java": {
+      "root": "D:\\scenic-guide",
+      "head": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+      "baselineHead": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+      "baselineTrackedDirtyPatchSha256": "9b55fb55dff29d86dc371c9bee66a1353b74572424fe352d229c150bd57bf0ac",
+      "currentTrackedPatchSha256": "27f5bc2fa89cb5fd563d8810210e1eb12403c22940733818224e0b0f1add67a3",
+      "currentTrackedPatchPath": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_JAVA_TRACKED_PATCH.patch",
+      "filesSha256": {
+        "ai/src/main/java/com/ai/guide/application/planner/PlannerOpenApplicationService.java": "d52534a96a6ca3c24e74146d1e9c9929920498ea9ed34210022c52d7e6939039",
+        "ai/src/test/java/com/ai/guide/application/planner/PlannerOpenApplicationServiceTest.java": "abf6f7dd2f63fa4a19c934aad7d2f435e2ea4163a6381b49cb332ddcdec1b77f",
+        "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java": "f9526be9841dbb964ff9dd66cddaadcb9ba24531b02d42f9ab5fc5a85e146efe",
+        "ai/src/test/java/com/ai/guide/adapter/trip/web/TripControllerTest.java": "8238fd6a9169ede0175ec887927fff551e5a820c835cd77078b2892e7f2bfe71"
+      }
+    },
+    "bff": {
+      "root": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+      "head": "6eb2a07a98fc55eb51c051b57934badddc828bd6",
+      "baselineCandidate": "docs/refactor/CP4_4_R3_CANDIDATE.json",
+      "baselineCandidateSha256": "d8d50a8a17544725da516fb066982c45bc2313ec17e1648d939f092b85cbfd8f",
+      "baselineTrackedPatchSha256": "16d9c05128c1a76aac9686be2922812663127480b2327f5d85ab46b0c9477070",
+      "currentTrackedPatchSha256": "16d9c05128c1a76aac9686be2922812663127480b2327f5d85ab46b0c9477070",
+      "currentTrackedPatchPath": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_BFF_TRACKED_PATCH.patch",
+      "filesSha256": {
+        "server/index.mjs": "d58b79e8212d8fa9fddbdd81ad660d44943b9bc5f418e3d033c7799b7ec501b4",
+        "server/formal-trip-bff-contract.test.mjs": "04b39810bf7226d333f6748d74abeb58fa01bd39df7ee3269de7044eccd8a86d",
+        "server/java-core-client.mjs": "752b0b82a5838ab5326868f1d69dd44d475b974b6ae9ed18365d66b6bfb7b6df",
+        "server/draft-restore-route.test.mjs": "3d786f32447ac4aaf824c74aa064a505a80f1d50b7d56c0750dbf296ce5bfb8f"
+      }
+    }
+  },
+  "scope": {
+    "javaProduction": [
+      "PlannerOpenApplicationService adds CreateResult.accessToken() as top-level sessionAccessToken only in successful Open result"
+    ],
+    "javaTests": [
+      "PlannerOpenApplicationServiceTest",
+      "PlannerControllerTest actual HTTP JSON Open response and ordinary planner session GET",
+      "TripControllerTest formal Trip GET JSON"
+    ],
+    "bff": [
+      "Preserve R3 one-snapshot/no-second-getTrip/fail-closed/delayed-session-registration behavior; align Java response fixture and assert capability bridge"
+    ],
+    "noStageOrCommit": true
+  },
+  "patches": {
+    "javaOpenService": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_OPEN_SERVICE.patch",
+      "sha256": "9c2a539f64c47eb2cbb8967695d5ba58dbcd527a9dc239884ffc81b64d6e5622"
+    },
+    "javaOpenApplicationTest": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_OPEN_APP_TEST.patch",
+      "sha256": "66bc5260f5189bf26c62fdcc3927ef270a2d78db48a5f0cae76b0ac0b0955d63"
+    },
+    "bffContractTest": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_BFF_TEST.patch",
+      "sha256": "772daf48b9a3c53eed05221cbab9ae5b3760eaddcef86bcb76b3f4b596b3d99e"
+    }
+  },
+  "tests": {
+    "java": {
+      "command": "./mvnw.cmd \"-Dtest=PlannerOpenApplicationServiceTest,PlannerControllerTest,TripControllerTest,ProposalRepositoryPortContractTest,PlannerSaveConsistencyTest\" test",
+      "workingDirectory": "D:\\tmp\\cp4-open-capability-final-20261009\\ai",
+      "result": "51 tests, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS",
+      "isolatedFreshCopy": true,
+      "rawLog": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_MAVEN_TEST.log",
+      "rawLogSha256": "4067e7b98fbe7b34d7e55a5983c9221472d90d7d6139caa7e5caceb67baf3da5"
+    },
+    "bff": {
+      "command": "node --test server/formal-trip-bff-contract.test.mjs server/draft-restore-route.test.mjs server/planner-bridge-contract.test.mjs server/trip-delete-version.test.mjs",
+      "workingDirectory": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+      "result": "27 tests, 27 pass, 0 fail, 0 skipped",
+      "rawLog": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home\\docs\\refactor\\CP4_4_R4_BFF_TEST.log",
+      "rawLogSha256": "9c50b41d71af56f8eeefdbd9243e21b37ea39aa189099e967caaec9ff00badbb",
+      "additional": [
+        "node --check server/index.mjs",
+        "node --check server/formal-trip-bff-contract.test.mjs",
+        "git diff --check"
+      ]
+    }
+  },
+  "verificationLimits": [
+    "Java tests ran in a new source copy with fresh target and isolated runtime; not a live Java/BFF HTTP integration test",
+    "MockMvc verifies serialized Open and ordinary session JSON; TripController MockMvc verifies formal Trip JSON",
+    "BFF VM tests use controlled Java/persistence fakes; no real network or DB",
+    "Remote Java session can remain if BFF persistence fails after Java Open; no cancellation protocol was added"
+  ],
+  "baselineRecords": {
+    "javaHead": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+    "javaBaselineTrackedPatchSha256": "9b55fb55dff29d86dc371c9bee66a1353b74572424fe352d229c150bd57bf0ac",
+    "bffPriorCandidate": "CP4_4_R3_CANDIDATE.json",
+    "bffPriorCandidateSha256": "d8d50a8a17544725da516fb066982c45bc2313ec17e1648d939f092b85cbfd8f"
+  },
+  "stagedOrCommitted": false,
+  "artifacts": {
+    "report": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_OPEN_CAPABILITY_REPORT.md",
+      "sha256": "2821d292f3d2a33de6ecebcdf79242839d5c5ce3d7ffe28f7498173737bcde0b"
+    },
+    "javaRawLog": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R4_MAVEN_TEST.log",
+      "sha256": "4067e7b98fbe7b34d7e55a5983c9221472d90d7d6139caa7e5caceb67baf3da5"
+    },
+    "bffRawLog": {
+      "path": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home\\docs\\refactor\\CP4_4_R4_BFF_TEST.log",
+      "sha256": "9c50b41d71af56f8eeefdbd9243e21b37ea39aa189099e967caaec9ff00badbb"
+    }
+  }
+}

@@ -20,7 +20,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.time.LocalTime;
 import java.util.*;
 import java.util.concurrent.*;
@@ -51,15 +50,15 @@ public class P2PlatformGovernanceAssaultTest {
 
     @BeforeEach
     void setUp() {
-        chengduStrategy = new ChengduPlainTopographyStrategy();
-        xianStrategy = new XiAnHeritageTopographyStrategy();
-        chongqingStrategy = new ChongqingTopographyStrategy();
+        chengduStrategy = new ChengduPlainTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        xianStrategy = new XiAnHeritageTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        chongqingStrategy = new ChongqingTopographyStrategy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         genericStrategy = new GenericPlainTopographyStrategy();
 
         List<TopographyStrategyPort> strategies = List.of(chongqingStrategy, chengduStrategy, xianStrategy, genericStrategy);
-        topographyRouter = new TopographyStrategyRouter(strategies);
+        topographyRouter = new TopographyStrategyRouter(strategies, new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
 
-        categoryPolicyRegistry = new PoiCategoryPolicyRegistry();
+        categoryPolicyRegistry = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         localPlanRepairer = new LocalPlanRepairer(categoryPolicyRegistry);
 
         modelMapper = new ItineraryModelMapper();
@@ -154,7 +153,7 @@ public class P2PlatformGovernanceAssaultTest {
                     "钟楼(城内)至大雁塔(城外)必须判定为跨越明城墙 HISTORICAL_WALL");
 
             String hint = xianStrategy.generateTransitCharacteristicHint(bellTower, dayanta, "walking");
-            assertTrue(hint.contains("明城墙") && hint.contains("永宁门"), "跨越城墙必须包含永宁门漫游建议");
+            assertTrue(hint.isBlank(), "路线建议未由实时路线能力核验前，不应由领域策略臆造具体通行路线");
 
             // 2. 临潼兵马俑反复折返
             List<Attraction> historyLintong = List.of(dayanta, warriors); // 市区 -> 临潼
@@ -208,7 +207,7 @@ public class P2PlatformGovernanceAssaultTest {
         }
 
         @Test
-        @DisplayName("【漏洞修复 VULN-P2-04】餐饮异常超长时长防御性规整，防止排程陷入不收敛")
+        @DisplayName("修复 VULN-P2-04：排程修复不得静默缩短用户餐饮停留时长")
         void test06_Dining10HoursAbnormalDurationCircumventionExploit() {
             Map<String, Object> abnormalDining = new LinkedHashMap<>();
             abnormalDining.put("id", "poi-dining-crazy");
@@ -245,25 +244,25 @@ public class P2PlatformGovernanceAssaultTest {
                     .filter(s -> "poi-dining-crazy".equals(s.get("id")))
                     .findFirst().orElseThrow();
 
-            // 防御成功：600分钟异常时长被安全收拢至 90 分钟！
-            assertEquals("约 90 分钟", diningAfterRepair.get("duration"), "10小时异常超长餐饮已被防御性规整！");
+            assertEquals("约 600 分钟", diningAfterRepair.get("duration"), "修复器不得静默改写用户的停留时长");
         }
 
         @Test
-        @DisplayName("【漏洞修复 VULN-P2-05】LocalPlanRepairer 复合时长解析支持：'1小时30分钟'与'2.5小时'精确捕获")
-        void test07_DurationParserFlaw_1Hour30MinParsedAs1Minute() throws Exception {
-            Method method = LocalPlanRepairer.class.getDeclaredMethod("parseDurationMinutes", String.class);
-            method.setAccessible(true);
-
-            int parsed1H30M = (int) method.invoke(localPlanRepairer, "1小时30分钟");
-            int parsed2H = (int) method.invoke(localPlanRepairer, "2小时");
-            int parsed90M = (int) method.invoke(localPlanRepairer, "90分钟");
-            int parsed2Point5H = (int) method.invoke(localPlanRepairer, "2.5小时");
-
-            assertEquals(90, parsed1H30M, "'1小时30分钟' 应正确解析为 90 分钟");
-            assertEquals(120, parsed2H, "'2小时' 应正确解析为 120 分钟");
-            assertEquals(90, parsed90M, "'90分钟' 应正确解析为 90 分钟");
-            assertEquals(150, parsed2Point5H, "'2.5小时' 应正确解析为 150 分钟");
+        @DisplayName("排程溢出时保留明确的复合游览时长")
+        void test07_OverflowRepairPreservesCompoundVisitDuration() {
+            Map<String, Object> museum = new LinkedHashMap<>();
+            museum.put("id", "museum");
+            museum.put("type", "SCENIC");
+            museum.put("duration", "约 2小时30分钟");
+            Map<String, Object> day = new LinkedHashMap<>();
+            day.put("day", 1);
+            day.put("stops", new ArrayList<>(List.of(museum)));
+            var result = new PlanVerifier.VerificationResult(false,
+                    List.of(new PlanVerifier.PlanViolation("DAY_SCHEDULE_OVERFLOW", 1, "museum", "museum", "超时", true)),
+                    Map.of());
+            var repaired = localPlanRepairer.repair(List.of(day), result, TravelConstraints.builder().build(), List.of());
+            var stops = (List<Map<String, Object>>) repaired.get(0).get("stops");
+            assertEquals("约 2小时30分钟", stops.get(0).get("duration"));
         }
 
         @Test
@@ -336,7 +335,7 @@ public class P2PlatformGovernanceAssaultTest {
             assertNotEquals("null", trip.tripId(), "tripId 绝不为字面量 'null'");
             assertFalse(trip.tripId().contains("null"));
             assertEquals("定制旅行方案", trip.title(), "title 优雅回退到默认方案名");
-            assertEquals("重庆", trip.destinationCity(), "city 优雅回退到重庆");
+            assertEquals("", trip.destinationCity(), "缺少城市时保持未指定，不得注入城市常量");
 
             ItineraryStop stop = trip.days().get(0).stops().get(0);
             assertNotEquals("null", stop.id());

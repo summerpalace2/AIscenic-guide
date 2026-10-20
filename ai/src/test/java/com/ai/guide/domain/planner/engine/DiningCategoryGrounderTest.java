@@ -1,14 +1,14 @@
 package com.ai.guide.domain.planner.engine;
 
 import org.junit.jupiter.api.Test;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import java.util.concurrent.atomic.AtomicBoolean;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class DiningCategoryGrounderTest {
 
-    private final DiningCategoryGrounder grounder = new DiningCategoryGrounder();
+    private final DiningCategoryGrounder grounder = new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
 
     @Test
     void sharedTaxonomyUpdatesAreVisibleWithoutRecreatingGrounder() {
@@ -38,6 +38,11 @@ class DiningCategoryGrounderTest {
         assertTrue(grounder.isGenericDiningCraving("螺蛳粉"), "螺蛳粉必须判定为风味泛需求");
         assertTrue(grounder.isGenericDiningCraving("吃点清淡的"), "吃点清淡的必须判定为风味泛需求");
         assertTrue(grounder.isGenericDiningCraving("随便吃点"), "随便吃点必须判定为风味泛需求");
+    }
+
+    @Test
+    void unspecifiedMealSlotComesFromTaxonomyPolicy() {
+        assertEquals("LUNCH", grounder.resolveSlotType("想找一家店"));
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 
 /**
  * 高德开放平台 Web API 客户端封装
@@ -41,15 +42,14 @@ public class AmapWebServiceClient {
     }
 
     public URI buildPoiTextRequest(String keywords, String city, String types, String showFields) {
-        return request("/v5/place/text")
+        return encodedUri(request("/v5/place/text")
                 .queryParam("keywords", required(keywords, "keywords"))
                 .queryParamIfPresent("city", optional(city))
                 .queryParam("citylimit", "true")
                 .queryParam("page_size", "20")
                 .queryParamIfPresent("types", optional(types))
                 .queryParamIfPresent("show_fields", optional(showFields))
-                .build()
-                .toUri();
+                );
     }
 
     /**
@@ -69,7 +69,7 @@ public class AmapWebServiceClient {
 
     public URI buildPoiAroundRequest(String location, int radiusMeters, String types,
                                      String keywords, String showFields, int pageNum, String sortrule) {
-        return request("/v5/place/around")
+        return encodedUri(request("/v5/place/around")
                 .queryParam("location", required(location, "location"))
                 .queryParam("radius", Math.max(1, radiusMeters))
                 .queryParam("sortrule", (sortrule == null || sortrule.isBlank()) ? "weight" : sortrule)
@@ -78,8 +78,7 @@ public class AmapWebServiceClient {
                 .queryParamIfPresent("types", optional(types))
                 .queryParamIfPresent("keywords", optional(keywords))
                 .queryParamIfPresent("show_fields", optional(showFields))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildPoiDetailRequest(String poiId) {
@@ -87,19 +86,17 @@ public class AmapWebServiceClient {
     }
 
     public URI buildPoiDetailRequest(String poiId, String showFields) {
-        return request("/v5/place/detail")
+        return encodedUri(request("/v5/place/detail")
                 .queryParam("id", required(poiId, "id"))
                 .queryParamIfPresent("show_fields", optional(showFields))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildGeocodeRequest(String address, String city) {
-        return request("/v3/geocode/geo")
+        return encodedUri(request("/v3/geocode/geo")
                 .queryParam("address", required(address, "address"))
                 .queryParamIfPresent("city", optional(city))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildReverseGeocodeRequest(String location) {
@@ -107,11 +104,10 @@ public class AmapWebServiceClient {
     }
 
     public URI buildReverseGeocodeRequest(String location, String extensions) {
-        return request("/v3/geocode/regeo")
+        return encodedUri(request("/v3/geocode/regeo")
                 .queryParam("location", required(location, "location"))
                 .queryParamIfPresent("extensions", optional(extensions))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildWalkingRequest(String origin, String destination) {
@@ -119,54 +115,63 @@ public class AmapWebServiceClient {
     }
 
     public URI buildWalkingRequest(String origin, String destination, String showFields) {
-        return request("/v5/direction/walking")
+        return encodedUri(request("/v5/direction/walking")
                 .queryParam("origin", required(origin, "origin"))
                 .queryParam("destination", required(destination, "destination"))
                 .queryParamIfPresent("show_fields", optional(showFields))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildTransitRequest(String origin, String destination, String city) {
-        return buildTransitRequest(origin, destination, city, "0", "", "");
+        return buildTransitFallbackRequest(origin, destination, city);
     }
 
     public URI buildTransitRequest(String origin, String destination, String city, String strategy) {
-        return buildTransitRequest(origin, destination, city, strategy, "", "");
+        return buildTransitFallbackRequest(origin, destination, city, strategy);
     }
 
+    /** V5 requires citycode on both ends; POI IDs are meaningful only as a pair. */
     public URI buildTransitRequest(String origin, String destination, String city, String strategy,
                                    String originPoi, String destinationPoi) {
-        return request("/v5/direction/transit/integrated")
+        return buildTransitFallbackRequest(origin, destination, city, strategy);
+    }
+
+    public URI buildTransitRequest(String origin, String destination, String city1, String city2, String strategy,
+                                   String originPoi, String destinationPoi) {
+        var builder = request("/v5/direction/transit/integrated")
                 .queryParam("origin", required(origin, "origin"))
                 .queryParam("destination", required(destination, "destination"))
-                .queryParam("city", required(city, "city"))
-                .queryParamIfPresent("originpoi", optional(originPoi))
-                .queryParamIfPresent("destinationpoi", optional(destinationPoi))
+                .queryParam("city1", requiredCityCode(city1, "city1"))
+                .queryParam("city2", requiredCityCode(city2, "city2"))
                 .queryParamIfPresent("strategy", optional(strategy))
-                .queryParamIfPresent("show_fields", optional("cost,polyline"))
-                .build()
-                .toUri();
+                .queryParamIfPresent("show_fields", optional("cost,polyline"));
+        if (originPoi != null && !originPoi.isBlank() && destinationPoi != null && !destinationPoi.isBlank()) {
+            builder.queryParam("originpoi", originPoi.trim())
+                    .queryParam("destinationpoi", destinationPoi.trim());
+        }
+        return encodedUri(builder);
     }
 
     public URI buildTransitFallbackRequest(String origin, String destination, String city) {
-        return request("/v3/direction/transit/integrated")
+        return buildTransitFallbackRequest(origin, destination, city, "0");
+    }
+
+    public URI buildTransitFallbackRequest(String origin, String destination, String city, String strategy) {
+        return encodedUri(request("/v3/direction/transit/integrated")
                 .queryParam("origin", required(origin, "origin"))
                 .queryParam("destination", required(destination, "destination"))
                 .queryParam("city", required(city, "city"))
-                .queryParam("strategy", "0")
+                .queryParam("strategy", optional(strategy).orElse("0"))
                 .queryParam("nightflag", "0")
                 .queryParam("extensions", "base")
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildInputTipsRequest(String keywords, String city) {
-        return request("/v3/assistant/inputtips")
+        return encodedUri(request("/v3/assistant/inputtips")
                 .queryParam("keywords", required(keywords, "keywords"))
                 .queryParamIfPresent("city", optional(city))
-                .build()
-                .toUri();
+                );
     }
 
     public URI buildWeatherRequest(String city) {
@@ -174,11 +179,10 @@ public class AmapWebServiceClient {
     }
 
     public URI buildWeatherRequest(String city, String extensions) {
-        return request("/v3/weather/weatherInfo")
+        return encodedUri(request("/v3/weather/weatherInfo")
                 .queryParam("city", required(city, "city"))
                 .queryParamIfPresent("extensions", optional(extensions))
-                .build()
-                .toUri();
+                );
     }
 
     /** Executes a previously built request. The response is intentionally raw JSON for normalization. */
@@ -192,6 +196,19 @@ public class AmapWebServiceClient {
         return UriComponentsBuilder.fromUriString(baseUrl)
                 .path(path)
                 .queryParam("key", requireApiKey());
+    }
+
+    /** Strictly encode query values once; reserved characters remain data, not extra parameters. */
+    private static URI encodedUri(UriComponentsBuilder builder) {
+        var parameters = builder.build().getQueryParams();
+        var templates = new org.springframework.util.LinkedMultiValueMap<String, String>();
+        var values = new java.util.LinkedHashMap<String, Object>();
+        parameters.forEach((name, entries) -> entries.forEach(value -> {
+            String variable = "queryValue" + values.size();
+            templates.add(name, "{" + variable + "}");
+            values.put(variable, value);
+        }));
+        return builder.replaceQueryParams(templates).encode(StandardCharsets.UTF_8).buildAndExpand(values).toUri();
     }
 
     private String requireApiKey() {
@@ -210,6 +227,12 @@ public class AmapWebServiceClient {
     private static String required(String value, String name) {
         if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
         return value.trim();
+    }
+
+    private static String requiredCityCode(String value, String name) {
+        String code = required(value, name);
+        if (!code.matches("\\d{3,4}")) throw new IllegalArgumentException(name + " must be an AMap citycode");
+        return code;
     }
 
     private static java.util.Optional<String> optional(String value) {

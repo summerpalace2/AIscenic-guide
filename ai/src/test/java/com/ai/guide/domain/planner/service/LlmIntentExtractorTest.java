@@ -90,6 +90,24 @@ class LlmIntentExtractorTest {
     }
 
     @Test
+    void missingGenericDiningFlagUsesInjectedTaxonomyInsteadOfEmptyStaticFallback() {
+        var classifier = org.mockito.Mockito.mock(ConversationIntentClassifier.class);
+        org.mockito.Mockito.when(classifier.classify(any(), any())).thenReturn(PlanAdjustmentIntent.builder()
+                .type(ConversationIntentType.ADD_STOP).operation("ADD_STOP")
+                .requestedVenueName("螺蛳粉").build());
+        var extractor = new LlmIntentExtractor((system, user) ->
+                "{\"operation\":\"ADD_STOP\",\"cuisineOrPlace\":\"螺蛳粉\",\"confidence\":0.96}",
+                objectMapper, classifier, true, true, 0.75, 500);
+        var taxonomy = new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter();
+        extractor.setDiningCategoryGrounder(new com.ai.guide.domain.planner.engine.DiningCategoryGrounder(taxonomy));
+
+        var result = extractor.extract("午餐想吃螺蛳粉", PlanPageContext.builder().activeDay(1).build());
+
+        assertEquals("LLM_STRUCTURED", result.intentExtractionSource());
+        assertEquals(null, result.intent().getRequestedVenueName());
+    }
+
+    @Test
     void snakeCaseDiningContractIsAcceptedAndNonDiningNullDoesNotInventFood() {
         LlmIntentExtractor extractor = extractor((system, user) -> """
                 {"operation":"ADD_STOP","cuisine_or_place":"柳州螺蛳粉","generic_dining_craving":true,"time_window":"lunch","confidence":0.94}
@@ -144,7 +162,7 @@ class LlmIntentExtractorTest {
     }
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final ConversationIntentClassifier rules = new ConversationIntentClassifier();
+    private final ConversationIntentClassifier rules = com.ai.guide.testing.PlannerTaxonomyFixtures.classifier();
 
     private LlmIntentExtractor extractor(LlmIntentExtractor.IntentModelClient client,
                                          boolean enabled,

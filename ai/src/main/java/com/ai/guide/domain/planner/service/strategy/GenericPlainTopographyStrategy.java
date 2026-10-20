@@ -13,7 +13,7 @@ import java.util.List;
  * 通用平原与常规地形时空阻抗策略 (Generic Plain Topography Strategy)
  *
  * 架构职责：作为全国绝大多数平原、海滨及浅丘城市的基准通用策略，
- *           杜绝将重庆特有的长江天堑与8D高程强加于其他城市。
+ *           避免把某一城市的水系与高差策略套用到其他城市。
  */
 @Component
 public class GenericPlainTopographyStrategy implements TopographyStrategyPort {
@@ -25,20 +25,12 @@ public class GenericPlainTopographyStrategy implements TopographyStrategyPort {
 
     @Override
     public ElevationTier resolveElevationTier(Attraction attraction) {
-        if (attraction == null) return ElevationTier.STANDARD_PLAIN;
-        String name = attraction.getName() != null ? attraction.getName() : "";
-        if (name.contains("山") || name.contains("顶") || name.contains("峰") || name.contains("岭")) {
-            return ElevationTier.HIGH_ALTITUDE;
-        }
-        return ElevationTier.STANDARD_PLAIN;
+        return ElevationTier.UNVERIFIED;
     }
 
     @Override
     public ElevationTier resolveElevationTier(String id, String name, String district, String location) {
-        if (name != null && (name.contains("山") || name.contains("顶") || name.contains("峰") || name.contains("岭"))) {
-            return ElevationTier.HIGH_ALTITUDE;
-        }
-        return ElevationTier.STANDARD_PLAIN;
+        return ElevationTier.UNVERIFIED;
     }
 
     @Override

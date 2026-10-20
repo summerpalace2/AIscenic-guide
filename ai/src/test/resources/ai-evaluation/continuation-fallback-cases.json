@@ -1,0 +1,1096 @@
+{
+  "schemaVersion": "continuation-fallback-v1",
+  "annotationStatus": "AGENT_AUTHORED_PROVISIONAL_NOT_HUMAN_ADJUDICATED",
+  "measurement": "Real PlanAdjustmentService.preview, model disabled, no apply; historical baseline/gold untouched.",
+  "fixture": {
+    "city": "重庆",
+    "days": 3,
+    "stopsPerDay": 3,
+    "stopSource": "Unmodified bundled attractions.json first four distinct catalog entries; no expected-label selection",
+    "selectedStopId": null,
+    "pinnedStopIds": [
+      "d1-s3"
+    ],
+    "activeDay": 1,
+    "clock": "Controllable continuation TTL clock only; no wall-clock sleeps"
+  },
+  "cases": [
+    {
+      "id": "CF-001",
+      "group": "DAY_AMENDMENT",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 1,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "第二天",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-002",
+      "group": "DAY_AMENDMENT",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "把当前景点删掉",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 1,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "第2天吧",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-003",
+      "group": "DAY_AMENDMENT",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "移除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 1,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "改到第二天",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-004",
+      "group": "DAY_AMENDMENT",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "删除这个地方",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 1,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "第二天处理",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-005",
+      "group": "DAY_AMENDMENT",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "删除这个站点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 1,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "就第二天",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ],
+            "route": "CLARIFICATION"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-006",
+      "group": "TARGET_REPLY",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "{{STOP1}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s1"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-007",
+      "group": "TARGET_REPLY",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天把这个景点换成{{NEW_STOP}}",
+          "expected": {
+            "operation": "REPLACE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REPLACE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "replacementPlaceNameContains": "{{NEW_STOP}}",
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-008",
+      "group": "TARGET_REPLY",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天添加一个景点",
+          "expected": {
+            "operation": "ADD_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_PLACE"
+            ]
+          }
+        },
+        {
+          "message": "{{NEW_STOP}}",
+          "expected": {
+            "operation": "ADD_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "requestedVenueNameContains": "{{NEW_STOP}}"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-009",
+      "group": "TARGET_REPLY",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "最后一站",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s3"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-010",
+      "group": "TARGET_REPLY",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "不知道",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-011",
+      "group": "QUANTITY_SCOPE",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Product contract undecided: omitted quantity may legitimately default to one rather than create a pending count slot; retain as unscored label candidate.",
+      "turns": [
+        {
+          "message": "第2天少排几个景点",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "减少两个",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "reduceCount": 2
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-012",
+      "group": "QUANTITY_SCOPE",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Product contract undecided: omitted quantity may legitimately default to one rather than create a pending count slot; retain as unscored label candidate.",
+      "turns": [
+        {
+          "message": "第2天想减少景点数量",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "少一个就好",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "reduceCount": 1
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-013",
+      "group": "QUANTITY_SCOPE",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Product contract undecided: omitted quantity may legitimately default to one rather than create a pending count slot; retain as unscored label candidate.",
+      "turns": [
+        {
+          "message": "第2天只保留几个景点",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "保留两站",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": false
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-014",
+      "group": "QUANTITY_SCOPE",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Product contract undecided: omitted quantity may legitimately default to one rather than create a pending count slot; retain as unscored label candidate.",
+      "turns": [
+        {
+          "message": "第2天安排太多，想少几站",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "两处",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "reduceCount": 2
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-015",
+      "group": "QUANTITY_SCOPE",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Product contract undecided: omitted quantity may legitimately default to one rather than create a pending count slot; retain as unscored label candidate.",
+      "turns": [
+        {
+          "message": "第2天删减一些景点",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "一个",
+          "expected": {
+            "operation": "REDUCE_DENSITY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "reduceCount": 1
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-016",
+      "group": "TIME_CORRECTION",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天18:90之后重新规划夜景",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TIME_RANGE"
+            ]
+          }
+        },
+        {
+          "message": "19:00到21:00",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStartMinute": 1140,
+            "targetEndMinute": 1260
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-017",
+      "group": "TIME_CORRECTION",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天18:00到17:00重新规划夜景",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TIME_RANGE"
+            ]
+          }
+        },
+        {
+          "message": "18:00到20:00",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStartMinute": 1080,
+            "targetEndMinute": 1200
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-018",
+      "group": "TIME_CORRECTION",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天25:00之后重新规划夜景",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TIME_RANGE"
+            ]
+          }
+        },
+        {
+          "message": "19:00之后",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStartMinute": 1140,
+            "targetEndMinute": 1440
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-019",
+      "group": "TIME_CORRECTION",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天18:90之后重新规划夜景",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TIME_RANGE"
+            ]
+          }
+        },
+        {
+          "message": "晚上",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStartMinute": 1140,
+            "targetEndMinute": 1440
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-020",
+      "group": "TIME_CORRECTION",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天18:00到17:00重新规划夜景",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TIME_RANGE"
+            ]
+          }
+        },
+        {
+          "message": "19:30到21:30",
+          "expected": {
+            "operation": "REPLAN_DAY",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStartMinute": 1170,
+            "targetEndMinute": 1290
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-021",
+      "group": "CANCEL_OR_NEW_COMMAND",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Cancellation response contract (silent acknowledgement versus clarification/QA) needs product adjudication; safety trace retained, not scored.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "取消",
+          "expected": {
+            "operation": "UNKNOWN",
+            "serverPendingOperationNot": "REMOVE_STOP"
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "UNKNOWN",
+            "serverPendingOperationNot": "REMOVE_STOP"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-022",
+      "group": "CANCEL_OR_NEW_COMMAND",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "第3天添加{{NEW_STOP}}",
+          "expected": {
+            "operation": "ADD_STOP",
+            "dayNumber": 3,
+            "requiresClarification": false,
+            "requestedVenueNameContains": "{{NEW_STOP}}"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-023",
+      "group": "CANCEL_OR_NEW_COMMAND",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天把这个景点换成{{NEW_STOP}}",
+          "expected": {
+            "operation": "REPLACE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "第3天删除{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 3,
+            "requiresClarification": false,
+            "targetStopId": "d3-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-024",
+      "group": "CANCEL_OR_NEW_COMMAND",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "不删了，第3天添加{{NEW_STOP}}",
+          "expected": {
+            "operation": "ADD_STOP",
+            "dayNumber": 3,
+            "requiresClarification": false,
+            "requestedVenueNameContains": "{{NEW_STOP}}"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-025",
+      "group": "CANCEL_OR_NEW_COMMAND",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Stop acknowledgement operation/routing not yet specified; do not score an arbitrary UNKNOWN as successful cancellation.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "停止",
+          "expected": {
+            "operation": "UNKNOWN",
+            "serverPendingOperationNot": "REMOVE_STOP"
+          }
+        },
+        {
+          "message": "第3天添加{{NEW_STOP}}",
+          "expected": {
+            "operation": "ADD_STOP",
+            "dayNumber": 3,
+            "requiresClarification": false
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-026",
+      "group": "UNRELATED_AND_STATE_BOUNDARIES",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "不确定",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": false,
+            "targetStopId": "d2-s2"
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-027",
+      "group": "UNRELATED_AND_STATE_BOUNDARIES",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "第二天",
+          "expected": {
+            "operation": "UNKNOWN",
+            "extractionSourceNot": "PENDING_INTENT"
+          },
+          "pendingIdMode": "WRONG"
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-028",
+      "group": "UNRELATED_AND_STATE_BOUNDARIES",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "{{STOP2}}",
+          "expected": {
+            "operation": "NO_INTENT",
+            "status": 409
+          },
+          "baseRevision": 2
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-029",
+      "group": "UNRELATED_AND_STATE_BOUNDARIES",
+      "city": "重庆",
+      "labelStatus": "AGENT_PROVISIONAL",
+      "annotationReason": "Explicit slot or command semantics; provisional agent labels, not human adjudicated.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "第二天",
+          "expected": {
+            "operation": "UNKNOWN",
+            "extractionSourceNot": "PENDING_INTENT"
+          },
+          "advanceClockMs": 600001
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    },
+    {
+      "id": "CF-030",
+      "group": "UNRELATED_AND_STATE_BOUNDARIES",
+      "city": "重庆",
+      "labelStatus": "PENDING_LABEL",
+      "annotationReason": "Unrelated emotional message may retain task or enter normal chat; product routing not adjudicated. Must never select/delete a stop by inference.",
+      "turns": [
+        {
+          "message": "第2天删除这个景点",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true
+          }
+        },
+        {
+          "message": "今天心情不好",
+          "expected": {
+            "operation": "REMOVE_STOP",
+            "dayNumber": 2,
+            "requiresClarification": true,
+            "missingFields": [
+              "TARGET_STOP"
+            ]
+          }
+        }
+      ],
+      "protectedExpectations": {
+        "pinnedStopId": "d1-s3",
+        "authoritativeTripUnchanged": true,
+        "repositoryMutationCalls": 0
+      }
+    }
+  ]
+}

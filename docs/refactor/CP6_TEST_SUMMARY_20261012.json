@@ -1,0 +1,1515 @@
+{
+  "backendClean": {
+    "tests": 1171,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 14,
+    "passed": 1157,
+    "command": "./mvnw.cmd -pl ai clean test",
+    "logSha256": "6585336536d40c5f0134c0d5a8a5dbc907cfacc2fc3e459f6488a8fdbba95833",
+    "counting": "Actual testcase elements match Maven total. Six nested suite headers report tests=0 despite containing 52 testcases."
+  },
+  "node": {
+    "files": 5,
+    "passed": 17,
+    "failures": 0
+  },
+  "frontendUnit": {
+    "passed": 5
+  },
+  "browserStub": {
+    "lifecyclePassed": 4,
+    "cityExplorePassed": 5
+  },
+  "exporter": {
+    "passed": 3
+  },
+  "realJava": {
+    "authentication": "passed",
+    "planPreviewConfirmSaveRestoreDelete": "passed",
+    "chatFollowup": "not accepted: isolated Redis unavailable"
+  },
+  "realInfrastructure": "not accepted: 4 opt-in cases skipped",
+  "reports": [
+    {
+      "name": "com.ai.guide.adapter.admin.web.AdminControllerTest",
+      "reportedTests": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.analytics.web.AnalyticsControllerTest",
+      "reportedTests": 20,
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.analytics.web.OnlinePresenceControllerTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.attraction.web.AttractionControllerTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.chat.web.ChatControllerTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.memory.web.TravelMemoryControllerTest",
+      "reportedTests": 19,
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.planner.web.PlannerControllerTest",
+      "reportedTests": 19,
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.preferences.web.PreferencesControllerTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.rag.web.ImportControllerTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.rag.web.KnowledgeControllerTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.rag.web.RagControllerTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.search.web.SearchControllerTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.trip.web.TripControllerTest",
+      "reportedTests": 11,
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.user.web.AuthControllerTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.user.web.UserProfileControllerTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.voice.web.AsrControllerTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.adapter.voice.web.TtsControllerTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.admin.AdminApplicationServiceImplTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.analytics.AnalyticsApplicationServiceImplTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.attraction.AttractionApplicationServiceImplTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.chat.ChatApplicationServiceTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.chat.ChatContextRecoverySafetyTest",
+      "reportedTests": 11,
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.memory.TravelMemoryApplicationServiceImplTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.planner.PlannerOpenApplicationServiceTest",
+      "reportedTests": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.planner.PlannerPreviewUseCaseTest",
+      "reportedTests": 13,
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.planner.PlannerRestoreApplicationServiceTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.planner.PlannerSaveApplicationServiceTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.preferences.PreferencesApplicationServiceTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.rag.KnowledgeApplicationServiceImplTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.rag.RagApplicationServiceImplTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.search.SearchApplicationServiceImplTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.trip.TripApplicationServiceTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.user.UserApplicationServiceImplTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.application.voice.VoiceApplicationServiceImplTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.architecture.ColaArchitectureGuardTest",
+      "reportedTests": 54,
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.config.KnowledgeDbConfigTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.config.KnowledgeMigrationRecoveryTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.config.KnowledgeSeedDataInitializerTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.config.QdrantConfigTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.security.JwtAuthFilterTest",
+      "reportedTests": 11,
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.security.JwtRevocationServiceTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.common.security.JwtUtilTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.admin.service.RuntimeSettingsPolicyTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.analytics.service.AnalyticsRangeRegressionTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.analytics.service.EmotionAnalysisLanguageModelPortTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.attraction.model.AttractionVisitDurationTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.attraction.service.AttractionAliasMatcherTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.attraction.service.AttractionMediaServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.attraction.service.AttractionServiceTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.attraction.service.RuntimeAttractionDetailServiceTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.chat.service.ChatDomainPolicyTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.chat.service.ChatHistoryServiceTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.chat.service.ContextCompressionServiceTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.chat.service.IntentRadarServiceTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.chat.service.SlotTrackingServiceTest",
+      "reportedTests": 25,
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.dining.service.DiningGeoSafetyTest",
+      "reportedTests": 14,
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.dining.service.DiningVenueServiceTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.port.MemoryRepositoryPortContractTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.MemoryPaginationRegressionTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.MemoryPreferenceProjectorTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.MemoryPromptLifecycleRegressionTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.MemorySafetyBudgetRegressionTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.TravelMemoryPersistenceTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.memory.service.TravelMemoryServiceTest",
+      "reportedTests": 15,
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.CandidateRankingUnknownLocationTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.CrossCityPlannerPolicyTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.DiningCategoryGrounderTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.GeoAndMealGapRegressionTest",
+      "reportedTests": 9,
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.RouteAwarePlannerTest",
+      "reportedTests": 9,
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.RouteAwarePlannerTopographyTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.RouteCostProviderCityTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.engine.TemporalIntegrityRegressionTest",
+      "reportedTests": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.model.AppliedPreferencesSnapshotTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.model.StopPlanRoundTripTest",
+      "reportedTests": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.narrative.CitySpecificInterestIsolationTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.narrative.GroundedNarrativeServiceTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.adjustment.AddStopCityIsolationTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.adjustment.DiningAdjustmentGapRegressionTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.adjustment.MultiStopTimingRegressionTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.adjustment.PlaceQuestionDiningContractTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.adjustment.PlanningRouteRepairRegressionTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AdjustmentLoopIntentTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AgentARedTeamAssaultTest",
+      "reportedTests": 0,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AgentARedTeamJointAssaultV2Test",
+      "reportedTests": 0,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AgentBRedTeamAssaultCampaignTest",
+      "reportedTests": 0,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AgentCRedTeamUltimateAssaultTest",
+      "reportedTests": 0,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AmapPlannerGatewayTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AmapRequestCacheTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.AmapRouteServiceTest",
+      "reportedTests": 13,
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.BoundaryStressChaosTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.CancellationProposalLifecycleTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ChongqingTopographyKnowledgeTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.CityCatalogIsolationTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ColloquialDiningIntentTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.CombinedLogicRegressionTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.CompoundSharedContextTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.CompoundTimeAndCancellationTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ContinuationCorrectionBoundaryTest",
+      "reportedTests": 14,
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ConversationContinuationRegressionTest",
+      "reportedTests": 14,
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ConversationIntentClassifierTest",
+      "reportedTests": 29,
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.DeepAuditRegressionTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.FourthPlanningTemporalRegressionTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ItineraryBuilderDiningRegressionTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ItineraryModelMapperTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.LatePreviewCancellationLifecycleTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.LlmIntentExtractorTest",
+      "reportedTests": 24,
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.NationalScaleZeroHardcodingAssaultTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.P2DeepExploitAssaultTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.P2PlatformEvolutionTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.P2PlatformGovernanceAssaultTest",
+      "reportedTests": 0,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.Phase6FinalClosureTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlanAdjustmentServiceTest",
+      "reportedTests": 67,
+      "tests": 67,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerDraftRestoreTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerMemorySemanticRegressionTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerPreferencesResolverTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerSafetyBoundaryRegressionTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerServiceTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PlannerSessionRepositoryTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.PoiClassificationRegressionTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ProposalStoreAndChatContextTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.RealUserDiningExploitAssaultTest",
+      "reportedTests": 0,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.RedTeamAdversarialAssaultTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.RuntimeDiningRegressionTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.RuntimeLocationPlannerTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.ScopedReplanAndMultiSlotRegressionTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.SecondAuditRegressionTest",
+      "reportedTests": 9,
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.StructuredConstraintInterpretationTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.taxonomy.JsonTaxonomyAdapterTest",
+      "reportedTests": 17,
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.TravelConstraintParserTest",
+      "reportedTests": 21,
+      "tests": 21,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.planner.service.TravelDateResolverTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.preferences.service.PreferencesServiceTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.pipeline.ProductionV2PipelineIntegrationTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.KnowledgeBackfillDeletionRegressionTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.KnowledgeDocumentServiceAsyncTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.KnowledgeDocumentServiceRetrievalTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.KnowledgeRuntimePolicyTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.ParallelRagServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.RagQueryExpanderTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.RagRetrievalServiceTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.RerankServiceRecoveryTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.rag.service.RetrievalRankingBoundaryTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.search.service.BaiduSearchServiceTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.trip.service.PlannerSaveConsistencyTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.trip.service.TripOwnershipTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.trip.service.TripSaveCapacityRegressionTest",
+      "reportedTests": 10,
+      "tests": 10,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.trip.service.TripSchemaMigrationTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.trip.service.TripServiceTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.user.service.UserServiceLegacyPasswordMigrationTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.user.service.UserServicePasswordMetadataTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.domain.user.service.UserServiceRolePolicyTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.admin.config.AdminInitConfigTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.admin.repository.AppConfigRepositoryTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.attraction.repository.CityAttractionCatalogImporterTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.attraction.repository.IndependentCityCatalogReviewProbeTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.attraction.repository.JdbcAttractionCatalogAdapterCityTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.chat.history.RedisChatHistoryStoreAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.chat.history.RedisChatSummaryStoreAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.chat.memory.RedisChatMemorySafetySnapshotTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.chat.model.SpringAiChatModelAdapterTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.dining.repository.JdbcDiningVenueCatalogAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizerTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.persistence.migration.LegacySqliteMigrationServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.amap.P1GovernanceAssaultTest",
+      "reportedTests": 6,
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.proposal.Cp6InfrastructureTargetTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.proposal.Cp6RealInfrastructureIntegrationTest",
+      "reportedTests": 4,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 4
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.proposal.ProposalRepositoryCoherenceTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.proposal.ProposalRepositoryPortContractTest",
+      "reportedTests": 12,
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.planner.repository.PlannerSessionRepositoryDeletionTest",
+      "reportedTests": 8,
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.preferences.repository.PreferencesRepositoryTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.amap.AmapWebServiceClientTest",
+      "reportedTests": 5,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.importer.GoldenDatasetV21MapTaskBuilderTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.importer.GoldenDatasetV21RouteTaskBuilderTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.importer.GoldenDatasetV21ValidatorTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.importer.ProductionV2ChunkServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.importer.ProductionV2DataPipelineServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.qdrant.ProductionV2QdrantImporterTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.repository.ProductionV2FactQueryAdapterTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.rerank.BailianRerankAdapterTest",
+      "reportedTests": 2,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.rag.storage.LocalKnowledgeFileStorageAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.search.baidu.BaiduWebSearchLinkAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.trip.pdf.TripPlanPdfServiceTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.user.preferences.RedisUserPreferenceStoreAdapterTest",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.user.security.LegacyNodeScryptVerifierTest",
+      "reportedTests": 3,
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.infrastructure.voice.baidu.BaiduVoiceClientTest",
+      "reportedTests": 7,
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "name": "com.ai.guide.ScenicGuideApplicationTests",
+      "reportedTests": 1,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

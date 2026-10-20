@@ -1,0 +1,66 @@
+{
+  "checkpoint": "CP4.4-R6-open-persistence-rollback",
+  "capturedAt": "2026-10-09",
+  "status": "frozen pending independent B/C review; not accepted",
+  "parentCandidate": {
+    "id": "CP4.4-R5-user-open-owner-authorization",
+    "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R5_CANDIDATE.json",
+    "sha256": "fd48d6f0c94d68ec315aa6da12d7e0c8df529784d2d6d5400a12153e84bf0b5c"
+  },
+  "repository": {
+    "root": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+    "head": "6eb2a07a98fc55eb51c051b57934badddc828bd6",
+    "baselineTrackedPatchSha256": "16670cf63957b52350dbaf50a03ebd05f014c248",
+    "currentTrackedPatchSha256": "4b987f497aeaa18ac99eef08d0e1df6f43356093",
+    "trackedPatchPath": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R6_BFF_TRACKED_PATCH.patch",
+    "trackedPatchFileSha256": "de0fdbae5e5bec12fc20b5a3776a9d85428628d4e2d9af44494073d9e883e42e",
+    "scopedFileSha256": {
+      "server/index.mjs": "8994f1159f2619466a8b192be643f4f951976fe0df2b48ecb17595baa125a071",
+      "server/persistent-store.mjs": "7f6b91f041525c2f2615c61726b5407404269a6ed8b69bb91857328724dfafc1",
+      "server/formal-trip-bff-contract.test.mjs": "92e65f08bd6b238e094070e2d8d0ac793a55dca5c5f2649abc35dcfdde163864",
+      "server/persistent-store-open-rollback.test.mjs": "ee0a7179054d4ee5c0c18c35d2942e258a57af51ad6a98b15b57c32af0dd3e89"
+    }
+  },
+  "scope": {
+    "production": [
+      "persistent-store serializes Open-relevant workspace/draft saves and deletes; rolls back each Map key on failed persistence; recovers its write queue after prior rejection",
+      "Open persists draft before workspace and registers the BFF session only after both; workspace write failure triggers best-effort draft deletion and diagnostics"
+    ],
+    "tests": [
+      "real temporary-directory target rename failure, same-key overlapping workspace write rollback, draft Map rollback, and successful later writes",
+      "Open success and failure ordering; no workspace/draft residue and no BFF session registration on tested persistence failures"
+    ],
+    "noStageOrCommit": true
+  },
+  "tests": {
+    "command": "node --test server/formal-trip-bff-contract.test.mjs server/draft-restore-route.test.mjs server/planner-bridge-contract.test.mjs server/trip-delete-version.test.mjs server/persistent-store-open-rollback.test.mjs",
+    "result": "30 tests; 30 pass; 0 fail; 0 skipped",
+    "rawLog": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R6_BFF_TEST.log",
+    "rawLogSha256": "0fd73cfd7a753d4801f16a486e7eef71e7e8fd25e454332e631b0a8286f2c577",
+    "additional": [
+      "node --check server/index.mjs",
+      "node --check server/persistent-store.mjs",
+      "node --check server/formal-trip-bff-contract.test.mjs",
+      "node --check server/persistent-store-open-rollback.test.mjs",
+      "git diff --check"
+    ]
+  },
+  "reviewNotes": {
+    "clearPlannerDrafts": "Repository-wide rg found only the method declaration; no current runtime caller. It remains outside the scoped mutation queue and is documented in the report.",
+    "failureQueueSemantics": "Caller receives the failed write error; subsequent queued mutations recover and can persist after the filesystem issue is removed.",
+    "openPersistenceOrder": ["draft", "workspace", "register"],
+    "sameKeyMutationSemantics": "Workspace/draft mutations run serially and compute rollback from the preceding completed mutation. A failed write restores the committed key before the next mutation starts."
+  },
+  "verificationLimits": [
+    "Real filesystem rename failure was exercised against a temporary directory; tests did not use a running BFF server or production data",
+    "Open route tests use controlled persistence fakes; the persistent-store test exercises real filesystem and Maps",
+    "If persistent filesystem failure also prevents best-effort draft cleanup, route logs that failure but cannot ensure durable cleanup",
+    "The remote Java session is created before BFF persistence and has no delete-session compensation API; it may remain orphaned"
+  ],
+  "artifacts": {
+    "report": {"path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R6_OPEN_PERSISTENCE_REPORT.md", "sha256": "95219116d6e84c8d1b138d1d4e027bdad9361cd5c036833b89f585051f1f56b3"},
+    "testLog": {"path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R6_BFF_TEST.log", "sha256": "0fd73cfd7a753d4801f16a486e7eef71e7e8fd25e454332e631b0a8286f2c577"}
+  },
+  "stagedOrCommitted": false
+}
+

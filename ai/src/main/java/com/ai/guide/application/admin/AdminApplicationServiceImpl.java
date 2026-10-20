@@ -1,6 +1,7 @@
 package com.ai.guide.application.admin;
 
 import com.ai.guide.domain.admin.gateway.AppConfigRepositoryPort;
+import com.ai.guide.domain.admin.service.RuntimeSettingsPolicy;
 import com.ai.guide.domain.user.service.UserService;
 import org.springframework.stereotype.Service;
 
@@ -44,10 +45,13 @@ public class AdminApplicationServiceImpl implements AdminApplicationService {
 
     private final UserService userService;
     private final AppConfigRepositoryPort appConfigRepository;
+    private final RuntimeSettingsPolicy runtimeSettingsPolicy;
 
-    public AdminApplicationServiceImpl(UserService userService, AppConfigRepositoryPort appConfigRepository) {
+    public AdminApplicationServiceImpl(UserService userService, AppConfigRepositoryPort appConfigRepository,
+                                       RuntimeSettingsPolicy runtimeSettingsPolicy) {
         this.userService = userService;
         this.appConfigRepository = appConfigRepository;
+        this.runtimeSettingsPolicy = runtimeSettingsPolicy;
     }
 
     @Override
@@ -76,7 +80,7 @@ public class AdminApplicationServiceImpl implements AdminApplicationService {
         data.put("name", "渝游智策助手");
         data.put("voiceId", "106");
         data.put("language", "zh");
-        data.put("greeting", "你好，欢迎来到重庆，我是渝游智策的重庆智慧文旅 AI 决策助手");
+        data.put("greeting", "你好，我是渝游智策旅行规划助手，可以帮你规划路线并解答出行问题。");
         data.put("enabled", true);
         data.putAll(appConfigRepository.readConfig("digital_human_"));
         if (data.get("enabled") instanceof String s) {
@@ -99,8 +103,7 @@ public class AdminApplicationServiceImpl implements AdminApplicationService {
 
     @Override
     public Map<String, Object> getSettings() {
-        return com.ai.guide.domain.admin.service.RuntimeSettingsPolicy.settingsSnapshot(
-                appConfigRepository.readConfig("settings_"));
+        return runtimeSettingsPolicy.settingsSnapshot(appConfigRepository.readConfig("settings_"));
     }
 
     @Override

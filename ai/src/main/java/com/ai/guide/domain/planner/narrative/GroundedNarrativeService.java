@@ -1,6 +1,10 @@
 package com.ai.guide.domain.planner.narrative;
 
+import com.ai.guide.common.context.OperationDeadline;
+
 import com.ai.guide.domain.trip.model.Trip;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import com.ai.guide.domain.user.model.User;
 import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
 import com.ai.guide.domain.planner.model.PlannerVersionMetadata;
@@ -9,9 +13,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -79,17 +80,15 @@ public class GroundedNarrativeService {
     private final Executor modelExecutor;
 
     @Autowired
-    public GroundedNarrativeService(ChatClient.Builder builder,
+    public GroundedNarrativeService(LanguageModelPort modelGateway,
                                    ObjectMapper objectMapper,
                                    @Value("${planner.llm.narrative.enabled:false}") boolean enabled,
                                    @Value("${planner.llm.narrative.timeout-ms:30000}") long timeoutMs,
                                    @Value("${spring.ai.openai.api-key:}") String apiKey,
                                    @Qualifier("plannerLlmExecutor") Executor modelExecutor) {
-        ChatClient chatClient = builder.build();
-        this.modelClient = (systemPrompt, userPrompt) -> chatClient.prompt()
-                .messages(new SystemMessage(systemPrompt), new UserMessage(userPrompt))
-                .call()
-                .content();
+        this.modelClient = (systemPrompt, userPrompt) -> modelGateway.completeText(List.of(
+                new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, systemPrompt),
+                new LanguageModelMessage(LanguageModelMessage.Role.USER, userPrompt)));
         this.objectMapper = objectMapper;
         this.enabled = enabled;
         this.timeoutMs = Math.max(500L, timeoutMs);
@@ -143,7 +142,7 @@ public class GroundedNarrativeService {
         }
 
         // Feature flag or credentials missing -> keep template reasons
-        if (!enabled) {
+        if (!enabled || OperationDeadline.expired()) {
             trip.put("explanationSource", PlannerVersionMetadata.EXPLANATION_SOURCE_TEMPLATE);
             return false;
         }
@@ -163,14 +162,15 @@ public class GroundedNarrativeService {
             }
 
             // Call model with timeout
-            modelFuture = CompletableFuture.supplyAsync(() -> {
+            modelFuture = CompletableFuture.supplyAsync(OperationDeadline.carry(() -> {
                 try {
+                    if (OperationDeadline.expired()) throw new TimeoutException("规划预算已用尽");
                     return modelClient.complete(SYSTEM_PROMPT, userPrompt);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
-            }, modelExecutor);
-            String response = modelFuture.get(timeoutMs, TimeUnit.MILLISECONDS);
+            }), modelExecutor);
+            String response = modelFuture.get(Math.min(OperationDeadline.remainingNanos(), TimeUnit.MILLISECONDS.toNanos(timeoutMs)), TimeUnit.NANOSECONDS);
 
             // Parse response
             NarrativeOutput output = parseOutput(response);

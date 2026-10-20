@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.service.AttractionAliasMatcher;
 import com.ai.guide.domain.planner.model.*;
@@ -35,7 +37,7 @@ public class RedTeamAdversarialAssaultTest {
     private PlanAdjustmentService planAdjustmentService;
 
     @Autowired
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @Autowired
     private ConversationIntentClassifier classifier;
@@ -49,13 +51,13 @@ public class RedTeamAdversarialAssaultTest {
     @BeforeEach
     void setUp() {
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     @AfterEach
     void tearDown() {
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     private PlannerService.ServiceResult createTestSession(String prompt) {
@@ -122,9 +124,8 @@ public class RedTeamAdversarialAssaultTest {
 
         // 3. 【红方破防漏洞探测】：确定性规则分类器处理此类复杂复合意图时的精神分裂：
         PlanAdjustmentIntent intent = classifier.classify(complexQuery, new PlanPageContext());
-        // 断言：分类器未能识别为 PLAN，而是由于缺少特定关键词而沦为 UNKNOWN！
-        assertEquals(ConversationIntentType.UNKNOWN, intent.getType(),
-                "【漏洞确认】规则分类器面对多实体起点-途经-终点复合行程时完全失效，沦为 UNKNOWN！");
+        // 多实体跨点路线带途中用餐时应先澄清，不可误落入单点问答或直接执行。
+        assertEquals(ConversationIntentType.CLARIFICATION, intent.getType());
         assertTrue(intent.isRequiresClarification());
     }
 
@@ -141,7 +142,7 @@ public class RedTeamAdversarialAssaultTest {
         List<String> proposalIds = new ArrayList<>();
 
         for (int i = 0; i < sessionCount; i++) {
-            PlannerService.ServiceResult created = createTestSession("2天行程，喜欢夜景和美食 " + i);
+            PlannerService.ServiceResult created = createTestSession("重庆市2天行程，喜欢夜景和美食 " + i);
             assertEquals(200, created.status());
             String sId = String.valueOf(created.body().get("sessionId"));
             String tok = String.valueOf(created.body().get("sessionAccessToken"));
@@ -208,7 +209,7 @@ public class RedTeamAdversarialAssaultTest {
     @Test
     @DisplayName("战役 2B：同一 Session 的 10 个并发 Apply 严格互斥与竞争排队")
     void testAttack2B_SingleSessionLockHammering() throws Exception {
-        PlannerService.ServiceResult created = createTestSession("2天行程，喜欢夜景和美食");
+        PlannerService.ServiceResult created = createTestSession("重庆市2天行程，喜欢夜景和美食");
         assertEquals(200, created.status());
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
@@ -274,7 +275,7 @@ public class RedTeamAdversarialAssaultTest {
     }
 
     private String firstScenicStopId(List<Map<String, Object>> stops) {
-        PoiCategoryPolicyRegistry policies = new PoiCategoryPolicyRegistry();
+        PoiCategoryPolicyRegistry policies = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
         return stops.stream().filter(stop -> !policies.isDiningStop(stop))
                 .map(stop -> String.valueOf(stop.get("id"))).findFirst().orElseThrow();
     }
@@ -290,21 +291,34 @@ public class RedTeamAdversarialAssaultTest {
     }
 
     @Test
-    @DisplayName("战役 2C：【致命漏洞实证】固定锁条纹在高会话数下保持同一锁对象")
-    void testAttack2C_SessionApplyLocksWipeVulnerability() throws Exception {
-        Field locksField = PlanAdjustmentService.class.getDeclaredField("sessionApplyLocks");
-        locksField.setAccessible(true);
-
-        Object[] locks = (Object[]) locksField.get(planAdjustmentService);
-        assertEquals(128, locks.length, "锁条纹大小有界，不随会话增长");
-        int index = Math.floorMod("target-session".hashCode(), locks.length);
-        Object before = locks[index];
-        for (int i=0;i<5001;i++) assertNotNull(locks[Math.floorMod(("dummy-session-"+i).hashCode(),locks.length)]);
-        assertSame(before,locks[index],"等待者始终共享同一把锁；不得删除后重建");
+    @DisplayName("战役 2C：共享数据库生命周期锁串行化同一会话")
+    void sharedDatabaseLifecycleLockSerializesTheSameSession() throws Exception {
+        var created=createTestSession("重庆2天行程，喜欢夜景和美食");
+        String sessionId=String.valueOf(created.body().get("sessionId"));
+        var store=(com.ai.guide.domain.planner.gateway.PlannerConversationStatePort)
+                org.springframework.test.util.ReflectionTestUtils.getField(planAdjustmentService,"conversationState");
+        var entered=new CountDownLatch(1);var release=new CountDownLatch(1);var secondStarted=new CountDownLatch(1);
+        var active=new AtomicInteger();var executor=Executors.newFixedThreadPool(2);
+        try {
+            var first=executor.submit(() -> store.withSessionLock(sessionId,() -> {
+                assertEquals(1,active.incrementAndGet());entered.countDown();
+                try { assertTrue(release.await(5,TimeUnit.SECONDS)); }
+                catch(InterruptedException error) { Thread.currentThread().interrupt();throw new AssertionError(error); }
+                finally { active.decrementAndGet(); }
+                return true;
+            }));
+            assertTrue(entered.await(5,TimeUnit.SECONDS));
+            var second=executor.submit(() -> { secondStarted.countDown();return store.withSessionLock(sessionId,() -> {
+                assertEquals(0,active.get(),"a second lifecycle operation cannot overlap the first");return true;
+            }); });
+            assertTrue(secondStarted.await(5,TimeUnit.SECONDS));
+            assertThrows(TimeoutException.class,() -> second.get(100,TimeUnit.MILLISECONDS));
+            release.countDown();assertTrue(first.get(5,TimeUnit.SECONDS));assertTrue(second.get(5,TimeUnit.SECONDS));
+        } finally { release.countDown();executor.shutdownNow(); }
     }
 
     // =========================================================================
-    // 战役 3：提案存储满载与驱逐边界攻击 (ProposalStore Overflow & Eviction Attack)
+    // 战役 3：提案存储满载与驱逐边界攻击
     // =========================================================================
 
     @Test
@@ -320,13 +334,14 @@ public class RedTeamAdversarialAssaultTest {
             final int idx = i;
             pool.submit(() -> {
                 try {
+                    long createdAt = System.currentTimeMillis();
                     PlanAdjustmentProposal p = PlanAdjustmentProposal.builder()
                             .proposalId("prop-stress-" + idx)
                             .sessionId("sess-" + (idx % 100))
                             .baseRevision(1)
                             .feasible(true)
-                            .createdAt(System.currentTimeMillis())
-                            .expiresAt(System.currentTimeMillis() + 900_000L) // 15 min TTL
+                            .createdAt(createdAt)
+                            .expiresAt(createdAt + PlanAdjustmentProposal.DEFAULT_TTL_MS)
                             .proposedTrip(Map.of("id", "trip-" + idx, "summary", "Proposal content payload"))
                             .build();
                     proposalStore.put(p);
@@ -343,7 +358,7 @@ public class RedTeamAdversarialAssaultTest {
         pool.shutdown();
 
         // 验证容量：Caffeine 配置 MAX_CAPACITY = 10000，因此 5200 条绝不应发生容量驱逐
-        assertEquals(total, proposalStore.size(), "5200 条未过期提案必须全部健在，严禁提前非法剔除！");
+        assertEquals(total, proposalStore.localSize(), "5200 条未过期提案必须全部健在，严禁提前非法剔除！");
 
         // 随机抽查 500 条读取验证
         for (int i = 0; i < 500; i++) {
@@ -357,7 +372,7 @@ public class RedTeamAdversarialAssaultTest {
     @Test
     @DisplayName("战役 3B：【漏洞实证】已过期提案在 Redis 备份分支中竟被赋予 900 秒超长虚假 TTL")
     void testAttack3B_ExpiredProposalRedisTtlBug() {
-        // 审查 ProposalStore.put 源码 lines 51-53:
+        // 审查提案仓储 put 源码：
         // long remainingMs = proposal.getExpiresAt() - System.currentTimeMillis();
         // long ttlSec = remainingMs > 0 ? Math.max(60, remainingMs / 1000L) : 900;
         long expiredTime = System.currentTimeMillis() - 5000L; // 5 秒前已过期

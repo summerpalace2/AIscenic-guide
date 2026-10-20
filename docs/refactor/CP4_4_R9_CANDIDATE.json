@@ -1,0 +1,75 @@
+{
+  "checkpoint": "CP4.4-R9-queue-head-workspace-rebase",
+  "capturedAt": "2026-10-10",
+  "status": "frozen pending independent B/C review; not accepted",
+  "parentCandidate": {
+    "id": "CP4.4-R8-atomic-planner-open-state",
+    "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R8_CANDIDATE.json",
+    "sha256": "45470107C4B597F48A5AE4D0ACAE9E22791B06D0670B68D85D97C72409963B63"
+  },
+  "repository": {
+    "root": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+    "head": "6eb2a07a98fc55eb51c051b57934badddc828bd6",
+    "scopedTrackedPatch": {
+      "command": "git diff --binary HEAD -- server/index.mjs server/persistent-store.mjs",
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R9_BFF_TRACKED_PATCH.patch",
+      "sha256": "9E60A3C38F98DF37D7029A1CD71B78EED8CA4F1CED8216092D8A88FCC184DFC8"
+    },
+    "files": {
+      "server/index.mjs": "2210A6AF31AD2EFC95260EBBA21D4B2ED39C0B27959A3CCCB09657D812BF17E7",
+      "server/persistent-store.mjs": "ECC423367AD06E3A82C0C5ACDAE91937DEC71C962A8814302C37D9BC5A195CB5",
+      "server/formal-trip-bff-contract.test.mjs": "B0E55474494EA67AFA4BF4D6C5CC017B9B530ACB90DF014143536D4617BBE090",
+      "server/persistent-store-open-rollback.test.mjs": "A1171473CF20C1CB12B08703C5CBA4CBB55E55B8177D98EC57989A71DFD2B494"
+    },
+    "unrelatedDirtyFilesPreserved": true
+  },
+  "scope": {
+    "production": [
+      "Read latest committed workspace at the head of the shared planner-state write queue before constructing Open draft/workspace values",
+      "Copy latest workspace chatEpoch and plannerConversationContext into the opening session before draft creation",
+      "Use latest committed workspace chat messages/mode and new Open session itinerary snapshot in the atomic workspace candidate",
+      "Hydrate the opening session from the committed workspace result before BFF session registration"
+    ],
+    "tests": [
+      "Queue a workspace PUT ahead of Open, gate its actual filesystem rename, enqueue Open, then assert draft/workspace use PUT latest epoch/context while preserving messages/mode and new Open itinerary snapshot",
+      "Interleave a concurrent workspace update in route harness while Open awaits atomic persistence and assert persisted and live session continuity fields",
+      "Retain concurrent session GET, atomic failure, getter visibility, real rename failure, and recovery coverage"
+    ],
+    "noBffJavaFrontendSchemaChanges": true,
+    "noStageOrCommit": true
+  },
+  "tests": {
+    "command": "node --test server/formal-trip-bff-contract.test.mjs server/draft-restore-route.test.mjs server/planner-bridge-contract.test.mjs server/trip-delete-version.test.mjs server/persistent-store-open-rollback.test.mjs",
+    "nodeVersion": "v24.14.0",
+    "result": "34 tests; 34 pass; 0 fail; 0 skipped",
+    "rawLog": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R9_BFF_TEST.log",
+    "rawLogSha256": "02CD713121263EC410112A1B8A77A1A3869BC38000558D332A2D6D82C760B655",
+    "additional": [
+      "node --check server/index.mjs",
+      "node --check server/persistent-store.mjs",
+      "node --check server/formal-trip-bff-contract.test.mjs",
+      "node --check server/persistent-store-open-rollback.test.mjs",
+      "git diff --check"
+    ]
+  },
+  "verificationLimits": [
+    "Store-level queue interleaving uses actual persistent-store and imported filesystem rename gate; route-level interleaving uses a controlled persistence harness.",
+    "No live BFF/Java service was run.",
+    "Java Open can create its remote Planner Session before BFF persistence; no delete-session compensation endpoint exists, so a remote orphan remains possible."
+  ],
+  "artifacts": {
+    "report": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R9_OPEN_PERSISTENCE_REPORT.md",
+      "sha256": "B0477483A05475DA2B51143C3ADB51DCA9D5E7624DCE9C36B9753F2ECE76B772"
+    },
+    "testLog": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R9_BFF_TEST.log",
+      "sha256": "02CD713121263EC410112A1B8A77A1A3869BC38000558D332A2D6D82C760B655"
+    },
+    "trackedPatch": {
+      "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R9_BFF_TRACKED_PATCH.patch",
+      "sha256": "9E60A3C38F98DF37D7029A1CD71B78EED8CA4F1CED8216092D8A88FCC184DFC8"
+    }
+  },
+  "stagedOrCommitted": false
+}

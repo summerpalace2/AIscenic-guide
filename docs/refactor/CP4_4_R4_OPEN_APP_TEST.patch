@@ -1,0 +1,113 @@
+diff --git a/ai/src/test/java/com/ai/guide/application/planner/PlannerOpenApplicationServiceTest.java b/ai/src/test/java/com/ai/guide/application/planner/PlannerOpenApplicationServiceTest.java
+new file mode 100644
+index 0000000..90fc0c9
+--- /dev/null
++++ b/ai/src/test/java/com/ai/guide/application/planner/PlannerOpenApplicationServiceTest.java
+@@ -0,0 +1,107 @@
++package com.ai.guide.application.planner;
++
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.CreateResult;
++import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort.StoredSession;
++import com.ai.guide.domain.planner.model.AppliedPreferencesSnapshot;
++import com.ai.guide.domain.planner.model.PlannerOpenActor;
++import com.ai.guide.domain.trip.model.Trip;
++import com.ai.guide.domain.trip.service.TripService;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++
++import static org.junit.jupiter.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.*;
++import static org.mockito.Mockito.*;
++
++class PlannerOpenApplicationServiceTest {
++    private final PlannerSessionRepositoryPort sessions = mock(PlannerSessionRepositoryPort.class);
++    private final TripService trips = mock(TripService.class);
++    private final ObjectMapper mapper = new ObjectMapper();
++    private final PlannerOpenApplicationService service = new PlannerOpenApplicationService(sessions, trips, mapper, true);
++
++    @BeforeEach
++    void resetMocks() {
++        reset(sessions, trips);
++    }
++
++    @Test
++    void opensOneOwnerReadAsCoherentSessionAndPreservesFormalVersion() {
++        Map<String, Object> formalSnapshot = new LinkedHashMap<>();
++        formalSnapshot.put("version", 4);
++        formalSnapshot.put("sourceMode", "高德实时接口");
++        formalSnapshot.put("routeDataStatus", "LIVE");
++        formalSnapshot.put("prompt", "重庆三日游");
++        formalSnapshot.put("days", List.of(Map.of("day", 1, "stops", List.of(Map.of("id", "s1")))));
++        Trip formal = new Trip("formal-9", "owner-1", "重庆行程", "ACTIVE", 7, 1L, 2L, formalSnapshot);
++        when(trips.get("owner-1", "formal-9")).thenReturn(formal);
++        when(sessions.create(eq("USER"), eq("owner-1"), eq("重庆三日游"), anyMap(), any(), anyMap(),
++                startsWith("trip-open-formal-9-7-"), anyString())).thenAnswer(call -> {
++            @SuppressWarnings("unchecked") Map<String, Object> restored = call.getArgument(5);
++            StoredSession created = new StoredSession("session-9", "USER", "owner-1", "token-hash", "fp",
++                    "重庆三日游", call.getArgument(3), call.getArgument(4), new LinkedHashMap<>(restored),
++                    1, 1, "DRAFT", 10, 11);
++            return CreateResult.created(created, "raw-open-capability");
++        });
++
++        var result = service.openFormalTrip(new PlannerOpenActor("owner-1", false), "formal-9");
++
++        assertEquals(200, result.serviceStatus());
++        assertEquals("session-9", result.body().get("sessionId"));
++        assertEquals("raw-open-capability", result.body().get("sessionAccessToken"));
++        assertFalse(String.valueOf(result.body().get("sessionAccessToken")).isBlank());
++        assertEquals("formal-9", result.body().get("formalTripId"));
++        assertEquals(7, result.body().get("formalTripVersion"));
++        assertEquals(true, result.body().get("restoredFromTrip"));
++        assertEquals("V1_PROPOSAL", result.body().get("adjustmentCapability"));
++        @SuppressWarnings("unchecked") Map<String, Object> returnedTrip = (Map<String, Object>) result.body().get("trip");
++        assertFalse(returnedTrip.containsKey("sessionAccessToken"));
++        assertEquals("formal-9", returnedTrip.get("sourceTripId"));
++        assertEquals("formal-9", returnedTrip.get("formalTripId"));
++        assertEquals(7, returnedTrip.get("sourceTripVersion"));
++        assertEquals(4, returnedTrip.get("sourcePlannerRevision"));
++        assertEquals(1, returnedTrip.get("version"));
++        assertEquals("重庆行程", returnedTrip.get("title"));
++        verify(trips).get("owner-1", "formal-9");
++        verify(sessions, times(1)).create(eq("USER"), eq("owner-1"), eq("重庆三日游"), anyMap(), any(), anyMap(), anyString(), anyString());
++    }
++
++    @Test
++    void anonymousActorIsRejectedBeforeTripReadOrSessionCreation() {
++        var result = service.openFormalTrip(new PlannerOpenActor(null, true), "formal-9");
++        assertEquals(401, result.serviceStatus());
++        assertEquals("请先登录后打开正式行程。", result.body().get("message"));
++        verifyNoInteractions(trips, sessions);
++    }
++
++    @Test
++    void authenticatedActorWithoutOwnerIdentityIsRejectedWithoutSideEffects() {
++        var result = service.openFormalTrip(new PlannerOpenActor(" ", false), "formal-9");
++        assertEquals(401, result.serviceStatus());
++        verifyNoInteractions(trips, sessions);
++    }
++
++    @Test
++    void missingOrUnownedTripDoesNotCreateSession() {
++        when(trips.get("owner-2", "formal-9")).thenReturn(null);
++        var result = service.openFormalTrip(new PlannerOpenActor("owner-2", false), "formal-9");
++        assertEquals(404, result.serviceStatus());
++        verify(trips).get("owner-2", "formal-9");
++        verifyNoInteractions(sessions);
++    }
++
++    @Test
++    void emptyFormalSnapshotDoesNotCreateSession() {
++        when(trips.get("owner-1", "formal-9"))
++                .thenReturn(new Trip("formal-9", "owner-1", "空行程", "ACTIVE", 3, 1L, 2L, Map.of()));
++        var result = service.openFormalTrip(new PlannerOpenActor("owner-1", false), "formal-9");
++        assertEquals(400, result.serviceStatus());
++        assertEquals("正式行程缺少可恢复的规划快照。", result.body().get("message"));
++        verifyNoInteractions(sessions);
++    }
++}

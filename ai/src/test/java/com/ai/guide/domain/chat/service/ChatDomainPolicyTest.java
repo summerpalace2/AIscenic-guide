@@ -2,9 +2,7 @@ package com.ai.guide.domain.chat.service;
 
 
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,15 +11,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ChatDomainPolicyTest {
 
     @Test
-    void systemIdentityIsChongqingAndContainsNoLegacyProductIdentity() {
+    void systemIdentitySupportsTheSelectedDestinationAndContainsNoLegacyProductIdentity() {
         assertTrue(ChatDomainPolicy.SYSTEM_PROMPT.contains("渝游智策"));
-        assertTrue(ChatDomainPolicy.SYSTEM_PROMPT.contains("重庆智慧文旅"));
+        assertTrue(ChatDomainPolicy.SYSTEM_PROMPT.contains("当前请求或行程中指定的目的地"));
+        assertFalse(ChatDomainPolicy.SYSTEM_PROMPT.contains("重庆"));
         assertFalse(ChatDomainPolicy.containsLegacyDomain(ChatDomainPolicy.SYSTEM_PROMPT));
     }
 
     @Test
     void goldenDemoQueryDoesNotProactivelyInjectLegacyTerms() {
-        String promptSurface = ChatDomainPolicy.SYSTEM_PROMPT + "\n" + ChatDomainPolicy.GOLDEN_DEMO_QUERY;
+        String promptSurface = ChatDomainPolicy.SYSTEM_PROMPT + "\n为当前目的地规划周末两日游，带父母，少走路，喜欢人文和夜景";
 
         assertFalse(ChatDomainPolicy.containsLegacyDomain(promptSurface));
         assertEquals("", ChatDomainPolicy.protectRetrievedContext(""));
@@ -48,11 +47,11 @@ class ChatDomainPolicyTest {
 
     @Test
     void legacyHistoryAndPreferenceMessagesAreNotAddedAsSystemContext() {
-        List<Message> safe = ChatDomainPolicy.filterLegacyMessages(List.of(
-                new UserMessage("我想看重庆夜景"),
-                new SystemMessage("旧项目灵山偏好")));
+        List<LanguageModelMessage> safe = ChatDomainPolicy.filterLegacyMessages(List.of(
+                new LanguageModelMessage(LanguageModelMessage.Role.USER, "我想看重庆夜景"),
+                new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, "旧项目灵山偏好")));
 
         assertEquals(1, safe.size());
-        assertEquals("我想看重庆夜景", safe.get(0).getContent());
+        assertEquals("我想看重庆夜景", safe.get(0).content());
     }
 }

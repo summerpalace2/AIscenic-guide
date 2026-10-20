@@ -76,6 +76,7 @@ public class TripService {
 
         String tripId = "trip-" + UUID.randomUUID();
         Map<String, Object> snapshot = withFormalId(input.plan(), tripId);
+
         String title = title(input.title(), snapshot);
         snapshot.put("title", title);
         try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
@@ -100,6 +101,13 @@ public class TripService {
 
     @Transactional
     public OperationResult update(String ownerId, String tripId, Map<String, Object> request) {
+        return updateInternal(ownerId, tripId, request, false);
+    }
+
+    // Only the authenticated planner-session bridge may synchronize an explicit unpin.
+    // Browser snapshot metadata cannot select this trust boundary.
+    private OperationResult updateInternal(String ownerId, String tripId, Map<String, Object> request,
+                                           boolean trustedPlannerSnapshot) {
         String effectiveOwner = owner(ownerId);
         Map<String, Object> body = copyMap(request);
         if (requiredExpectedVersion(body) == null) {
@@ -124,7 +132,12 @@ public class TripService {
         if (expected != current.currentVersion()) return conflict(tripId, expected, current);
 
         Map<String, Object> snapshot = withFormalId(input.plan(), tripId);
-        String title = title(input.title().isBlank() ? current.title() : input.title(), snapshot);
+        if (!trustedPlannerSnapshot) {
+            if (!com.ai.guide.domain.planner.service.PlannerPins.retained(current.plan(), snapshot))
+                return OperationResult.badRequest("该修改会移除或替换已固定站点，请先在规划会话中取消固定并保存。");
+            com.ai.guide.domain.planner.service.PlannerPins.preserve(current.plan(), snapshot);
+        }
+        String title = title(input.title().isBlank() ? current.title() : input.title(), snapshot);
         snapshot.put("title", title);
         try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
             return OperationResult.badRequest(invalid.getMessage());
@@ -168,6 +181,14 @@ public class TripService {
             Map<String, Object> rebased = tryRebase(current.plan(), latest.plan(), snapshot);
             if (rebased != null) {
                 snapshot = withFormalId(rebased, tripId);
+                if (!trustedPlannerSnapshot) {
+                    if (!com.ai.guide.domain.planner.service.PlannerPins.retained(latest.plan(), snapshot)) {
+                        repository.deleteIdempotency(effectiveOwner, "UPDATE", input.idempotencyKey());
+                        return OperationResult.badRequest("最新行程中的固定站点不能被本次修改移除或替换。");
+                    }
+                    com.ai.guide.domain.planner.service.PlannerPins.preserve(latest.plan(), snapshot);
+                }
+
                 title = title(text(snapshot.get("title")), snapshot);
                 snapshot.put("title", title);
                 try { planLimits.validate(snapshot); } catch (IllegalArgumentException invalid) {
@@ -397,7 +418,7 @@ public class TripService {
         request.put("expectedVersion", expectedVersion);
         request.put("idempotencyKey", key);
         request.put("changeReason", "PlannerSession 保存");
-        OperationResult res = update(ownerId, formalTripId, request);
+        OperationResult res = updateInternal(ownerId, formalTripId, request, true);
         if (res.status() == 409 && (sourceTripVersion == null || sourceTripVersion != current.currentVersion())) {
             Trip latest = get(ownerId, formalTripId);
             if (latest != null && latest.currentVersion() != expectedVersion) {
@@ -417,7 +438,7 @@ public class TripService {
                     retryRequest.put("expectedVersion", latest.currentVersion());
                     retryRequest.put("idempotencyKey", key);
                     retryRequest.put("changeReason", "PlannerSession 变基合并保存");
-                    return update(ownerId, formalTripId, retryRequest);
+                    return updateInternal(ownerId, formalTripId, retryRequest, true);
                 }
             }
         }

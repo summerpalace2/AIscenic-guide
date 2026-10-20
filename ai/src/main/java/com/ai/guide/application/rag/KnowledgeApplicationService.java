@@ -1,7 +1,7 @@
 package com.ai.guide.application.rag;
 
 import com.ai.guide.common.model.Result;
-import org.springframework.web.multipart.MultipartFile;
+import com.ai.guide.domain.rag.model.KnowledgeDocumentUpload;
 import java.util.List;
 import java.util.Map;
 
@@ -16,9 +16,13 @@ public interface KnowledgeApplicationService {
 
     Result<Map<String, Object>> getDocument(String docId);
 
-    Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, MultipartFile file);
+    Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, KnowledgeDocumentUpload file);
 
     Result<Map<String, Object>> updateDocument(String docId, String title, String category, String content, String tags);
+
+    Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, KnowledgeDocumentUpload file, String scope, String city);
+
+    Result<Map<String, Object>> updateDocument(String docId, String title, String category, String content, String tags, String scope, String city);
 
     Result<Void> deleteDocument(String docId);
 

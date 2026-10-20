@@ -13,7 +13,7 @@ import static org.mockito.ArgumentMatchers.*;
 
 class CrossCityPlannerPolicyTest {
     @Test void missingUnknownAndUninstalledCitiesUseGenericPolicy() {
-        var router=new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy()));
+        var router=new TopographyStrategyRouter(List.of(new ChongqingTopographyStrategy()), new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         assertEquals("GENERIC",router.route(null).supportedCity());
         assertEquals("GENERIC",router.route("杭州").supportedCity());
         assertEquals("GENERIC",router.route("成都").supportedCity());
@@ -23,7 +23,9 @@ class CrossCityPlannerPolicyTest {
     @Test void hangzhouCandidateIsNotRejectedAsRemoteChongqingDistrict() {
         var verifier=mock(PlanVerifier.class);
         when(verifier.verify(anyList(),any())).thenReturn(new PlanVerifier.VerificationResult(true,List.of(),Map.of()));
-        var planner=new RouteAwarePlanner(new RouteCostProvider(null),verifier,mock(LocalPlanRepairer.class));
+        var planner=new RouteAwarePlanner(new RouteCostProvider(null),verifier,mock(LocalPlanRepairer.class),
+                new com.ai.guide.domain.planner.service.PlannerMetricsLogger(),null,
+                new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
         var builder=mock(ItineraryBuilderPort.class);
         when(builder.createStop(any(),anyString(),anyString(),anyString(),anyString(),anyString())).thenAnswer(call -> {
             Attraction venue=call.getArgument(0);

@@ -1,0 +1,126 @@
+[
+  {
+    "id": "xa-shaanxi-history-museum",
+    "name": "陕西历史博物馆",
+    "displayName": "陕西历史博物馆",
+    "city": "西安",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于西安的历史博物馆，展示陕西古代文明及相关文物。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "陕西历史博物馆",
+      "matches": [
+        "陕西历史博物馆"
+      ]
+    },
+    "intro": "位于西安的历史博物馆，展示陕西古代文明及相关文物。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://www.sxhm.com/about.html",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "xa-qin-mausoleum-museum",
+    "name": "秦始皇帝陵博物院",
+    "displayName": "秦始皇帝陵博物院",
+    "city": "西安",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "考古"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于西安临潼，以兵马俑博物馆与秦始皇帝陵遗址公园（丽山园）为主要参观点。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "秦始皇帝陵博物院",
+      "matches": [
+        "秦始皇帝陵博物院"
+      ]
+    },
+    "intro": "位于西安临潼，包含秦始皇兵马俑博物馆和秦始皇陵考古遗址公园。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://www.bmy.com.cn/about/",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "xa-city-wall",
+    "name": "西安城墙景区",
+    "displayName": "西安城墙景区",
+    "city": "西安",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "城墙",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "西安现存的明代古城垣景区，见证了古城的历史变迁。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "西安城墙景区",
+      "matches": [
+        "西安城墙景区",
+        "西安城墙"
+      ]
+    },
+    "intro": "西安保存的古代城垣景区，入口、登城条件与开放安排需出行前核验。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://qjxq.xa.gov.cn/zjqj/qyts/5df21c3a65cbd81235fc1bf1.html",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  }
+]

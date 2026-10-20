@@ -1,0 +1,1463 @@
+{
+  "schemaVersion": "ai-evaluation-retrieval-cases-v1",
+  "evaluationScope": "Controlled local fallback document-level retrieval and evidence gate, not dense/hybrid or answer faithfulness.",
+  "annotationPolicy": "100 explicit agent-authored query/label pairs, provisional pending peer review; no independent human labels. Relevant document IDs fixed before execution, never inferred from retrieval output. UNKNOWN excluded from Recall/MRR denominator. 20 semantic families across 5 city groups; cases are not 100 statistically independent families.",
+  "cases": [
+    {
+      "id": "retrieval-bj-01",
+      "city": "北京市",
+      "query": "故宫有哪些文物主题？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-bj-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-01"
+    },
+    {
+      "id": "retrieval-bj-02",
+      "city": "北京市",
+      "query": "颐和园涉及哪些园林景观？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-bj-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-02"
+    },
+    {
+      "id": "retrieval-bj-03",
+      "city": "北京市",
+      "query": "蒙民伟理科馆是什么建筑？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-bj-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-03"
+    },
+    {
+      "id": "retrieval-bj-04",
+      "city": "北京市",
+      "query": "驴肉火烧是甜食吗？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-bj-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-04"
+    },
+    {
+      "id": "retrieval-bj-05",
+      "city": "北京市",
+      "query": "国博的古代中国展览讲什么？",
+      "category": "alias",
+      "relevantDocumentIds": [
+        "eval-bj-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-05"
+    },
+    {
+      "id": "retrieval-bj-06",
+      "city": "北京市",
+      "query": "人民公园有休息座椅吗？",
+      "category": "same-name",
+      "relevantDocumentIds": [
+        "eval-bj-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-06"
+    },
+    {
+      "id": "retrieval-bj-07",
+      "city": "北京市",
+      "query": "想了解宫廷书画和青铜器，应该查哪份资料？",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "eval-bj-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-07"
+    },
+    {
+      "id": "retrieval-bj-08",
+      "city": "北京市",
+      "query": "昆明湖和长廊属于什么游览主题？",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "eval-bj-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-08"
+    },
+    {
+      "id": "retrieval-bj-09",
+      "city": "北京市",
+      "query": "清华的那个蒙民伟理科馆能直接参观吗？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-bj-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-09"
+    },
+    {
+      "id": "retrieval-bj-10",
+      "city": "北京市",
+      "query": "驴肉火烧里面有肉，不是素食吧？",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-bj-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-10"
+    },
+    {
+      "id": "retrieval-bj-11",
+      "city": "北京市",
+      "query": "不要颐和园，只想看故宫文物介绍",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-bj-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-11"
+    },
+    {
+      "id": "retrieval-bj-12",
+      "city": "北京市",
+      "query": "不是问国博，想问清华蒙民伟理科馆",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-bj-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-12"
+    },
+    {
+      "id": "retrieval-bj-13",
+      "city": "北京市",
+      "query": "北京人民公园的树荫信息，不要杭州的",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-bj-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-13"
+    },
+    {
+      "id": "retrieval-bj-14",
+      "city": "北京市",
+      "query": "在北京查国家博物馆，别返回武汉省博",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-bj-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-14"
+    },
+    {
+      "id": "retrieval-bj-15",
+      "city": "北京市",
+      "query": "故宫文物与国博展览有什么主题？",
+      "category": "multi-document",
+      "relevantDocumentIds": [
+        "eval-bj-museum",
+        "eval-bj-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-15"
+    },
+    {
+      "id": "retrieval-bj-16",
+      "city": "北京市",
+      "query": "故宫今晚一定不排队吗？",
+      "category": "future-certainty",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-16"
+    },
+    {
+      "id": "retrieval-bj-17",
+      "city": "北京市",
+      "query": "颐和园今天有无人机表演吗？",
+      "category": "realtime-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-17"
+    },
+    {
+      "id": "retrieval-bj-18",
+      "city": "北京市",
+      "query": "蒙民伟理科馆允许带宠物吗？",
+      "category": "policy-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-18"
+    },
+    {
+      "id": "retrieval-bj-19",
+      "city": "北京市",
+      "query": "从故宫打车到颐和园精确多少钱？",
+      "category": "dynamic-fare-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-19"
+    },
+    {
+      "id": "retrieval-bj-20",
+      "city": "北京市",
+      "query": "北京极光水晶塔的开放规则是什么？",
+      "category": "absent-entity",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-20"
+    },
+    {
+      "id": "retrieval-hz-01",
+      "city": "杭州市",
+      "query": "浙江省博物馆讲哪些文化？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-hz-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-01"
+    },
+    {
+      "id": "retrieval-hz-02",
+      "city": "杭州市",
+      "query": "西湖资料中有哪些园林景观？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-hz-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-02"
+    },
+    {
+      "id": "retrieval-hz-03",
+      "city": "杭州市",
+      "query": "求是大讲堂是什么建筑？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-hz-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-03"
+    },
+    {
+      "id": "retrieval-hz-04",
+      "city": "杭州市",
+      "query": "定胜糕是什么口味？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-hz-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-04"
+    },
+    {
+      "id": "retrieval-hz-05",
+      "city": "杭州市",
+      "query": "国丝馆介绍什么织造文化？",
+      "category": "alias",
+      "relevantDocumentIds": [
+        "eval-hz-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-05"
+    },
+    {
+      "id": "retrieval-hz-06",
+      "city": "杭州市",
+      "query": "人民公园有休息座椅吗？",
+      "category": "same-name",
+      "relevantDocumentIds": [
+        "eval-hz-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-06"
+    },
+    {
+      "id": "retrieval-hz-07",
+      "city": "杭州市",
+      "query": "浙博的越文化内容是什么？",
+      "category": "alias",
+      "relevantDocumentIds": [
+        "eval-hz-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-07"
+    },
+    {
+      "id": "retrieval-hz-08",
+      "city": "杭州市",
+      "query": "想看看苏堤与湖畔的资料",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "eval-hz-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-08"
+    },
+    {
+      "id": "retrieval-hz-09",
+      "city": "杭州市",
+      "query": "浙江大学求是大讲堂是否对外随意进入？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-hz-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-09"
+    },
+    {
+      "id": "retrieval-hz-10",
+      "city": "杭州市",
+      "query": "定胜糕是米糕，不是咸口肉食吧？",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-hz-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-10"
+    },
+    {
+      "id": "retrieval-hz-11",
+      "city": "杭州市",
+      "query": "不要西湖，只看浙江省博物馆文物介绍",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-hz-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-11"
+    },
+    {
+      "id": "retrieval-hz-12",
+      "city": "杭州市",
+      "query": "不是问国丝馆，问浙大的求是大讲堂",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-hz-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-12"
+    },
+    {
+      "id": "retrieval-hz-13",
+      "city": "杭州市",
+      "query": "杭州人民公园的树荫，不要北京那一处",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-hz-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-13"
+    },
+    {
+      "id": "retrieval-hz-14",
+      "city": "杭州市",
+      "query": "人在杭州，请介绍浙博而不是西安陕历博",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-hz-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-14"
+    },
+    {
+      "id": "retrieval-hz-15",
+      "city": "杭州市",
+      "query": "浙博和国丝馆分别展示什么？",
+      "category": "multi-document",
+      "relevantDocumentIds": [
+        "eval-hz-museum",
+        "eval-hz-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-15"
+    },
+    {
+      "id": "retrieval-hz-16",
+      "city": "杭州市",
+      "query": "西湖明天一定不会下雨吗？",
+      "category": "future-certainty",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-16"
+    },
+    {
+      "id": "retrieval-hz-17",
+      "city": "杭州市",
+      "query": "西湖今天有无人机表演吗？",
+      "category": "realtime-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-17"
+    },
+    {
+      "id": "retrieval-hz-18",
+      "city": "杭州市",
+      "query": "求是大讲堂能带宠物进去吗？",
+      "category": "policy-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-18"
+    },
+    {
+      "id": "retrieval-hz-19",
+      "city": "杭州市",
+      "query": "从西湖打车到浙博精确多少钱？",
+      "category": "dynamic-fare-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-19"
+    },
+    {
+      "id": "retrieval-hz-20",
+      "city": "杭州市",
+      "query": "杭州极光水晶塔开放规则是什么？",
+      "category": "absent-entity",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-20"
+    },
+    {
+      "id": "retrieval-xa-01",
+      "city": "西安市",
+      "query": "陕西历史博物馆介绍哪些文物？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-xa-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-01"
+    },
+    {
+      "id": "retrieval-xa-02",
+      "city": "西安市",
+      "query": "大明宫有哪些遗址主题？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-xa-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-02"
+    },
+    {
+      "id": "retrieval-xa-03",
+      "city": "西安市",
+      "query": "钱学森图书馆是什么建筑？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-xa-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-03"
+    },
+    {
+      "id": "retrieval-xa-04",
+      "city": "西安市",
+      "query": "肉夹馍是甜口还是咸口？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-xa-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-04"
+    },
+    {
+      "id": "retrieval-xa-05",
+      "city": "西安市",
+      "query": "西安碑林的石刻书法是什么主题？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-xa-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-05"
+    },
+    {
+      "id": "retrieval-xa-06",
+      "city": "西安市",
+      "query": "人民公园有休息座椅吗？",
+      "category": "same-name",
+      "relevantDocumentIds": [
+        "eval-xa-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-06"
+    },
+    {
+      "id": "retrieval-xa-07",
+      "city": "西安市",
+      "query": "陕历博的唐代文物资料在哪里？",
+      "category": "alias",
+      "relevantDocumentIds": [
+        "eval-xa-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-07"
+    },
+    {
+      "id": "retrieval-xa-08",
+      "city": "西安市",
+      "query": "想了解丹凤门和宫殿遗址",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "eval-xa-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-08"
+    },
+    {
+      "id": "retrieval-xa-09",
+      "city": "西安市",
+      "query": "西安交通大学钱学森图书馆可以随便进吗？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-xa-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-09"
+    },
+    {
+      "id": "retrieval-xa-10",
+      "city": "西安市",
+      "query": "肉夹馍含肉，不是素食对吧？",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-xa-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-10"
+    },
+    {
+      "id": "retrieval-xa-11",
+      "city": "西安市",
+      "query": "不要大明宫，只看陕西历史博物馆",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-xa-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-11"
+    },
+    {
+      "id": "retrieval-xa-12",
+      "city": "西安市",
+      "query": "不是问碑林，想找钱学森图书馆",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-xa-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-12"
+    },
+    {
+      "id": "retrieval-xa-13",
+      "city": "西安市",
+      "query": "西安人民公园的树荫，不要杭州资料",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-xa-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-13"
+    },
+    {
+      "id": "retrieval-xa-14",
+      "city": "西安市",
+      "query": "西安陕历博资料，不是北京国博",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-xa-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-14"
+    },
+    {
+      "id": "retrieval-xa-15",
+      "city": "西安市",
+      "query": "陕历博和碑林各自介绍哪些历史内容？",
+      "category": "multi-document",
+      "relevantDocumentIds": [
+        "eval-xa-museum",
+        "eval-xa-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-15"
+    },
+    {
+      "id": "retrieval-xa-16",
+      "city": "西安市",
+      "query": "大明宫明天一定没有人排队吗？",
+      "category": "future-certainty",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-16"
+    },
+    {
+      "id": "retrieval-xa-17",
+      "city": "西安市",
+      "query": "大明宫今天有无人机表演吗？",
+      "category": "realtime-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-17"
+    },
+    {
+      "id": "retrieval-xa-18",
+      "city": "西安市",
+      "query": "钱学森图书馆允许带宠物吗？",
+      "category": "policy-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-18"
+    },
+    {
+      "id": "retrieval-xa-19",
+      "city": "西安市",
+      "query": "从大明宫打车到碑林精确多少钱？",
+      "category": "dynamic-fare-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-19"
+    },
+    {
+      "id": "retrieval-xa-20",
+      "city": "西安市",
+      "query": "西安极光水晶塔开放规则是什么？",
+      "category": "absent-entity",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-20"
+    },
+    {
+      "id": "retrieval-wh-01",
+      "city": "武汉市",
+      "query": "湖北省博物馆介绍哪些文物？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-wh-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-01"
+    },
+    {
+      "id": "retrieval-wh-02",
+      "city": "武汉市",
+      "query": "东湖资料里有哪些园林景观？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-wh-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-02"
+    },
+    {
+      "id": "retrieval-wh-03",
+      "city": "武汉市",
+      "query": "武汉大学老图书馆是什么建筑？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-wh-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-03"
+    },
+    {
+      "id": "retrieval-wh-04",
+      "city": "武汉市",
+      "query": "热干面是什么口味？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-wh-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-04"
+    },
+    {
+      "id": "retrieval-wh-05",
+      "city": "武汉市",
+      "query": "黄鹤楼介绍哪些诗词主题？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "eval-wh-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-05"
+    },
+    {
+      "id": "retrieval-wh-06",
+      "city": "武汉市",
+      "query": "人民公园有休息座椅吗？",
+      "category": "same-name",
+      "relevantDocumentIds": [
+        "eval-wh-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-06"
+    },
+    {
+      "id": "retrieval-wh-07",
+      "city": "武汉市",
+      "query": "省博的曾侯乙编钟介绍是什么？",
+      "category": "alias",
+      "relevantDocumentIds": [
+        "eval-wh-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-07"
+    },
+    {
+      "id": "retrieval-wh-08",
+      "city": "武汉市",
+      "query": "听涛景区和湖畔属于什么主题？",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "eval-wh-garden"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-08"
+    },
+    {
+      "id": "retrieval-wh-09",
+      "city": "武汉市",
+      "query": "武大的老图书馆可以随便参观吗？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "eval-wh-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-09"
+    },
+    {
+      "id": "retrieval-wh-10",
+      "city": "武汉市",
+      "query": "热干面有芝麻酱，不是保证过敏安全吧？",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-wh-food"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-10"
+    },
+    {
+      "id": "retrieval-wh-11",
+      "city": "武汉市",
+      "query": "不要东湖，只想看湖北省博物馆",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-wh-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-11"
+    },
+    {
+      "id": "retrieval-wh-12",
+      "city": "武汉市",
+      "query": "不是问黄鹤楼，是武汉大学老图书馆",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "eval-wh-building"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-12"
+    },
+    {
+      "id": "retrieval-wh-13",
+      "city": "武汉市",
+      "query": "武汉人民公园树荫资料，不要北京的",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-wh-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-13"
+    },
+    {
+      "id": "retrieval-wh-14",
+      "city": "武汉市",
+      "query": "湖北省博物馆资料，不是杭州浙博",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-wh-museum"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-14"
+    },
+    {
+      "id": "retrieval-wh-15",
+      "city": "武汉市",
+      "query": "湖北省博物馆与黄鹤楼有什么文化主题？",
+      "category": "multi-document",
+      "relevantDocumentIds": [
+        "eval-wh-museum",
+        "eval-wh-alias"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-15"
+    },
+    {
+      "id": "retrieval-wh-16",
+      "city": "武汉市",
+      "query": "东湖明天一定不会下雨吗？",
+      "category": "future-certainty",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-16"
+    },
+    {
+      "id": "retrieval-wh-17",
+      "city": "武汉市",
+      "query": "黄鹤楼今天有无人机表演吗？",
+      "category": "realtime-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-17"
+    },
+    {
+      "id": "retrieval-wh-18",
+      "city": "武汉市",
+      "query": "老图书馆允许带宠物吗？",
+      "category": "policy-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-18"
+    },
+    {
+      "id": "retrieval-wh-19",
+      "city": "武汉市",
+      "query": "从东湖打车到黄鹤楼精确多少钱？",
+      "category": "dynamic-fare-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-19"
+    },
+    {
+      "id": "retrieval-wh-20",
+      "city": "武汉市",
+      "query": "武汉极光水晶塔开放规则是什么？",
+      "category": "absent-entity",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-20"
+    },
+    {
+      "id": "retrieval-cq-01",
+      "city": "重庆市",
+      "query": "洪崖洞带老人怎样少走楼梯？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "cq-hongyadong-accessibility-001"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-01"
+    },
+    {
+      "id": "retrieval-cq-02",
+      "city": "重庆市",
+      "query": "洪崖洞坐地铁怎么到？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "cq-hongyadong-transport-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-02"
+    },
+    {
+      "id": "retrieval-cq-03",
+      "city": "重庆市",
+      "query": "洪崖洞门票和亮灯有什么规则？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "cq-hongyadong-dynamic-003"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-03"
+    },
+    {
+      "id": "retrieval-cq-04",
+      "city": "重庆市",
+      "query": "三峡博物馆周一开馆吗？",
+      "category": "direct",
+      "relevantDocumentIds": [
+        "cq-sanxia-museum-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-04"
+    },
+    {
+      "id": "retrieval-cq-05",
+      "city": "重庆市",
+      "query": "长江索道票价和预约如何规定？",
+      "category": "proper-noun",
+      "relevantDocumentIds": [
+        "cq-changjiang-suodao-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-05"
+    },
+    {
+      "id": "retrieval-cq-06",
+      "city": "重庆市",
+      "query": "人民公园有休息座椅吗？",
+      "category": "same-name",
+      "relevantDocumentIds": [
+        "eval-cq-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-06"
+    },
+    {
+      "id": "retrieval-cq-07",
+      "city": "重庆市",
+      "query": "洪崖洞从沧白路十一层进还是一层爬上去？",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "cq-hongyadong-accessibility-001"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-07"
+    },
+    {
+      "id": "retrieval-cq-08",
+      "city": "重庆市",
+      "query": "临江门出站怎样到洪崖洞？",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "cq-hongyadong-transport-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-08"
+    },
+    {
+      "id": "retrieval-cq-09",
+      "city": "重庆市",
+      "query": "三峡博物馆的开放时间资料",
+      "category": "paraphrase",
+      "relevantDocumentIds": [
+        "cq-sanxia-museum-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-09"
+    },
+    {
+      "id": "retrieval-cq-10",
+      "city": "重庆市",
+      "query": "不要爬洪崖洞楼梯，电梯怎样走？",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "cq-hongyadong-accessibility-001"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-10"
+    },
+    {
+      "id": "retrieval-cq-11",
+      "city": "重庆市",
+      "query": "不是问洪崖洞，问三峡博物馆周一政策",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "cq-sanxia-museum-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-11"
+    },
+    {
+      "id": "retrieval-cq-12",
+      "city": "重庆市",
+      "query": "不要交通指南，只想知道长江索道票价",
+      "category": "negation",
+      "relevantDocumentIds": [
+        "cq-changjiang-suodao-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-12"
+    },
+    {
+      "id": "retrieval-cq-13",
+      "city": "重庆市",
+      "query": "重庆人民公园树荫，不要武汉资料",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "eval-cq-same-name"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-13"
+    },
+    {
+      "id": "retrieval-cq-14",
+      "city": "重庆市",
+      "query": "重庆三峡博物馆，不是北京国博",
+      "category": "cross-city",
+      "relevantDocumentIds": [
+        "cq-sanxia-museum-dynamic-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-14"
+    },
+    {
+      "id": "retrieval-cq-15",
+      "city": "重庆市",
+      "query": "洪崖洞少走路和地铁交通分别怎样安排？",
+      "category": "multi-document",
+      "relevantDocumentIds": [
+        "cq-hongyadong-accessibility-001",
+        "cq-hongyadong-transport-002"
+      ],
+      "expectedStatus": "RELEVANT",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "Full corresponding fixture document(s)"
+      ],
+      "familyId": "retrieval-family-15"
+    },
+    {
+      "id": "retrieval-cq-16",
+      "city": "重庆市",
+      "query": "洪崖洞今晚一定不排队吗？",
+      "category": "future-certainty",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-16"
+    },
+    {
+      "id": "retrieval-cq-17",
+      "city": "重庆市",
+      "query": "三峡博物馆今天有无人机表演吗？",
+      "category": "realtime-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-17"
+    },
+    {
+      "id": "retrieval-cq-18",
+      "city": "重庆市",
+      "query": "长江索道能带宠物吗？",
+      "category": "policy-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-18"
+    },
+    {
+      "id": "retrieval-cq-19",
+      "city": "重庆市",
+      "query": "从洪崖洞打车到索道精确多少钱？",
+      "category": "dynamic-fare-unknown",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-19"
+    },
+    {
+      "id": "retrieval-cq-20",
+      "city": "重庆市",
+      "query": "重庆极光水晶塔开放规则是什么？",
+      "category": "absent-entity",
+      "relevantDocumentIds": [],
+      "expectedStatus": "UNKNOWN",
+      "annotationBasis": "Agent-authored explicit labels from declared fixture content; provisional peer review, not independently human-verified. No retrieval results used.",
+      "expectedEvidence": [
+        "No fixture supports the requested guarantee, current event, policy, fare or missing entity"
+      ],
+      "familyId": "retrieval-family-20"
+    }
+  ],
+  "familyCount": 20
+}

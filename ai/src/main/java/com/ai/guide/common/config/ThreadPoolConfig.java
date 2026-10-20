@@ -74,7 +74,7 @@ public class ThreadPoolConfig {
      *
      * 文档解析、切片、Embedding 和 Qdrant 写入都可能持续较长时间，不能在
      * 上传请求里裸建线程。独立的有界队列用于吸收短时波峰；队列满时快速
-     * 拒绝并由文档服务写入 failed，管理员可以通过同步接口重试。
+     * 拒绝后持久请求仍保持待处理，启用恢复扫描时可在下一轮领取。
      */
     @Bean(name = "knowledgeIndexExecutor", destroyMethod = "shutdown")
     public ExecutorService knowledgeIndexExecutor(

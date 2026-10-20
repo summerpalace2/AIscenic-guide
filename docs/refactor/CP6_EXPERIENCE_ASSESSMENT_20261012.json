@@ -1,0 +1,10 @@
+{
+  "outcome": "benefited",
+  "reason": "采用 structured-trip-planning C5 作为当前项目热更新消费者验收维度，独立审查复现并修复数据库刷新未贯通别名索引；结果以项目回归为依据，不外推真实基础设施或全国目录完整性。",
+  "effect": "原子安装、旧快照保留与消费者刷新均进入验收范围，正确行为探针及最终干净全量通过；真实 PostgreSQL/Redis 与聊天仍未完成验收。",
+  "evidence": [
+    {"path": "D:/scenic-guide/ai/src/main/java/com/ai/guide/domain/attraction/service/AttractionAliasMatcher.java", "role": "change"},
+    {"path": "D:/scenic-guide/cp6-java-full.log", "role": "verification"},
+    {"path": "D:/scenic-guide/docs/refactor/CP6_TEST_SUMMARY_20261012.json", "role": "verification"}
+  ]
+}

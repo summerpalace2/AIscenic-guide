@@ -4,6 +4,8 @@ import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.model.category.PoiDomainType;
 import com.ai.guide.domain.planner.service.PoiCategoryPolicyRegistry;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
@@ -21,14 +23,16 @@ import java.util.Map;
 public class LocalPlanRepairer {
 
     private final PoiCategoryPolicyRegistry categoryPolicyRegistry;
+    private PlannerTaxonomyPort taxonomy = TaxonomyPort.empty();
 
     @Autowired
-    public LocalPlanRepairer(@Autowired(required = false) PoiCategoryPolicyRegistry categoryPolicyRegistry) {
-        this.categoryPolicyRegistry = categoryPolicyRegistry != null ? categoryPolicyRegistry : new PoiCategoryPolicyRegistry();
+    public LocalPlanRepairer(PoiCategoryPolicyRegistry categoryPolicyRegistry) {
+        this.categoryPolicyRegistry = java.util.Objects.requireNonNull(categoryPolicyRegistry, "categoryPolicyRegistry");
     }
 
-    public LocalPlanRepairer() {
-        this(new PoiCategoryPolicyRegistry());
+    @Autowired(required = false)
+    public void setTaxonomy(PlannerTaxonomyPort taxonomy) {
+        if (taxonomy != null) this.taxonomy = taxonomy;
     }
 
     public List<Map<String, Object>> repair(List<Map<String, Object>> days,
@@ -92,13 +96,12 @@ public class LocalPlanRepairer {
                 stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
                         && !isProtectedStop(s, constraints));
             }
-            // Strategy 5: Day schedule overflow / excessive travel time -> compress duration or remove redundant stop
+            // Strategy 5: Day schedule overflow / excessive travel time -> remove only an unprotected redundant stop.
+            // Never rewrite a stop's stated visit duration: feasibility is rechecked by the caller instead.
             else if ("DAY_SCHEDULE_OVERFLOW".equals(v.type()) || "TRAVEL_TIME_EXCESSIVE".equals(v.type())) {
                 long scenicCount = stops.stream().filter(s -> !isDiningStop(s)).count();
-                if (scenicCount <= 2) {
-                    // Do not prune when only 1-2 scenic spots exist! Compress duration to keep day schedule within budget
-                    compressStopDurations(stops, constraints);
-                } else {
+                int maximumRepairableScenicStops = PlannerScoringPolicy.limit(taxonomy, "maxRepairableScenicStops");
+                if (maximumRepairableScenicStops > 0 && scenicCount > maximumRepairableScenicStops) {
                     boolean removed = false;
                     if (v.stopId() != null && !v.stopId().isBlank()) {
                         removed = stops.removeIf(s -> v.stopId().equals(String.valueOf(s.get("id")))
@@ -113,67 +116,11 @@ public class LocalPlanRepairer {
                             }
                         }
                     }
-                    if (!removed) {
-                        // 全保护站点无法移除时压缩游玩时长（180->90->60->50）
-                        compressStopDurations(stops, constraints);
-                    }
                 }
             }
         }
 
         return repairedDays;
-    }
-
-    private void compressStopDurations(List<Map<String, Object>> stops, TravelConstraints constraints) {
-        for (Map<String, Object> s : stops) {
-            if (isExplicitlyProtectedStop(s, constraints)) continue;
-            PoiDomainType domainType = categoryPolicyRegistry.resolveCategory(s);
-            if (domainType == PoiDomainType.THEATER || domainType == PoiDomainType.HOTEL) continue;
-            if (domainType == PoiDomainType.DINING) {
-                // 餐饮节点正常不随意压缩，但超过餐饮合理上限 (120 分钟) 时防御性修正至标准时长
-                int mins = parseDurationMinutes(text(s.get("duration")));
-                if (mins > 120) {
-                    s.put("duration", "约 90 分钟");
-                }
-                continue;
-            }
-            String dur = text(s.get("duration"));
-            int mins = parseDurationMinutes(dur);
-            if (mins > 90 || dur.contains("180") || dur.contains("3小时") || dur.contains("120") || dur.contains("2小时") || dur.contains("100")) {
-                s.put("duration", "约 90 分钟");
-            } else if (mins > 60 || dur.contains("90") || dur.contains("75")) {
-                s.put("duration", "约 60 分钟");
-            } else if (mins > 50 || dur.contains("60") || dur.contains("1小时")) {
-                s.put("duration", "约 50 分钟");
-            }
-        }
-    }
-
-    private int parseDurationMinutes(String raw) {
-        if (raw == null || raw.isBlank()) return 0;
-        try {
-            int hours = 0;
-            int minutes = 0;
-            java.util.regex.Matcher hm = java.util.regex.Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*(?:个)?小时").matcher(raw);
-            if (hm.find()) {
-                double h = Double.parseDouble(hm.group(1));
-                hours = (int) (h * 60);
-            }
-            java.util.regex.Matcher mm = java.util.regex.Pattern.compile("(\\d+)\\s*分钟").matcher(raw);
-            if (mm.find()) {
-                minutes = Integer.parseInt(mm.group(1));
-            }
-            if (hours > 0 || minutes > 0) {
-                return hours + minutes;
-            }
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+(?:\\.\\d+)?)").matcher(raw);
-            if (m.find()) {
-                double val = Double.parseDouble(m.group(1));
-                if (raw.contains("小时")) return (int) (val * 60);
-                return (int) val;
-            }
-        } catch (Exception ignored) {}
-        return 0;
     }
 
     private boolean isDiningStop(Map<String, Object> stop) {

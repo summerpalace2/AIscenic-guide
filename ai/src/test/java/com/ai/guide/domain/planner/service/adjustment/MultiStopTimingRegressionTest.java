@@ -54,6 +54,17 @@ class MultiStopTimingRegressionTest {
         assertTrue(ctx.getReasonCodes().contains("MIDNIGHT_OVERFLOW"));
     }
 
+    @Test void anUnanchoredAdditionRemainsUnscheduledInsteadOfInventingAnEveningClock() {
+        var fixture = fixture(true);
+        var ctx = context(fixture, "加入测试广场和测试码头", 1, List.of(day(1)));
+        fixture.strategy.apply(ctx);
+        var stops = stops(ctx.getDraftTrip(), 0);
+        assertEquals(2, stops.size());
+        assertNull(stops.get(0).get("time"));
+        assertNull(stops.get(0).get("startTime"));
+        assertNull(stops.get(1).get("time"));
+    }
+
     @Test void repairedDayCopyIsConsumedAndInteriorDayDoesNotInheritArrivalOrDepartureBoundary() {
         var fixture = fixture(true);
         var ctx = context(fixture, "晚上18:00加入测试广场和测试码头", 2, List.of(day(1), day(2), day(3)));
@@ -104,23 +115,31 @@ class MultiStopTimingRegressionTest {
         var byId = new LinkedHashMap<String,Attraction>();
         var service = mock(AttractionService.class);
         when(service.list(null, null)).thenReturn(List.of(a, b, anchor));
+        when(service.list(eq("测试城"), isNull(), isNull())).thenReturn(List.of(a, b, anchor));
         for (var v : List.of(a,b,anchor)) { byId.put(v.getId(),v); when(service.get(v.getId())).thenReturn(v); }
         var builder = mock(ItineraryBuilderPort.class);
-        when(builder.createStop(any(), anyString(), anyString(), anyString(), anyString(), nullable(String.class))).thenAnswer(call -> {
+        when(builder.createStop(any(), anyString(), nullable(String.class), anyString(), anyString(), nullable(String.class))).thenAnswer(call -> {
             Attraction v = call.getArgument(0);
-            return new LinkedHashMap<String,Object>(Map.of("id", call.getArgument(1), "venueId", v.getId(),
-                    "name", v.getName(), "time", call.getArgument(2), "duration", call.getArgument(3), "district", v.getDistrict(), "location", v.getLocation()));
+            var stop = new LinkedHashMap<String,Object>();
+            stop.put("id", call.getArgument(1));
+            stop.put("venueId", v.getId());
+            stop.put("name", v.getName());
+            stop.put("time", call.getArgument(2));
+            stop.put("duration", call.getArgument(3));
+            stop.put("district", v.getDistrict());
+            stop.put("location", v.getLocation());
+            return stop;
         });
         var costs = mock(RouteCostProvider.class);
         when(costs.resolveFinalEdge(any(), any(), anyString())).thenReturn(new RouteCost(Duration.ofMinutes(37), 1000, 0,
                 "TRANSIT", RouteCost.RouteDataStatus.ESTIMATED, "隔离测试"));
-        var router = mockRouter ? mock(RouteAwarePlanner.class) : new RouteAwarePlanner(costs, new PlanVerifier(), new LocalPlanRepairer());
+        var router = mockRouter ? mock(RouteAwarePlanner.class) : new RouteAwarePlanner(costs, new PlanVerifier(), com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer());
         var strategy = new AddStopAdjustmentStrategy(service, builder, router, new CandidateRankingEngine(costs),
                 new ItineraryTimeEngine(), mock(DiningCategoryGrounder.class));
         return new Fixture(strategy, router, byId);
     }
     private AdjustmentContext context(Fixture f, String raw, int activeDay, List<Map<String,Object>> days) {
-        var source = new LinkedHashMap<String,Object>(); source.put("days", new ArrayList<>(days));
+        var source = new LinkedHashMap<String,Object>(); source.put("days", new ArrayList<>(days)); source.put("city", "测试城");
         return new AdjustmentContext(null, PlanAdjustmentIntent.builder().type(ConversationIntentType.ADD_STOP).rawMessage(raw).dayNumber(activeDay).build(),
                 PlanPageContext.builder().activeDay(activeDay).build(), source, mapper.convertValue(source, Map.class),
                 new TravelConstraints(), f.byId, mapper);

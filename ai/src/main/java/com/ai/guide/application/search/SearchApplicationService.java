@@ -1,7 +1,6 @@
 package com.ai.guide.application.search;
 
 import com.ai.guide.common.model.Result;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.search.model.BaiduSearchResult;
 
 import java.util.List;
@@ -31,5 +30,5 @@ public interface SearchApplicationService {
      * @param types POI 类型过滤
      * @return 候选 POI 列表
      */
-    Result<List<AmapResponseNormalizer.PoiCandidate>> searchAmap(String q, String city, String types);
+    Result<List<com.ai.guide.domain.geo.model.GeoPoiCandidate>> searchAmap(String q, String city, String types);
 }

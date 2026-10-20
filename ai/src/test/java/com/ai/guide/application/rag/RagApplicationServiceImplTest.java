@@ -6,7 +6,8 @@ import com.ai.guide.domain.rag.model.KnowledgeDocument;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
 import com.ai.guide.domain.rag.service.RagRetrievalService;
 import com.ai.guide.domain.rag.service.RerankService;
-import com.ai.guide.domain.rag.service.ScenicDataImportService;
+import com.ai.guide.domain.rag.gateway.ScenicKnowledgePort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ import static org.mockito.Mockito.*;
 
 class RagApplicationServiceImplTest {
 
-    private ScenicDataImportService scenicDataImportService;
+    private ScenicKnowledgePort scenicDataImportService;
     private RerankService rerankService;
     private RagRetrievalService ragRetrievalService;
     private KnowledgeDocumentService knowledgeDocumentService;
@@ -28,7 +29,7 @@ class RagApplicationServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        scenicDataImportService = Mockito.mock(ScenicDataImportService.class);
+        scenicDataImportService = Mockito.mock(ScenicKnowledgePort.class);
         rerankService = Mockito.mock(RerankService.class);
         ragRetrievalService = Mockito.mock(RagRetrievalService.class);
         knowledgeDocumentService = Mockito.mock(KnowledgeDocumentService.class);
@@ -36,7 +37,8 @@ class RagApplicationServiceImplTest {
                 scenicDataImportService,
                 rerankService,
                 ragRetrievalService,
-                knowledgeDocumentService
+                knowledgeDocumentService,
+                new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter()
         );
     }
 
@@ -47,7 +49,7 @@ class RagApplicationServiceImplTest {
 
     @Test
     void testRetrieveSuccessAndNullFallback() {
-        when(ragRetrievalService.retrieve(eq(""), eq("重庆"), anyMap(), eq(false)))
+        when(ragRetrievalService.retrieve(eq(""), eq(""), anyMap(), eq(false)))
                 .thenReturn(Map.of("facts", "ok"));
 
         Result<Map<String, Object>> result = service.retrieve(null);
@@ -87,7 +89,7 @@ class RagApplicationServiceImplTest {
         assertEquals(403, forbidden.getCode());
 
         UserContext.set("admin1", "admin", "ADMIN");
-        when(knowledgeDocumentService.updateDocument(eq("doc1"), any(), any(), any(), any()))
+        when(knowledgeDocumentService.updateDocument(eq("doc1"), any(), any(), any(), any(), any(), any()))
                 .thenReturn(new KnowledgeDocument());
         when(knowledgeDocumentService.toResponse(any(), eq(true)))
                 .thenReturn(Map.of("id", "doc1"));
@@ -96,8 +98,8 @@ class RagApplicationServiceImplTest {
         assertEquals(200, success.getCode());
 
         // Not found
-        when(knowledgeDocumentService.updateDocument(eq("doc2"), any(), any(), any(), any()))
-                .thenThrow(new IllegalArgumentException("文档不存在: doc2"));
+        when(knowledgeDocumentService.updateDocument(eq("doc2"), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new com.ai.guide.domain.rag.model.KnowledgeDocumentNotFoundException("doc2"));
         Result<Map<String, Object>> notFound = service.updateKnowledge("doc2", Map.of());
         assertEquals(404, notFound.getCode());
     }
@@ -138,7 +140,7 @@ class RagApplicationServiceImplTest {
     @Test
     void testImportFile() {
         // Non-admin -> 403
-        MockMultipartFile file = new MockMultipartFile("file", "test.xlsx", "text/plain", "abc".getBytes());
+        var file = new com.ai.guide.domain.rag.model.KnowledgeDocumentUpload("test.xlsx", 3, () -> "abc".getBytes());
         Result<String> forbidden = service.importFile(file);
         assertEquals(403, forbidden.getCode());
         assertEquals("需要管理员权限", forbidden.getMessage());
@@ -146,7 +148,7 @@ class RagApplicationServiceImplTest {
         UserContext.set("admin1", "admin", "ADMIN");
 
         // Empty file -> 400
-        MockMultipartFile emptyFile = new MockMultipartFile("file", "test.xlsx", "text/plain", new byte[0]);
+        var emptyFile = new com.ai.guide.domain.rag.model.KnowledgeDocumentUpload("test.xlsx", 0, () -> new byte[0]);
         Result<String> emptyResult = service.importFile(emptyFile);
         assertEquals(400, emptyResult.getCode());
         assertEquals("上传失败：文件为空", emptyResult.getMessage());

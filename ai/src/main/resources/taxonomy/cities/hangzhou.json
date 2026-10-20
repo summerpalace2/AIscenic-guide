@@ -1,0 +1,132 @@
+[
+  {
+    "id": "hz-west-lake",
+    "name": "西湖风景名胜区",
+    "displayName": "西湖风景名胜区",
+    "city": "杭州",
+    "district": "",
+    "category": "自然",
+    "tags": [
+      "湖泊",
+      "园林"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于杭州、以西湖为中心的开放式文化景观，包含湖泊、山体与历史古迹。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "西湖风景名胜区",
+      "matches": [
+        "西湖风景名胜区",
+        "杭州西湖风景名胜区"
+      ]
+    },
+    "intro": "杭州的湖泊文化景观，游览范围较大，应按实时交通与入口安排片区。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://sjfw.mct.gov.cn/site/dataservice/culdetails?curId=10&id=34878",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "hz-zhejiang-museum-gushan",
+    "name": "浙江省博物馆孤山馆区",
+    "displayName": "浙江省博物馆孤山馆区",
+    "city": "杭州",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "历史"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于杭州孤山的浙江省博物馆馆区，馆区内有文澜阁等文化建筑。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "浙江省博物馆孤山馆区",
+      "matches": [
+        "浙江省博物馆孤山馆区",
+        "浙江省博物馆(孤山馆区)"
+      ]
+    },
+    "intro": "位于杭州孤山的浙江省博物馆馆区，馆区内有文澜阁等文化建筑。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://www.zjmuseum.com.cn/cn/msp/",
+    "verifiedAt": "2026-10-13",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  },
+  {
+    "id": "hz-silk-museum",
+    "name": "中国丝绸博物馆",
+    "aliases": [
+      "国丝馆",
+      "国丝"
+    ],
+    "displayName": "中国丝绸博物馆",
+    "city": "杭州",
+    "district": "",
+    "category": "人文",
+    "tags": [
+      "博物馆",
+      "丝绸"
+    ],
+    "icon": "景",
+    "tone": "blue",
+    "location": "",
+    "summary": "位于杭州的丝绸专题博物馆，关注纺织服饰文化遗产。",
+    "walk": "入口与步行条件待核验",
+    "duration": "建议停留90分钟（可调整）",
+    "recommendedVisitMinutes": 90,
+    "indoor": null,
+    "walkDifficulty": "待核验",
+    "ticket": "票价与预约规则请核验官方信息",
+    "bestTime": "开放时间待核验",
+    "amapQuery": {
+      "keywords": "中国丝绸博物馆",
+      "matches": [
+        "中国丝绸博物馆"
+      ]
+    },
+    "intro": "位于杭州的丝绸专题博物馆，关注纺织服饰文化遗产。",
+    "fit": "按兴趣、实时开放条件与路线选择",
+    "accessibility": "UNKNOWN",
+    "environment": "UNKNOWN",
+    "sourceUrl": "https://chinasilkmuseum.com/bwggk/index_3.aspx",
+    "verifiedAt": "2026-10-17",
+    "verifiedFields": [
+      "name",
+      "city",
+      "summary",
+      "aliases"
+    ],
+    "locationStatus": "REQUIRES_LIVE_GEOCODING"
+  }
+]

@@ -25,6 +25,10 @@ class PlannerSessionRepositoryTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired private com.ai.guide.application.planner.PlanningApplicationService planningApplication;
+    @Autowired private com.ai.guide.domain.planner.gateway.PlannerSaveUseCasePort plannerSave;
+
+
     @Test
     void idempotencyReturnsSameSessionAndRevision() {
         String key = "repo-test-" + UUID.randomUUID();
@@ -86,6 +90,46 @@ class PlannerSessionRepositoryTest {
         PlannerSessionRepository.StoredSession legacy = repository.find(
                 created.session().sessionId(), "ANONYMOUS", owner, created.accessToken());
         assertTrue(legacy.appliedPreferences().isEmpty());
+    }
+
+    @Test
+    void pinnedStopIdsPersistWithTheTripRevisionAndSurviveRepositoryReadback() {
+        String owner = "pins-owner-" + UUID.randomUUID();
+        var trip = new java.util.LinkedHashMap<String,Object>(Map.of("version",1,"days",List.of(
+                Map.of("day",1,"stops",List.of(Map.of("id","fixed-stop","venueId","venue"))))));
+        var created = repository.create("USER", owner, "pins snapshot", Map.of(),
+                AppliedPreferencesSnapshot.empty(), trip, "pins-" + UUID.randomUUID(), "pins-fp");
+        trip.put("pinnedStopIds", List.of("fixed-stop"));
+        trip.put("version",2);
+        var updated = repository.update(created.session(),trip,1,"PINS_UPDATED","pins","",List.of());
+        assertEquals("UPDATED",updated.status());
+        var reloaded = repository.find(created.session().sessionId(),"USER",owner,"");
+        assertNotNull(reloaded);
+        assertEquals(2,reloaded.currentVersion());
+        assertEquals(List.of("fixed-stop"),PlannerPins.read(reloaded.trip()));
+        assertEquals("CONFLICT",repository.update(created.session(),Map.of("version",2),1,
+                "STALE","stale","",List.of()).status());
+        assertEquals(List.of("fixed-stop"),PlannerPins.read(repository.find(created.session().sessionId(),"USER",owner,"").trip()));
+    }
+    @Test void explicitSessionUnpinPersistsToFormalTripThroughAuthenticatedSaveBridge() {
+        String owner = "pin-lifecycle-" + UUID.randomUUID();
+        var trip = new java.util.LinkedHashMap<String,Object>(Map.of("version",1,"title","Pin lifecycle",
+                "city","重庆","days",List.of(Map.of("day",1,"stops",List.of(
+                        Map.of("id","fixed-stop","venueId","cq-hongyadong","name","洪崖洞")))),
+                "pinnedStopIds",List.of("fixed-stop")));
+        var created = repository.create("USER",owner,"pin lifecycle",Map.of(),AppliedPreferencesSnapshot.empty(),
+                trip,"pin-lifecycle-"+UUID.randomUUID(),"pin-lifecycle-fp");
+        var actor = new com.ai.guide.domain.planner.model.PlannerSaveActor(owner,false);
+        var first = plannerSave.save(actor,created.session().sessionId(),"");
+        assertTrue(first.serviceStatus()<400);
+        var changed = planningApplication.updatePins(new com.ai.guide.application.planner.PlanningActor(owner,false),
+                created.session().sessionId(),new com.ai.guide.domain.planner.model.PlannerPinsRequest(1,List.of(),List.of("fixed-stop"),""));
+        assertEquals(200,changed.status());
+        var saved = plannerSave.save(actor,created.session().sessionId(),"");
+        assertTrue(saved.serviceStatus()<400);
+        var formal = (com.ai.guide.domain.trip.model.Trip)saved.body().get("trip");
+        assertEquals(List.of(),PlannerPins.read(formal.plan()));
+        assertEquals(first.body().get("tripId"),saved.body().get("tripId"));
     }
 }
 

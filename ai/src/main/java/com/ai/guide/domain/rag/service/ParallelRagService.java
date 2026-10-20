@@ -1,5 +1,7 @@
 package com.ai.guide.domain.rag.service;
 
+import com.ai.guide.domain.rag.gateway.ScenicKnowledgePort;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -27,7 +29,7 @@ public class ParallelRagService {
 
     private static final Logger log = LoggerFactory.getLogger(ParallelRagService.class);
 
-    private final ScenicDataImportService dataImportService;
+    private final ScenicKnowledgePort dataImportService;
     /** Spring 托管的并行检索线程池，避免每个 Service 实例各自创建线程。 */
     private final ExecutorService executor;
 
@@ -40,7 +42,7 @@ public class ParallelRagService {
     /** 最终返回的最大碎片数 */
     private static final int FINAL_LIMIT = 12;
 
-    public ParallelRagService(ScenicDataImportService dataImportService,
+    public ParallelRagService(ScenicKnowledgePort dataImportService,
                               @Qualifier("parallelRagExecutor") ExecutorService executor) {
         this.dataImportService = dataImportService;
         this.executor = executor;

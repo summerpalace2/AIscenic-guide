@@ -1,6 +1,6 @@
 package com.ai.guide.infrastructure.rag.qdrant;
 
-import com.ai.guide.domain.rag.pipeline.ProductionV2ChunkService;
+import com.ai.guide.infrastructure.rag.importer.ProductionV2ChunkService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.qdrant.client.ConditionFactory;
@@ -42,6 +42,7 @@ public class ProductionV2QdrantImporter {
     public static final String LEGACY_COLLECTION = "scenic_guide";
     public static final String DEFAULT_COLLECTION = "scenic_guide_production_v3_rebuild";
     public static final String ACTIVATION_NAMESPACE = "production-v2";
+    private static final String INDEX_OWNER = "seed-snapshot";
 
     private final ProductionV2ChunkService chunkService;
     private final QdrantClient qdrantClient;
@@ -90,7 +91,7 @@ public class ProductionV2QdrantImporter {
                         chunk.sourceUpdatedAt(),
                         chunk.accessedAt(),
                         chunk.chunkIndex(),
-                        chunk.chunkCount()))
+                        chunk.chunkCount(), chunk.scope(), chunk.city()))
                 .toList();
     }
 
@@ -162,13 +163,16 @@ public class ProductionV2QdrantImporter {
                 points.add(toPoint(payload, vector));
             }
 
-            boolean collectionCreated = ensureCollection(vectorDimension);
+            boolean emptyWithoutCollection = points.isEmpty() && !collectionExists();
+            // Empty snapshots still revoke their former seed points. An absent collection
+            // needs no creation; an existing one must satisfy the same production contract.
+            boolean collectionCreated = !emptyWithoutCollection && ensureCollection(points.isEmpty() ? 1536 : vectorDimension);
             try {
                 if (!points.isEmpty()) {
                     qdrantClient.upsertAsync(collectionName, points).get();
                 }
-                int stalePoints = reconcileStalePoints(expectedPointIds(payloads));
-                long storedCount = qdrantClient.countAsync(collectionName).get();
+                int stalePoints = emptyWithoutCollection ? 0 : reconcileStalePoints(expectedPointIds(payloads));
+                long storedCount = emptyWithoutCollection ? 0 : qdrantClient.countAsync(collectionName, seedOwnershipFilter(), true).get();
                 int successfulPoints = points.size();
                 int failedPoints = expectedPoints - successfulPoints;
                 String verificationStatus = storedCount == expectedPoints ? "PASS" : "FAIL";
@@ -191,6 +195,12 @@ public class ProductionV2QdrantImporter {
             objectMapper.writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
         }
         return report;
+    }
+
+    private boolean collectionExists() throws IOException {
+        try { return qdrantClient.collectionExistsAsync(collectionName).get(); }
+        catch (InterruptedException error) { Thread.currentThread().interrupt(); throw new IOException("Qdrant collection lookup interrupted", error); }
+        catch (java.util.concurrent.ExecutionException error) { throw new IOException("Qdrant collection lookup failed", error.getCause()); }
     }
 
     private boolean ensureCollection(int vectorDimension) throws IOException {
@@ -229,9 +239,7 @@ public class ProductionV2QdrantImporter {
         Points.ScrollPoints.Builder builder = Points.ScrollPoints.newBuilder()
                 .setCollectionName(collectionName)
                 .setLimit(1000)
-                .setFilter(Points.Filter.newBuilder()
-                        .addMust(ConditionFactory.matchKeyword("activation_namespace", ACTIVATION_NAMESPACE))
-                        .build());
+                .setFilter(seedOwnershipFilter());
         Points.PointId offset = null;
         while (true) {
             if (offset != null) {
@@ -257,10 +265,27 @@ public class ProductionV2QdrantImporter {
         return staleIds.size();
     }
 
+    private Points.Filter seedOwnershipFilter() {
+        // Old seed payloads had a document identity but no managed source or owner.
+        // Unrecognized points remain untouched; ownership is never inferred from body text.
+        var legacySeed = Points.Filter.newBuilder()
+                .addMust(ConditionFactory.isEmpty("index_owner"))
+                .addMust(ConditionFactory.isEmpty("source"))
+                .addMustNot(ConditionFactory.isEmpty("knowledge_document_id")).build();
+        return Points.Filter.newBuilder()
+                .addMust(ConditionFactory.matchKeyword("activation_namespace", ACTIVATION_NAMESPACE))
+                .addMust(ConditionFactory.filter(Points.Filter.newBuilder()
+                        .addShould(ConditionFactory.matchKeyword("index_owner", INDEX_OWNER))
+                        .addShould(ConditionFactory.filter(legacySeed)).build())).build();
+    }
+
     private Points.PointStruct toPoint(ProvenancePayload payload, float[] vector) {
         Map<String, JsonWithInt.Value> pointPayload = new HashMap<>();
         pointPayload.put("activation_namespace", ValueFactory.value(ACTIVATION_NAMESPACE));
+        pointPayload.put("index_owner", ValueFactory.value(INDEX_OWNER));
         pointPayload.put("knowledge_document_id", ValueFactory.value(payload.knowledgeDocumentId()));
+        pointPayload.put("scope", ValueFactory.value(payload.scope()));
+        pointPayload.put("city", ValueFactory.value(payload.city()));
         pointPayload.put("entity_id", ValueFactory.value(payload.entityId()));
         pointPayload.put("source_document_id", ValueFactory.value(payload.sourceDocumentId()));
         pointPayload.put("source_id", ValueFactory.value(payload.sourceDocumentId()));
@@ -271,7 +296,7 @@ public class ProductionV2QdrantImporter {
         pointPayload.put("content", ValueFactory.value(payload.content()));
         pointPayload.put("trust_level", ValueFactory.value(payload.trustLevel()));
         pointPayload.put("verification_result", ValueFactory.value(payload.verificationResult()));
-        pointPayload.put("rag_eligible", ValueFactory.value(payload.ragEligible()));
+        pointPayload.put("rag_eligible", ValueFactory.value(payload.ragEligible() && !"UNSPECIFIED".equals(payload.scope())));
         pointPayload.put("version", ValueFactory.value(payload.version()));
         pointPayload.put("provenance", ValueFactory.value(payload.provenance()));
         pointPayload.put("source_updated_at", ValueFactory.value(payload.sourceUpdatedAt()));
@@ -334,7 +359,7 @@ public class ProductionV2QdrantImporter {
             String sourceUpdatedAt,
             String accessedAt,
             int chunkIndex,
-            int chunkCount) {
+            int chunkCount, String scope, String city) {
 
         /** 为仍使用旧 source_id 名称的调用方保留的向后兼容别名。 */
         public String sourceId() {

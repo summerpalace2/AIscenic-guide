@@ -1,0 +1,21 @@
+{
+  "scope": "production domain/planner + domain/dining + domain/search + application/chat Java",
+  "files": 124,
+  "checks": [
+    "coordinate_literal",
+    "named_person_or_noise_list",
+    "fixed_meal_insertion",
+    "fixed_meal_switch",
+    "city_or_place_literal",
+    "food_or_brand_literal",
+    "inline_dining_default",
+    "fixed_clock_literal",
+    "poi_fallback_business_keyword",
+    "meal_slot_regex_vocabulary",
+    "inline_meal_or_search_category_label",
+    "inline_dining_candidate_limit",
+    "inline_nearby_poi_suffix"
+  ],
+  "violations": [],
+  "limitation": "Static rules do not prove semantic generalization, route validity or absence of every literal."
+}

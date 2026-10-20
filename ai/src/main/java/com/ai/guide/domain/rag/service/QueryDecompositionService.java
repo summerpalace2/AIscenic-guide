@@ -2,11 +2,10 @@ package com.ai.guide.domain.rag.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -40,11 +39,11 @@ public class QueryDecompositionService {
             {"needSearch": true/false, "subQueries": ["子问题1", "子问题2", ...]}
             """;
 
-    private final ChatClient chatClient;
+    private final LanguageModelPort modelGateway;
     private final ObjectMapper objectMapper;
 
-    public QueryDecompositionService(ChatClient.Builder builder) {
-        this.chatClient = builder.build();
+    public QueryDecompositionService(LanguageModelPort modelGateway) {
+        this.modelGateway = modelGateway;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -60,10 +59,9 @@ public class QueryDecompositionService {
             log.info("[Deep] Step1 LLM 拆解中... query=\"{}\"", query);
             long t0 = System.currentTimeMillis();
 
-            String response = chatClient.prompt()
-                    .messages(new SystemMessage(DECOMPOSE_PROMPT), new UserMessage(query))
-                    .call()
-                    .content();
+            String response = modelGateway.completeText(List.of(
+                    new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, DECOMPOSE_PROMPT),
+                    new LanguageModelMessage(LanguageModelMessage.Role.USER, query)));
 
             long llmTime = System.currentTimeMillis() - t0;
             log.info("[Deep] Step1 LLM 完成, 耗时={}ms, 原始响应={}", llmTime, response.substring(0, Math.min(120, response.length())));

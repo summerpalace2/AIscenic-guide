@@ -1,6 +1,5 @@
 package com.ai.guide.domain.search.gateway;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import java.util.List;
 
 /**
@@ -18,5 +17,5 @@ public interface PoiSearchGatewayPort {
      * @param city     检索城市范围
      * @return POI 候选结果列表（若无结果或异常返回空列表，不返回 null）
      */
-    List<AmapResponseNormalizer.PoiCandidate> searchPoiCandidates(String keywords, String city);
+    List<com.ai.guide.domain.geo.model.GeoPoiCandidate> searchPoiCandidates(String keywords, String city);
 }

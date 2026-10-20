@@ -1,0 +1,9 @@
+{
+  "dedicatedPgRedisStopped": true,
+  "dataEvidenceRetained": true,
+  "userApplicationServicesModified": false,
+  "ports": [
+    51732,
+    51733
+  ]
+}

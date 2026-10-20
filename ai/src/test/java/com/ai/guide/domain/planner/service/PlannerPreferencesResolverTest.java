@@ -24,7 +24,13 @@ import static org.mockito.Mockito.when;
 
 class PlannerPreferencesResolverTest {
 
-    private final TravelConstraintParser parser = new TravelConstraintParser();
+    private final TravelConstraintParser parser = configuredParser();
+
+    private static TravelConstraintParser configuredParser() {
+        TravelConstraintParser parser = new TravelConstraintParser();
+        parser.setTaxonomy(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+        return parser;
+    }
 
     @AfterEach
     void clearUserContext() {

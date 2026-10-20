@@ -19,6 +19,8 @@ class RedisChatMemorySafetySnapshotTest {
         var stored = new HashMap<String, String>(); var mapper = new ObjectMapper();
         when(redis.opsForValue()).thenReturn(values); when(values.get(anyString())).thenAnswer(i -> stored.get(i.getArgument(0)));
         when(redis.delete(anyString())).thenAnswer(i -> stored.remove(i.getArgument(0)) != null);
+        doAnswer(i -> { List<String> keys=i.getArgument(1);for(int n=0;n<5;n++)stored.remove(keys.get(n));
+            stored.put(keys.get(5),"1");return 1L; }).when(redis).execute(eq(RedisChatSessionScripts.CLEAR),anyList(),any(Object[].class));
         var memory = new RedisChatMemory(redis, mapper, mock(ExecutorService.class));
         stored.put("s:summary_snapshot", "{\"summary\":\"legacy\",\"coveredThrough\":12}");
         assertEquals(12, memory.summarySnapshot("s").coveredThrough()); assertTrue(memory.summarySnapshot("s").criticalConstraints().isEmpty());
@@ -35,6 +37,7 @@ class RedisChatMemorySafetySnapshotTest {
     }
     @Test @SuppressWarnings("unchecked") void atomicBudgetRejectionIsVisibleAndOriginalStatementIsNotClippedBeforeStorage() {
         var redis = mock(RedisTemplate.class); var mapper = new ObjectMapper();
+        when(redis.opsForValue()).thenReturn(mock(ValueOperations.class));
         doReturn("OVERFLOW").when(redis).execute(any(RedisScript.class), anyList(), any(Object[].class));
         var memory = new RedisChatMemory(redis, mapper, mock(ExecutorService.class));
         String statement = "我对花生过敏，不能吃花生" + "长说明".repeat(3000);

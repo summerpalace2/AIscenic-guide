@@ -7,11 +7,14 @@ import com.ai.guide.domain.planner.engine.ItineraryTimeEngine;
 import com.ai.guide.domain.planner.engine.RouteAwarePlanner;
 import com.ai.guide.domain.planner.engine.RouteCost;
 import com.ai.guide.domain.planner.engine.RouteCostProvider;
+import com.ai.guide.domain.planner.engine.PlannerScoringPolicy;
 import com.ai.guide.domain.planner.model.ConversationIntentType;
 import com.ai.guide.domain.planner.model.PlanAdjustmentIntent;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.PlannerService;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -40,6 +43,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
     private final CandidateRankingEngine candidateRankingEngine;
     private final ItineraryTimeEngine itineraryTimeEngine;
     private final RouteCostProvider routeCostProvider;
+    private PlannerTaxonomyPort taxonomy = TaxonomyPort.empty();
 
     @Autowired
     public ReplanDayAdjustmentStrategy(AttractionService attractionService,
@@ -54,6 +58,10 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         this.candidateRankingEngine = candidateRankingEngine;
         this.itineraryTimeEngine = itineraryTimeEngine;
         this.routeCostProvider = routeCostProvider;
+    }
+
+    public void setTaxonomy(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
     }
 
     @Override
@@ -244,7 +252,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         List<Map<String, Object>> newStops = new ArrayList<>();
         for (Map<String, Object> originalStop : stops) {
             String stopId = String.valueOf(originalStop.get("id"));
-            if (isProtectedStop(originalStop, pinned, constraints) || (scoped && (!inScope(originalStop, intent) || isDiningStop(originalStop)))) {
+            if (isProtectedStop(originalStop, pinned, constraints) || (scoped && (!inScope(originalStop, intent) || isDiningStop(originalStop, taxonomy)))) {
                 tripUsed.add(String.valueOf(originalStop.get("venueId")));
                 newStops.add(originalStop);
                 continue;
@@ -260,7 +268,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                     prevAttr, nextAttr, startCoord);
 
             Attraction replacement = null;
-            if (requestedTargetAttr != null && !targetInjected && !isDiningStop(originalStop)) {
+            if (requestedTargetAttr != null && !targetInjected && !isDiningStop(originalStop, taxonomy)) {
                 replacement = requestedTargetAttr;
                 targetInjected = true;
             } else {
@@ -289,7 +297,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
             Map<String, Object> added = itineraryBuilder.createStop(
                     requestedTargetAttr,
                     newStopId,
-                    "10:00",
+                    "待安排",
                     requestedTargetAttr.getDuration(),
                     "根据偏好新增为" + requestedTargetAttr.getName() + "（" + PlannerService.stripTrailingPunctuation(requestedTargetAttr.getSummary()) + "）。",
                     requestedTargetAttr.getIntro()
@@ -299,16 +307,17 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
             tripUsed.add(requestedTargetAttr.getId());
         }
 
-        // 自适应容量修剪：重排后若单日非餐饮景点超过 4 个，修剪冗余非固定景点，防止总耗时超过 660 分钟
+        // Apply the configured day density policy while preserving pinned and protected stops.
         int nonDiningCount = 0;
         for (Map<String, Object> s : newStops) {
-            if (!isDiningStop(s)) nonDiningCount++;
+            if (!isDiningStop(s, taxonomy)) nonDiningCount++;
         }
-        while (!scoped && nonDiningCount > 4) {
+        int maximumNonDiningStops = PlannerScoringPolicy.limit(taxonomy, "maxReplanNonDiningStops");
+        while (!scoped && maximumNonDiningStops > 0 && nonDiningCount > maximumNonDiningStops) {
             int removeIdx = -1;
             for (int i = newStops.size() - 1; i >= 0; i--) {
                 Map<String, Object> s = newStops.get(i);
-                if (!isDiningStop(s) && !isProtectedStop(s, pinned, constraints)) {
+                if (!isDiningStop(s, taxonomy) && !isProtectedStop(s, pinned, constraints)) {
                     removeIdx = i;
                     break;
                 }
@@ -327,7 +336,7 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
             // Restore protected business fields before deriving routes from the final
             // predecessor. Their old incoming edge belongs to the old route.
             for (int i = 0; i < stops.size(); i++)
-                if (!inScope(stops.get(i), intent) || isDiningStop(stops.get(i)) || isProtectedStop(stops.get(i), pinned, constraints))
+                if (!inScope(stops.get(i), intent) || isDiningStop(stops.get(i), taxonomy) || isProtectedStop(stops.get(i), pinned, constraints))
                     newStops.set(i, preservedStops.get(i));
             day.put("stops", newStops);
         }
@@ -353,14 +362,15 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                                             String slotTime) {
         List<Attraction> catalog = attractionService.list(null, null);
         if (intent != null && intent.getPreferences() != null && intent.getPreferences().contains("NIGHT_VIEW")) {
-            catalog = catalog.stream().filter(a -> "夜景".equals(a.getCategory()) || a.matchesAnyTagOrFeature("夜景", "临江")).toList();
+            List<String> categories = taxonomy.getHints("plannerNightCategories");
+            String[] features = taxonomy.getHints("plannerNightTags").toArray(String[]::new);
+            catalog = catalog.stream().filter(a -> (a.getCategory() != null && categories.contains(a.getCategory()))
+                    || a.matchesAnyTagOrFeature(features)).toList();
         }
         boolean userRequestedSameDistrict = (intent != null && intent.getPreferences() != null && intent.getPreferences().contains("SAME_DISTRICT"))
                 || (intent != null && intent.getRawMessage() != null && (intent.getRawMessage().contains("同片区") || intent.getRawMessage().contains("同区")));
 
         Attraction oldAttr = context != null ? context.oldAttr() : null;
-        boolean oldDistant = oldAttr != null && isDistantSuburban(oldAttr.getDistrict());
-        boolean allowDistant = oldDistant || (constraints != null && constraints.getStartPlace() != null && isDistantSuburban(constraints.getStartPlace()));
         String targetDistrict = oldAttr != null && oldAttr.getDistrict() != null && !oldAttr.getDistrict().isBlank()
                 ? oldAttr.getDistrict() : "";
 
@@ -369,7 +379,6 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                     .filter(a -> !used.contains(a.getId()) && (oldAttr == null || !a.getId().equals(oldAttr.getId())))
                     .filter(a -> safe(a.getDistrict()).equals(targetDistrict) || targetDistrict.contains(safe(a.getDistrict())) || safe(a.getDistrict()).contains(targetDistrict))
                     .filter(a -> candidateRankingEngine.isOpeningCompatible(a, slotTime, itineraryTimeEngine))
-                    .filter(a -> allowDistant || !isDistantSuburban(a.getDistrict()))
                     .map(a -> new CandidateRankingEngine.ScoredCandidate(a, candidateRankingEngine.scoreCandidate(a, context, constraints, intent)))
                     .sorted(Comparator.comparingInt(CandidateRankingEngine.ScoredCandidate::score).reversed()
                             .thenComparingInt(sc -> -itineraryBuilder.catalogRank(sc.attraction().getId())))
@@ -384,7 +393,6 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
         return catalog.stream()
                 .filter(a -> !used.contains(a.getId()) && (oldAttr == null || !a.getId().equals(oldAttr.getId())))
                 .filter(a -> candidateRankingEngine.isOpeningCompatible(a, slotTime, itineraryTimeEngine))
-                .filter(a -> allowDistant ? (oldAttr == null || isDistantSuburban(a.getDistrict()) == oldDistant) : !isDistantSuburban(a.getDistrict()))
                 .map(a -> new CandidateRankingEngine.ScoredCandidate(a, candidateRankingEngine.scoreCandidate(a, context, constraints, intent)))
                 .sorted(Comparator.comparingInt(CandidateRankingEngine.ScoredCandidate::score).reversed()
                         .thenComparingInt(sc -> -itineraryBuilder.catalogRank(sc.attraction().getId())))
@@ -412,7 +420,6 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                 .filter(a -> "INDOOR".equals(a.getEffectiveEnvironment()) || "MIXED".equals(a.getEffectiveEnvironment()))
                 .filter(a -> !candidateRankingEngine.isAvoided(a, constraints))
                 .filter(a -> candidateRankingEngine.isOpeningCompatible(a, slotTime, itineraryTimeEngine))
-                .filter(a -> !candidateRankingEngine.isCrossDistrictInviable(previous, a) && !candidateRankingEngine.isCrossDistrictInviable(a, next))
                 .toList();
 
         if (original != null) {
@@ -437,11 +444,11 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                                       Attraction previous,
                                       Attraction next,
                                       String preference) {
-        double score = "INDOOR".equals(candidate.getEffectiveEnvironment()) ? 70 : 42;
-        if (original != null && safe(candidate.getDistrict()).equals(safe(original.getDistrict()))) score += 80;
-        if (previous != null && safe(candidate.getDistrict()).equals(safe(previous.getDistrict()))) score += 18;
-        if (next != null && safe(candidate.getDistrict()).equals(safe(next.getDistrict()))) score += 18;
-        if ("低".equals(candidate.getWalkDifficulty())) score += 15;
+        double score = "INDOOR".equals(candidate.getEffectiveEnvironment()) ? rainScore("rainIndoor") : rainScore("rainMixed");
+        if (original != null && safe(candidate.getDistrict()).equals(safe(original.getDistrict()))) score += rainScore("rainSameAsOriginal");
+        if (previous != null && safe(candidate.getDistrict()).equals(safe(previous.getDistrict()))) score += rainScore("rainSameAsPrevious");
+        if (next != null && safe(candidate.getDistrict()).equals(safe(next.getDistrict()))) score += rainScore("rainSameAsNext");
+        if (taxonomy.getHints("walkingEasyLevels").contains(candidate.getWalkDifficulty())) score += rainScore("rainLowWalking");
 
         List<Attraction> neighbors = new ArrayList<>();
         if (previous != null) neighbors.add(previous);
@@ -453,19 +460,21 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
                         ? routeCostProvider.calculate(neighbor, candidate, preference)
                         : routeCostProvider.calculate(candidate, neighbor, preference);
             } catch (RuntimeException e) {
-                score -= 40;
+                score += rainScore("rainRouteErrorPenalty");
                 continue;
             }
             if (cost == null || cost.status() == RouteCost.RouteDataStatus.UNAVAILABLE) {
-                score -= 20;
+                score += rainScore("rainRouteUnavailablePenalty");
             } else {
                 long minutes = cost.duration() == null ? 0 : cost.duration().toMinutes();
-                if (minutes > 150) return -10000;
-                score -= Math.min(180, minutes) * 0.45;
+                if (minutes > rainScore("rainMaximumRouteMinutes")) return rainScore("rainInfeasibleScore");
+                score -= Math.min(rainScore("rainRoutePenaltyCapMinutes"), minutes) * rainScore("rainRoutePenaltyPerMinute");
             }
         }
         return score;
     }
+
+    private double rainScore(String key) { return PlannerScoringPolicy.parameter(taxonomy, key); }
 
     private void restoreProtectedRainStops(List<Map<String, Object>> resolvedDays,
                                            int dayNumber,
@@ -532,11 +541,6 @@ public class ReplanDayAdjustmentStrategy implements AdjustmentStrategy {
             edges.add(edge);
         }
         return edges;
-    }
-
-    private boolean isDistantSuburban(String district) {
-        if (district == null) return false;
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足") || district.contains("江津");
     }
 
     private List<Map<String, Object>> resolveAffectedDay(Map<String, Object> trip, Integer dayNumber,

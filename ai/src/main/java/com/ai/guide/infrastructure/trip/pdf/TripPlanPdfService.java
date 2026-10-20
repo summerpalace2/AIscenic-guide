@@ -1,6 +1,7 @@
 package com.ai.guide.infrastructure.trip.pdf;
 
 import com.ai.guide.domain.trip.gateway.TripPlanPdfExportPort;
+import com.ai.guide.infrastructure.pdf.PdfFontProvider;
 import com.ai.guide.domain.trip.service.TripPlanLimits;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lowagie.text.Anchor;
@@ -20,7 +21,6 @@ import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -37,8 +37,16 @@ import java.util.Map;
 @Service
 public class TripPlanPdfService implements TripPlanPdfExportPort {
 
-    private static volatile BaseFont CACHED_FONT;
-    private static final Object FONT_LOCK = new Object();
+    private final PdfFontProvider fonts;
+
+    public TripPlanPdfService() {
+        this(new PdfFontProvider());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TripPlanPdfService(PdfFontProvider fonts) {
+        this.fonts = fonts;
+    }
     private static final java.util.concurrent.Semaphore PDF_SEMAPHORE = new java.util.concurrent.Semaphore(4);
     private TripPlanLimits planLimits = new TripPlanLimits(new ObjectMapper());
 
@@ -59,7 +67,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             Document document = new Document(PageSize.A4, 36, 36, 40, 36);
             PdfWriter writer = PdfWriter.getInstance(document, output);
 
-            BaseFont baseFont = getChineseFont();
+            BaseFont baseFont = fonts.getFont();
             String nowStr = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").format(LocalDateTime.now());
             String sourceMode = text(plan.get("sourceMode"), "高德地图联动");
             writer.setPageEvent(new PageHeaderFooterEvent(baseFont, nowStr, sourceMode));
@@ -107,8 +115,8 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             Font noticeBodyFont = new Font(baseFont, 8f, Font.NORMAL, new Color(100, 75, 5));
 
             // 行程数据提取
-            String title = text(plan.get("title"), "重庆定制旅行手册");
-            String subtitle = text(plan.get("subtitle"), "慢节奏 · 人文探索 · 山城地标专属定制路书");
+            String title = text(plan.get("title"), "定制旅行手册");
+            String subtitle = text(plan.get("subtitle"), "按偏好生成的旅行计划");
             Map<?, ?> constraints = plan.get("constraints") instanceof Map<?, ?> m ? m : Map.of();
             Map<?, ?> planContext = plan.get("planContext") instanceof Map<?, ?> m ? m : Map.of();
             Map<?, ?> sourceStatus = plan.get("sourceStatus") instanceof Map<?, ?> m ? m : Map.of();
@@ -122,7 +130,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             }
 
             // 1. 顶部品牌与行程大标题
-            Paragraph eyebrow = new Paragraph("悠 悠 智 策  ·  CHONGQING TAILORED TRAVEL HANDBOOK", eyebrowFont);
+            Paragraph eyebrow = new Paragraph("TRAVEL HANDBOOK", eyebrowFont);
             eyebrow.setSpacingBefore(0);
             eyebrow.setSpacingAfter(2);
             document.add(eyebrow);
@@ -143,7 +151,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
                         .trim();
             }
             if (cleanSubtitle.isBlank()) {
-                cleanSubtitle = "慢节奏 · 人文探索 · 山城地标专属定制路书";
+                cleanSubtitle = "按偏好生成的旅行计划";
             }
             Paragraph subTitlePara = new Paragraph(cleanSubtitle, subtitleFont);
             subTitlePara.setSpacingAfter(8);
@@ -362,7 +370,8 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
                     // 高德导航链接
                     String location = text(stop.get("location"), "");
                     String routeMode = routeMode(stop, planContext);
-                    String navUrl = buildAmapNavUrl(stopName, location, routeMode);
+                    String navUrl = buildAmapNavUrl(stopName, location, routeMode,
+                            text(constraints.get("destination"), text(plan.get("destination"), "")));
                     Anchor navLink = new Anchor(hasCoordinates(location)
                             ? (isDining ? "🍴 在高德地图打开餐厅导航 →" : "📍 在高德地图打开目的地导航 →")
                             : "📍 在高德地图搜索该地点 →", isDining ? diningLinkFont : linkFont);
@@ -427,18 +436,6 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
         }
     }
 
-    private BaseFont getChineseFont() throws Exception {
-        if (CACHED_FONT != null) {
-            return CACHED_FONT;
-        }
-        synchronized (FONT_LOCK) {
-            if (CACHED_FONT == null) {
-                CACHED_FONT = createChineseFont();
-            }
-            return CACHED_FONT;
-        }
-    }
-
     private static String truncate(String text, int maxLength) {
         if (text == null) return "";
         if (text.length() <= maxLength) return text;
@@ -498,7 +495,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
         return transition;
     }
 
-    private static String buildAmapNavUrl(String name, String location, String mode) {
+    private static String buildAmapNavUrl(String name, String location, String mode, String city) {
         String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
         String coords = location == null ? "" : location.trim();
         if (hasCoordinates(coords)) {
@@ -508,7 +505,9 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             if (mode != null && !mode.isBlank()) url.append("&mode=").append(mode);
             return url.append("&src=yuyouzhice&coordinate=gaode&callnative=1").toString();
         }
-        return "https://uri.amap.com/search?keyword=" + encodedName + "&city=500000&src=yuyouzhice&callnative=1";
+        String encodedCity = URLEncoder.encode(city == null ? "" : city.trim(), StandardCharsets.UTF_8);
+        String cityParameter = encodedCity.isBlank() ? "" : "&city=" + encodedCity;
+        return "https://uri.amap.com/search?keyword=" + encodedName + cityParameter + "&src=yuyouzhice&callnative=1";
     }
 
     private static boolean hasCoordinates(String location) {
@@ -651,26 +650,6 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
         return String.valueOf(value);
     }
 
-    private BaseFont createChineseFont() throws Exception {
-        String[] candidates = {
-                "C:/Windows/Fonts/msyh.ttc,0",
-                "C:/Windows/Fonts/simhei.ttf",
-                "C:/Windows/Fonts/simsun.ttc,0",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc,0",
-                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc,0",
-                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc,0"
-        };
-        for (String path : candidates) {
-            String filePath = path.endsWith(",0") ? path.substring(0, path.length() - 2) : path;
-            if (!new File(filePath).exists()) continue;
-            try {
-                return BaseFont.createFont(path, BaseFont.IDENTITY_H, BaseFont.EMBEDDED);
-            } catch (Exception ignored) {
-            }
-        }
-        return BaseFont.createFont("STSong-Light", "UniGB-UCS2-H", BaseFont.NOT_EMBEDDED);
-    }
-
     static class PageHeaderFooterEvent extends PdfPageEventHelper {
         private final BaseFont baseFont;
         private final String generatedDate;
@@ -693,7 +672,7 @@ public class TripPlanPdfService implements TripPlanPdfExportPort {
             try {
                 headerTable.setWidths(new float[]{70f, 30f});
 
-                PdfPCell leftCell = new PdfPCell(new Phrase("悠悠智策 · 重庆专属定制旅行手册", headerFont));
+                PdfPCell leftCell = new PdfPCell(new Phrase("悠悠智策 · 定制旅行手册", headerFont));
                 leftCell.setBorder(Rectangle.BOTTOM);
                 leftCell.setBorderColor(new Color(220, 226, 232));
                 leftCell.setBorderWidth(0.5f);

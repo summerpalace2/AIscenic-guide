@@ -1,18 +1,22 @@
 package com.ai.guide.infrastructure.planner.amap;
 
+import com.ai.guide.common.context.OperationDeadline;
+
 import com.ai.guide.domain.planner.gateway.RouteGatewayPort;
 import com.ai.guide.domain.planner.model.HydrationResult;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.model.RouteOutcome;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
-import com.ai.guide.domain.planner.model.WeatherOutcome;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRouteOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
+import com.ai.guide.domain.attraction.service.AttractionPoiIdentityMatcher;
+import com.ai.guide.domain.geo.model.GeoWeatherOutcome;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.RuntimeLocationPlanner;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import com.ai.guide.infrastructure.rag.amap.AmapWebServiceClient;
 import com.ai.guide.domain.attraction.model.Attraction;
+import com.ai.guide.domain.attraction.gateway.AttractionCatalogPort;
 import com.ai.guide.domain.attraction.service.AttractionService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,7 +27,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +47,13 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     private final AttractionService attractionService;
     private final int maxPoiKeywords;
     private final Executor hydrationExecutor;
+    private long routeBatchTimeoutMs = 15000L;
+
+    @Value("${amap.web-service.hydration-route-timeout-ms:15000}")
+    public void setRouteBatchTimeoutMs(long timeoutMs) {
+        this.routeBatchTimeoutMs = Math.max(1L, timeoutMs);
+    }
+    private volatile com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort poiIdentityPolicyPort;
     @Autowired(required = false)
     private RuntimeLocationPlanner runtimeLocationPlanner;
 
@@ -61,6 +71,11 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     @Autowired(required = false)
     public void setRuntimeLocationPlanner(RuntimeLocationPlanner runtimeLocationPlanner) {
         this.runtimeLocationPlanner = runtimeLocationPlanner;
+    }
+
+    @Autowired(required = false)
+    public void setPoiIdentityPolicy(com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort policyPort) {
+        this.poiIdentityPolicyPort = policyPort;
     }
 
     public AmapPlannerGateway(AmapRouteService routeService,
@@ -91,23 +106,22 @@ public class AmapPlannerGateway implements RouteGatewayPort {
 
     /** Compatibility constructor for focused tests and callers passing ItineraryBuilderPort. */
     public AmapPlannerGateway(AmapRouteService routeService, ItineraryBuilderPort itineraryBuilder, int maxPoiKeywords) {
-        this(routeService, new AttractionService(null, null) {
-            @Override
-            public Attraction get(String id) {
-                return itineraryBuilder == null ? null : itineraryBuilder.attraction(id);
-            }
-        }, maxPoiKeywords, Runnable::run);
+        this(routeService, itineraryLookup(itineraryBuilder), maxPoiKeywords, Runnable::run);
     }
 
     /** Compatibility constructor allowing tests to assert the batch executor boundary. */
     public AmapPlannerGateway(AmapRouteService routeService, ItineraryBuilderPort itineraryBuilder,
                        int maxPoiKeywords, Executor hydrationExecutor) {
-        this(routeService, new AttractionService(null, null) {
-            @Override
-            public Attraction get(String id) {
+        this(routeService, itineraryLookup(itineraryBuilder), maxPoiKeywords, hydrationExecutor);
+    }
+
+    private static AttractionService itineraryLookup(ItineraryBuilderPort itineraryBuilder) {
+        return new AttractionService(new AttractionCatalogPort() {
+            @Override public List<Attraction> find(String district, String category) { return List.of(); }
+            @Override public Attraction findById(String id) {
                 return itineraryBuilder == null ? null : itineraryBuilder.attraction(id);
             }
-        }, maxPoiKeywords, hydrationExecutor);
+        });
     }
 
     /** Compatibility constructor for focused tests and older callers. */
@@ -131,9 +145,15 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             return new HydrationResult("演示回退模式", 0, 0, 0, true);
         }
 
+        long started = System.nanoTime();
         int poiSuccess = hydratePois(trip);
+        log.info("[PLANNER_PHASE] phase=poi latencyMs={}", (System.nanoTime() - started) / 1_000_000L);
+        started = System.nanoTime();
         int weatherSuccess = hydrateWeather(trip);
+        log.info("[PLANNER_PHASE] phase=weather latencyMs={}", (System.nanoTime() - started) / 1_000_000L);
+        started = System.nanoTime();
         int routeSuccess = hydrateRoutes(trip);
+        log.info("[PLANNER_PHASE] phase=routes latencyMs={}", (System.nanoTime() - started) / 1_000_000L);
         refreshStatus(trip, poiSuccess, routeSuccess, weatherSuccess);
         Map<String, Object> status = mutableMap(trip.get("sourceStatus"));
         boolean fallback = Boolean.TRUE.equals(status.get("fallback"));
@@ -148,7 +168,8 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     public Map<String, Object> planFromLocation(TravelConstraints constraints, int version) {
         if (runtimeLocationPlanner == null) return null;
         Map<String, Object> trip = runtimeLocationPlanner.plan(constraints, version);
-        if (trip != null && !trip.isEmpty() && !allStops(trip).isEmpty()) {
+        if (trip != null && !trip.isEmpty() && !allStops(trip).isEmpty()
+                && !OperationDeadline.expired()) {
             int weatherSuccess = hydrateWeather(trip);
             Map<String, Object> status = mutableMap(trip.get("sourceStatus"));
             status.put("weather", weatherSuccess > 0 ? "已查询" : "待确认");
@@ -177,12 +198,27 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             addStrings(rawKeywords, attraction.getAmapQuery().get("keywords"));
             addStrings(rawKeywords, attraction.getAmapQuery().get("alternatives"));
             List<String> keywords = normalizeKeywords(rawKeywords);
-            AmapResponseNormalizer.PoiCandidate selected = null;
+            com.ai.guide.domain.geo.model.GeoPoiCandidate selected = null;
             String lastReason = "";
             for (String keyword : keywords) {
-                PoiOutcome outcome = routeService.searchPoi(keyword, tripCity(trip));
+                GeoPoiOutcome outcome = routeService.searchPoi(keyword, tripCity(trip));
                 lastReason = outcome.reason();
-                selected = select(outcome.candidates(), attraction);
+                String preselectedPoiId = text(stop.get("preselectedPoiId"));
+                List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates = outcome.candidates();
+                if (!preselectedPoiId.isBlank() && candidates != null) {
+                    var preselectedCoordinate = com.ai.guide.domain.geo.model.GeoCoordinates.parse(text(stop.get("location")));
+                    candidates = candidates.stream().filter(poi -> poi != null
+                            && preselectedPoiId.equals(text(poi.poiId()))
+                            && preselectedCoordinate != null && preselectedCoordinate.equals(poi.coordinate())).toList();
+                }
+                selected = select(candidates, attraction, tripCity(trip));
+                if (selected != null && !preselectedPoiId.isBlank()
+                        && (!preselectedPoiId.equals(text(selected.poiId()))
+                            || !selected.coordinate().equals(
+                                com.ai.guide.domain.geo.model.GeoCoordinates.parse(text(stop.get("location")))))) {
+                    selected = null;
+                    lastReason = "本次 POI 与选点前确认的身份或坐标不一致";
+                }
                 if (selected != null) break;
             }
             if (selected == null) {
@@ -198,13 +234,13 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     private int hydrateWeather(Map<String, Object> trip) {
         List<Map<String, Object>> days = dayMaps(trip);
         boolean hasMatchableDate = days.stream().anyMatch(day -> isoDate(day.get("date")) != null);
-        WeatherOutcome outcome = hasMatchableDate
+        GeoWeatherOutcome outcome = hasMatchableDate
                 ? routeService.weather(tripCity(trip))
-                : new WeatherOutcome(OutcomeStatus.UNAVAILABLE,
+                : new GeoWeatherOutcome(GeoOutcomeStatus.UNAVAILABLE,
                         null, "行程没有可匹配的 ISO 日期，跳过高德天气查询。", Instant.now());
         String providerReason = outcome.reason() == null || outcome.reason().isBlank()
                 ? "高德天气接口未返回可用结果。" : outcome.reason();
-        List<AmapResponseNormalizer.WeatherCast> casts = outcome.weather() == null
+        List<com.ai.guide.domain.geo.model.GeoWeatherCast> casts = outcome.weather() == null
                 ? List.of() : outcome.weather().casts();
 
         int resolved = 0;
@@ -212,10 +248,10 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             // Always replace the previous value: copied/replanned trips must not
             // keep yesterday's weather after a later provider failure.
             String date = isoDate(day.get("date"));
-            AmapResponseNormalizer.WeatherCast cast = casts.stream()
+            com.ai.guide.domain.geo.model.GeoWeatherCast cast = casts.stream()
                     .filter(item -> item != null && date != null && date.equals(item.date()))
                     .findFirst().orElse(null);
-            if (outcome.status() == OutcomeStatus.SUCCESS && cast != null) {
+            if (outcome.status() == GeoOutcomeStatus.SUCCESS && cast != null) {
                 String value = weatherText(cast);
                 if (!value.isBlank()) {
                     day.put("weather", fact("天气", value, "动态",
@@ -228,7 +264,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             }
             String reason = date == null
                     ? "行程日期不是 ISO 日期，无法安全匹配高德预报。"
-                    : outcome.status() != OutcomeStatus.SUCCESS
+                    : outcome.status() != GeoOutcomeStatus.SUCCESS
                         ? providerReason
                         : casts.isEmpty() ? "高德没有返回预报列表。"
                         : "高德预报范围内没有日期 " + date + "。";
@@ -237,7 +273,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         }
         log.info("[AMAP_WEATHER_REFRESH] days={}, status={}, casts={}, resolved={}, reason={}",
                 days.size(), outcome.status(), casts.size(), resolved,
-                outcome.status() == OutcomeStatus.SUCCESS ? "" : providerReason);
+                outcome.status() == GeoOutcomeStatus.SUCCESS ? "" : providerReason);
         return resolved;
     }
 
@@ -267,20 +303,28 @@ public class AmapPlannerGateway implements RouteGatewayPort {
             }
         }
 
-        List<java.util.concurrent.CompletableFuture<RoutePairOutcome>> futures = tasks.stream()
-                .map(t -> java.util.concurrent.CompletableFuture.supplyAsync(() -> routeService.routePair(
+        long deadline = System.nanoTime() + Math.min(OperationDeadline.remainingNanos(), java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(routeBatchTimeoutMs));
+        List<java.util.concurrent.CompletableFuture<GeoRoutePairOutcome>> futures = tasks.stream()
+                .map(t -> java.util.concurrent.CompletableFuture.supplyAsync(OperationDeadline.carry(() -> routeService.routePair(
                         t.origin(), t.destination(), tripCity(trip), t.originPoi(), t.destinationPoi(), t.preference()
-                ), hydrationExecutor))
+                )), hydrationExecutor))
                 .toList();
 
         int successes = 0;
         for (int i = 0; i < tasks.size(); i++) {
             RouteTask t = tasks.get(i);
-            RoutePairOutcome pair;
+            GeoRoutePairOutcome pair;
             try {
-                pair = futures.get(i).join();
+                pair = futures.get(i).get(Math.max(0L, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                futures.forEach(future -> future.cancel(true));
+                pair = new GeoRoutePairOutcome(null, null, null, t.preference(), false);
+            } catch (java.util.concurrent.TimeoutException timeout) {
+                futures.get(i).cancel(true);
+                pair = new GeoRoutePairOutcome(null, null, null, t.preference(), false);
             } catch (Exception e) {
-                pair = new RoutePairOutcome(null, null, null, t.preference(), false);
+                pair = new GeoRoutePairOutcome(null, null, null, t.preference(), false);
             }
             Map<String, Object> walking = routeMap(pair.walking());
             Map<String, Object> transit = routeMap(pair.transit());
@@ -327,7 +371,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return successes;
     }
 
-    private void applyPoi(Map<String, Object> stop, AmapResponseNormalizer.PoiCandidate poi) {
+    private void applyPoi(Map<String, Object> stop, com.ai.guide.domain.geo.model.GeoPoiCandidate poi) {
         String liveName = text(poi.name());
         String displayName = text(stop.get("displayName"));
         stop.put("livePoiName", liveName);
@@ -353,45 +397,64 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         replaceFact(stop, "到达方式", text(stop.get("walk")), "未知",
                 "路线仍需由高德路径查询或出发前确认。",
                 List.of(citation("高德路径规划接口", "/v5/direction/walking", "待查询")));
-        stop.put("citations", List.of(
-                citation("高德 POI 搜索接口", "/v5/place/text", "已核验"),
-                citation("高德 POI 详情接口", "/v5/place/detail", "待查询")));
+        List<Map<String, Object>> sources = new ArrayList<>();
+        if (stop.get("citations") instanceof List<?> existing)
+            for (Object source : existing)
+                if (source instanceof Map<?, ?> map && "来源已核验".equals(map.get("status")))
+                    sources.add(mutableMap(source));
+        sources.add(citation("高德 POI 搜索接口", "/v5/place/text", "已核验"));
+        sources.add(citation("高德 POI 详情接口", "/v5/place/detail", "待查询"));
+        stop.put("citations", sources);
     }
 
-    private AmapResponseNormalizer.PoiCandidate select(
-            List<AmapResponseNormalizer.PoiCandidate> candidates, Attraction attraction) {
-        List<String> matches = new ArrayList<>();
-        if (attraction.getAmapQuery() != null) {
-            addStrings(matches, attraction.getAmapQuery().get("matches"));
-            addStrings(matches, attraction.getAmapQuery().get("keywords"));
-            addStrings(matches, attraction.getAmapQuery().get("alternatives"));
-        }
-        return candidates.stream()
-                .filter(candidate -> candidate != null && !text(candidate.poiId()).isBlank()
-                        && candidate.coordinate() != null && !text(candidate.name()).isBlank())
-                .map(candidate -> new ScoredPoi(candidate, poiScore(candidate, matches)))
-                .filter(item -> item.score() >= 20)
-                .max(Comparator.comparingInt(ScoredPoi::score)
-                        .thenComparing(item -> text(item.candidate().poiId())))
-                .map(ScoredPoi::candidate)
-                .orElse(null);
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate select(
+            List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates, Attraction attraction, String city) {
+        var policy = currentPoiIdentityPolicy();
+        List<String> matches = AttractionPoiIdentityMatcher.acceptableExactNames(attraction);
+        if (candidates == null) return null;
+        List<ScoredPoi> exact = candidates.stream()
+                .filter(candidate -> AttractionPoiIdentityMatcher.isValidExactIdentity(candidate, matches, city))
+                .map(candidate -> new ScoredPoi(candidate, poiScore(candidate, matches, policy)))
+                .filter(item -> policy.configured() && item.score() >= policy.minimumAcceptableScore())
+                .toList();
+        return exact.size() == 1 ? exact.get(0).candidate() : null;
     }
 
-    private int poiScore(AmapResponseNormalizer.PoiCandidate candidate, List<String> matches) {
-        String name = text(candidate.name()).toLowerCase();
+    private int poiScore(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate, List<String> matches,
+                         com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort.Policy policy) {
+        if (!policy.configured()) return Integer.MIN_VALUE;
+        String name = text(candidate.name()).trim().toLowerCase();
         int score = 0;
         for (String match : matches) {
-            String expected = text(match).toLowerCase();
-            if (!expected.isBlank() && name.equals(expected)) score = Math.max(score, 100);
-            else if (!expected.isBlank() && (name.contains(expected) || expected.contains(name))) score = Math.max(score, 60);
+            String expected = text(match).trim().toLowerCase();
+            if (!expected.isBlank() && name.equals(expected)) score = Math.max(score, policy.exactNameScore());
         }
-        if (candidate.coordinate() != null) score += 10;
-        if (!text(candidate.poiId()).isBlank()) score += 10;
+        if (candidate.coordinate() != null) score += policy.coordinateBonus();
+        if (!text(candidate.poiId()).isBlank()) score += policy.poiIdBonus();
         return score;
+    }
+
+    private com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort.Policy currentPoiIdentityPolicy() {
+        var port = poiIdentityPolicyPort;
+        if (port == null) return com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort.Policy.unconfigured();
+        var current = port.getPoiIdentityPolicy();
+        return current == null ? com.ai.guide.domain.geo.gateway.PoiIdentityPolicyPort.Policy.unconfigured() : current;
     }
 
     private void refreshStatus(Map<String, Object> trip, int poiSuccess, int routeSuccess, int weatherSuccess) {
         List<Map<String, Object>> stops = allStops(trip);
+        boolean coordinatesUnverified = stops.stream().anyMatch(stop ->
+                com.ai.guide.domain.geo.model.GeoCoordinates.parse(text(stop.get("location"))) == null);
+        java.util.LinkedHashSet<String> degradationReasons = new java.util.LinkedHashSet<>();
+        if (trip.get("degradationReasons") instanceof List<?> existingReasons)
+            existingReasons.forEach(reason -> degradationReasons.add(String.valueOf(reason)));
+        boolean hadCoordinateFailure = degradationReasons.remove("POI_COORDINATES_UNVERIFIED");
+        if (coordinatesUnverified) {
+            degradationReasons.add("POI_COORDINATES_UNVERIFIED");
+            trip.put("degraded", true);
+        }
+        if (coordinatesUnverified || hadCoordinateFailure)
+            trip.put("degradationReasons", List.copyOf(degradationReasons));
         int routePairs = dayMaps(trip).stream().mapToInt(day -> Math.max(0, stops(day).size() - 1)).sum();
         int poiTotal = stops.size();
         int routeResolved = (int) stops.stream().filter(stop -> {
@@ -420,6 +483,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         status.put("weatherDaysTotal", weatherTotal);
         status.put("routeResolved", routeResolved);
         status.put("routePairs", routePairs);
+        status.put("coordinatesUnverified", coordinatesUnverified);
         status.put("citationCount", listSize(trip.get("citations")));
         status.put("citedFactCount", citedFacts);
         status.put("totalFactCount", facts.size());
@@ -430,7 +494,11 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         status.put("dataCoverage", dataCoverage);
         status.put("unknownFactCount", unknownFacts);
         status.put("dynamicFactCount", dynamicFacts);
-        status.put("fallback", poiTotal == 0 || available < expected || routeResolved < routePairs);
+        status.put("fallback", com.ai.guide.domain.planner.model.PlannerVersionMetadata.planningIncomplete(trip)
+                || coordinatesUnverified || poiTotal == 0 || available < expected || routeResolved < routePairs);
+        if (hadCoordinateFailure && !coordinatesUnverified && degradationReasons.isEmpty()
+                && !Boolean.TRUE.equals(status.get("fallback")))
+            trip.put("degraded", false);
         trip.put("sourceStatus", status);
         trip.put("sourceMode", poiTotal > 0 && available == expected ? "高德实时接口" : available > 0 ? "高德接口部分可用" : "演示回退模式");
         Map<String, Object> quality = mutableMap(trip.get("qualityMetrics"));
@@ -448,12 +516,12 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         trip.put("retrieval", retrieval);
     }
 
-    private boolean isSuccessful(RouteOutcome outcome) {
-        return outcome != null && outcome.status() == OutcomeStatus.SUCCESS
+    private boolean isSuccessful(GeoRouteOutcome outcome) {
+        return outcome != null && outcome.status() == GeoOutcomeStatus.SUCCESS
                 && outcome.segment() != null && outcome.segment().metricsComplete();
     }
 
-    private Map<String, Object> routeMap(RouteOutcome outcome) {
+    private Map<String, Object> routeMap(GeoRouteOutcome outcome) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (outcome == null) {
             result.put("status", "未返回");
@@ -467,7 +535,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         result.put("reason", outcome.reason());
         result.put("fallback", !isSuccessful(outcome));
         if (outcome.segment() != null) {
-            AmapResponseNormalizer.RouteResult segment = outcome.segment();
+            com.ai.guide.domain.geo.model.GeoRouteSegment segment = outcome.segment();
             result.put("distance", segment.distanceMeters());
             result.put("duration", segment.durationSeconds());
             result.put("distanceMeters", segment.distanceMeters());
@@ -481,16 +549,16 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return result;
     }
 
-    private String selectedSummary(RouteOutcome outcome) {
+    private String selectedSummary(GeoRouteOutcome outcome) {
         if (!isSuccessful(outcome)) return "动态·暂未查询";
-        AmapResponseNormalizer.RouteResult segment = outcome.segment();
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = outcome.segment();
         int distance = segment.distanceMeters() == null ? 0 : segment.distanceMeters();
         int duration = segment.durationSeconds() == null ? 0 : segment.durationSeconds();
         String distanceText = distance >= 1000 ? String.format("%.1f 公里", distance / 1000.0) : distance + " 米";
         return distanceText + " · " + Math.max(1, Math.round(duration / 60.0f)) + " 分钟";
     }
 
-    private List<String> polyline(RouteOutcome outcome) {
+    private List<String> polyline(GeoRouteOutcome outcome) {
         return outcome == null || outcome.segment() == null ? List.of() : splitPolyline(outcome.segment().polyline());
     }
 
@@ -498,7 +566,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
         return value == null || value.isBlank() ? List.of() : List.of(value.split(";"));
     }
 
-    private String weatherText(AmapResponseNormalizer.WeatherCast cast) {
+    private String weatherText(com.ai.guide.domain.geo.model.GeoWeatherCast cast) {
         String weather = joinNonBlank(cast.dayWeather(), cast.nightWeather(), "转");
         String temperature = joinNonBlank(cast.dayTemperature(), cast.nightTemperature(), "°/");
         return joinNonBlank(weather, temperature.isBlank() ? "" : temperature + "°C", " · ");
@@ -551,7 +619,7 @@ public class AmapPlannerGateway implements RouteGatewayPort {
     }
 
     private List<Double> coordinates(Object value) {
-        AmapResponseNormalizer.Coordinate coordinate = AmapResponseNormalizer.parseCoordinate(text(value));
+        com.ai.guide.domain.geo.model.GeoCoordinate coordinate = com.ai.guide.domain.geo.model.GeoCoordinates.parse(text(value));
         return coordinate == null ? null : List.of(coordinate.longitude(), coordinate.latitude());
     }
 
@@ -628,6 +696,6 @@ public class AmapPlannerGateway implements RouteGatewayPort {
 
 
 
-    private record ScoredPoi(AmapResponseNormalizer.PoiCandidate candidate, int score) {
+    private record ScoredPoi(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate, int score) {
     }
 }

@@ -1,6 +1,10 @@
 package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.planner.model.TravelConstraints;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import com.ai.guide.domain.planner.gateway.DynamicShortTripPolicyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -21,6 +25,22 @@ public class PlanVerifier {
 
     private static final Pattern DURATION_PATTERN = Pattern.compile("(\\d+)\\s*分钟");
     private final ItineraryTimeEngine timeEngine = new ItineraryTimeEngine();
+    private final PlannerTaxonomyPort taxonomy;
+
+    public PlanVerifier() { this(TaxonomyPort.empty(), null); }
+
+    @Autowired
+    public PlanVerifier(PlannerTaxonomyPort taxonomy, DynamicShortTripPolicyPort policyPort) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+        if (policyPort != null) {
+            timeEngine.setUnknownTransferEstimateMinutes(policyPort.getPolicy().unknownTravelDurationMinutes());
+        }
+    }
+
+    /** Convenience constructor retained for isolated engine tests. */
+    public PlanVerifier(PlannerTaxonomyPort taxonomy) {
+        this(taxonomy, taxonomy instanceof DynamicShortTripPolicyPort policy ? policy : null);
+    }
 
     public record PlanViolation(
             String type,
@@ -92,12 +112,18 @@ public class PlanVerifier {
             for (Map<String, Object> stop : stops) {
                 Integer start = timeEngine.parseExplicitTimeMinutes(stopTime(stop));
                 if (start == null) continue;
+                int visitMinutes = timeEngine.parseKnownDurationMinutes(safeText(stop.get("duration")));
+                if (visitMinutes <= 0) {
+                    violations.add(new PlanViolation("VISIT_DURATION_UNKNOWN", dayNumber,
+                            safeText(stop.get("id")), safeText(stop.get("venueId")),
+                            "站点缺少可核验的停留时长，无法确认营业区间和日程边界。", true));
+                }
                 if (arrivalBoundary != null && start < arrivalBoundary) {
                     violations.add(new PlanViolation("ARRIVAL_WINDOW_CONFLICT", dayNumber,
                             safeText(stop.get("id")), safeText(stop.get("venueId")),
                             "站点开始时间早于已提供的抵达时间，不可安排。", true));
                 }
-                long end = (long) start + parseDurationMinutes(stop.get("duration"));
+                long end = (long) start + visitMinutes;
                 // (+Nd) preserves arithmetic, but each day's occupied blocks must stay
                 // within its date. Crossing the boundary requires a newly dated plan.
                 if (start >= 1440 || end > 1440) {
@@ -126,83 +152,77 @@ public class PlanVerifier {
                             dayNumber,
                             safeText(stop.get("id")),
                             venueId,
-                            "景点" + name + "在到达日期已知休息，不可安排。",
+                            "该站点 " + name + " 在到达日期已知休息，不可安排。",
                             true
                     ));
                 }
 
-                if (!closedOnArrival && !OpeningHoursPolicy.isVisitOpen(bestTime, dayDate, time, parseDurationMinutes(stop.get("duration")))) {
+                if (!closedOnArrival && !OpeningHoursPolicy.isVisitOpen(bestTime, dayDate, time,
+                        timeEngine.parseKnownDurationMinutes(safeText(stop.get("duration"))))) {
                     violations.add(new PlanViolation(
                             "CLOSED_AT_SLOT_TIME",
                             dayNumber,
                             safeText(stop.get("id")),
                             venueId,
-                            "景点" + name + "的完整游览时段超过已知营业区间、休息日或中途休息时段，不可行。",
+                            "该站点 " + name + " 的完整游览时段超过已知营业区间、休息日或中途休息时段，不可行。",
                             true
                     ));
                 }
             }
 
-            // Check 4: Cross-district extreme bounce in same half-day (GS-01, 包括餐饮站点)
-            for (int j = 1; j < stops.size(); j++) {
-                String prevDist = safeText(stops.get(j - 1).get("district"));
-                String currDist = safeText(stops.get(j).get("district"));
-                boolean isPrevSuburban = isDistantSuburban(prevDist);
-                boolean isCurrSuburban = isDistantSuburban(currDist);
-                if (isPrevSuburban != isCurrSuburban) {
-                    violations.add(new PlanViolation(
-                            "CROSS_DISTRICT_INVIABLE",
-                            dayNumber,
-                            safeText(stops.get(j).get("id")),
-                            safeText(stops.get(j).get("venueId")),
-                            "站点" + stops.get(j - 1).get("name") + "（" + prevDist + "）与" + stops.get(j).get("name") + "（" + currDist + "）相距远且交通耗时极长，在同一日紧凑切换不可行。",
-                            true
-                    ));
-                }
-            }
-
-            // Check 5: Route timing & Day schedule budget check (Real/Estimated route feedback)
+            // Check 4: Route timing & Day schedule budget check (Real/Estimated route feedback)
             long totalDayMinutes = 0;
             for (int j = 0; j < stops.size(); j++) {
                 Map<String, Object> currStop = stops.get(j);
-                int visitMinutes = parseDurationMinutes(currStop.get("duration"));
+                int visitMinutes = timeEngine.parseKnownDurationMinutes(safeText(currStop.get("duration")));
                 totalDayMinutes += visitMinutes;
 
                 if (j > 0) {
                     Map<String, Object> prevStop = stops.get(j - 1);
                     RouteCost cost = extractRouteCost(currStop);
                     int travelMinutes = timeEngine.transferMinutes(prevStop, currStop);
-                    totalDayMinutes += travelMinutes;
                     Integer previousStart = timeEngine.parseExplicitTimeMinutes(stopTime(prevStop));
                     Integer currentStart = timeEngine.parseExplicitTimeMinutes(stopTime(currStop));
+                    if (travelMinutes < 0) {
+                        if (previousStart != null && currentStart != null) {
+                            violations.add(new PlanViolation("ROUTE_DURATION_UNKNOWN", dayNumber,
+                                    safeText(currStop.get("id")), safeText(currStop.get("venueId")),
+                                    "相邻站点缺少可核验的接驳耗时，无法确认当前时间安排可行。", true));
+                        }
+                        travelMinutes = 0;
+                    }
+                    totalDayMinutes += travelMinutes;
                     if (previousStart != null && currentStart != null
-                            && currentStart < (long) previousStart + parseDurationMinutes(prevStop.get("duration")) + travelMinutes) {
+                            && currentStart < (long) previousStart
+                                    + timeEngine.parseKnownDurationMinutes(safeText(prevStop.get("duration"))) + travelMinutes) {
                         violations.add(new PlanViolation("TIME_OVERLAP", dayNumber,
                                 safeText(currStop.get("id")), safeText(currStop.get("venueId")),
                                 "相邻站点未留足前站游览与接驳时间，时间安排存在重叠。", true));
                     }
 
-                    if (travelMinutes > 150) {
+                    int maximumSingleTransferMinutes = PlannerScoringPolicy.limit(taxonomy, "maxSingleTransferMinutes");
+                    if (maximumSingleTransferMinutes > 0 && travelMinutes > maximumSingleTransferMinutes) {
                         violations.add(new PlanViolation(
                                 "TRAVEL_TIME_EXCESSIVE",
                                 dayNumber,
                                 safeText(currStop.get("id")),
                                 safeText(currStop.get("venueId")),
-                                "站点“" + prevStop.get("name") + "”至“" + currStop.get("name") + "”间交通耗时过长（" + travelMinutes + " 分钟），超出单次合理接驳上限。",
+                                "站点“" + prevStop.get("name") + "”至“" + currStop.get("name") + "”间交通耗时过长（" + travelMinutes + " 分钟），超出单次合理接驳上限（" + maximumSingleTransferMinutes + " 分钟）。",
                                 true
                         ));
                     }
                 }
             }
 
-            if (totalDayMinutes > 660 && !stops.isEmpty()) {
+            int dailyLimit = PlannerScoringPolicy.limit(taxonomy, "maxDailyScheduleMinutes");
+            if (dailyLimit > 0 && totalDayMinutes > dailyLimit && !stops.isEmpty()) {
                 Map<String, Object> lastStop = stops.get(stops.size() - 1);
                 violations.add(new PlanViolation(
                         "DAY_SCHEDULE_OVERFLOW",
                         dayNumber,
                         safeText(lastStop.get("id")),
                         safeText(lastStop.get("venueId")),
-                        "第 " + dayNumber + " 天总游览与交通耗时（" + totalDayMinutes + " 分钟）超出单日合理上限（660 分钟）。",
+                        "第 " + dayNumber + " 天总游览与交通耗时（" + totalDayMinutes + " 分钟）超出单日配置上限（" + dailyLimit + " 分钟）。",
                         true
                 ));
             }
@@ -246,13 +266,8 @@ public class PlanVerifier {
         return null;
     }
 
-    private int parseDurationMinutes(Object durationObj) {
-        return timeEngine.parseDurationMinutes(durationObj == null ? null : String.valueOf(durationObj));
-    }
-
     private String stopTime(Map<String, Object> stop) {
-        String value = safeText(stop.get("time"));
-        return value.isBlank() ? safeText(stop.get("startTime")) : value;
+        return timeEngine.explicitClock(stop);
     }
 
     private Integer constraintMinute(String value, String dayDate, boolean arrival) {
@@ -269,11 +284,20 @@ public class PlanVerifier {
             return clock;
         }
         if (arrival) {
-            if (value.contains("晚上") || value.contains("夜间")) return 18 * 60;
-            if (value.contains("下午") || value.contains("中午")) return 12 * 60;
+            Integer start = configuredWindowBoundary(value, true);
+            if (start != null) return start;
         } else {
-            if (value.contains("上午") || value.contains("早晨")) return 12 * 60;
-            if (value.contains("下午") || value.contains("中午")) return 18 * 60;
+            Integer end = configuredWindowBoundary(value, false);
+            if (end != null) return end;
+        }
+        return null;
+    }
+
+    private Integer configuredWindowBoundary(String text, boolean start) {
+        for (TaxonomyPort.AdjustmentWindow window : taxonomy.getAdjustmentWindows()) {
+            if (window.aliases().stream().anyMatch(text::contains)) {
+                return start ? window.startMinute() : window.endMinute();
+            }
         }
         return null;
     }
@@ -298,31 +322,16 @@ public class PlanVerifier {
         String icon = safeText(stop.get("icon"));
         String name = safeText(stop.get("name"));
         String id = safeText(stop.get("id"));
+        boolean diningName = List.of("slotBreakfast", "slotLunch", "slotDinner", "slotNightSnack", "slotTeaBreak")
+                .stream().flatMap(key -> taxonomy.getHints(key).stream()).anyMatch(name::contains)
+                || List.of("mealDisplayPrefixBreakfast", "mealDisplayPrefixLunch", "mealDisplayPrefixDinner",
+                        "mealDisplayPrefixTeaBreak", "mealDisplayPrefixNightSnack")
+                .stream().flatMap(key -> taxonomy.getHints(key).stream()).anyMatch(name::contains);
         return "DINING".equalsIgnoreCase(type)
-                || "美食".equals(category)
-                || "餐".equals(icon)
+                || taxonomy.getHints("diningStopCategories").contains(category)
+                || taxonomy.getHints("diningStopIcons").contains(icon)
                 || id.contains("dining")
-                || name.contains("餐推荐")
-                || name.contains("【早餐】")
-                || name.contains("【午餐】")
-                || name.contains("【晚餐】");
-    }
-
-    private boolean isDistantSuburban(String district) {
-        if (district == null) return false;
-        return district.contains("涪陵") || district.contains("武隆") || district.contains("大足") || district.contains("江津");
-    }
-
-    private boolean isMorningSlot(String time) {
-        return time.contains("09:") || time.contains("10:") || time.contains("11:") || time.contains("上午");
-    }
-
-    private boolean isAfternoonSlot(String time) {
-        return time.contains("13:") || time.contains("14:") || time.contains("15:") || time.contains("16:") || time.contains("17:") || time.contains("下午");
-    }
-
-    private boolean isEveningSlot(String time) {
-        return time.contains("18:") || time.contains("19:") || time.contains("20:") || time.contains("21:") || time.contains("晚上") || time.contains("夜间");
+                || diningName;
     }
 
     private boolean isDateMonday(String date) {

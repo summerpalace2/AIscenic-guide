@@ -1,5 +1,7 @@
 package com.ai.guide.infrastructure.planner.amap;
 
+import com.ai.guide.common.context.OperationDeadline;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -130,7 +132,7 @@ public final class AmapRequestCache {
 
     private static <T> T join(CompletableFuture<Object> future) {
         try {
-            return value(future.get(7, TimeUnit.SECONDS));
+            return value(future.get(Math.min(OperationDeadline.remainingNanos(), TimeUnit.SECONDS.toNanos(7)), TimeUnit.NANOSECONDS));
         } catch (TimeoutException failure) {
             throw new RuntimeException("高德接口请求防抖等待超时", failure);
         } catch (ExecutionException failure) {

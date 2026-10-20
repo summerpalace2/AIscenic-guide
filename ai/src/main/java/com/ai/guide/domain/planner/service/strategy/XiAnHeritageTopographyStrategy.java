@@ -5,12 +5,24 @@ import com.ai.guide.domain.planner.gateway.TopographyStrategyPort;
 import com.ai.guide.domain.planner.model.topography.BarrierCrossingType;
 import com.ai.guide.domain.planner.model.topography.ElevationFlow;
 import com.ai.guide.domain.planner.model.topography.ElevationTier;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.PlannerTaxonomyPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
 public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
+
+    private final PlannerTaxonomyPort taxonomy;
+
+    @Autowired
+    public XiAnHeritageTopographyStrategy(PlannerTaxonomyPort taxonomy) {
+        this.taxonomy = taxonomy == null ? TaxonomyPort.empty() : taxonomy;
+    }
+
+    public XiAnHeritageTopographyStrategy() { this(TaxonomyPort.empty()); }
 
     @Override
     public String supportedCity() {
@@ -21,7 +33,8 @@ public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
     public ElevationTier resolveElevationTier(Attraction attraction) {
         if (attraction == null) return ElevationTier.STANDARD_PLAIN;
         String name = attraction.getName() != null ? attraction.getName() : "";
-        if (name.contains("华山") || name.contains("终南山") || name.contains("翠华山")) {
+        String id = attraction.getId() == null ? "" : attraction.getId();
+        if (matches(name, "xianTopoHighNameTokens") || matches(id, "xianTopoHighIdTokens")) {
             return ElevationTier.HIGH_ALTITUDE;
         }
         return ElevationTier.STANDARD_PLAIN;
@@ -29,7 +42,7 @@ public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
 
     @Override
     public ElevationTier resolveElevationTier(String id, String name, String district, String location) {
-        if (name != null && (name.contains("华山") || name.contains("终南山") || name.contains("翠华山"))) {
+        if (matches(name, "xianTopoHighNameTokens") || matches(id, "xianTopoHighIdTokens")) {
             return ElevationTier.HIGH_ALTITUDE;
         }
         return ElevationTier.STANDARD_PLAIN;
@@ -41,7 +54,7 @@ public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
         boolean fromInside = isInsideCityWall(from);
         boolean toInside = isInsideCityWall(to);
         if (fromInside != toInside) {
-            return BarrierCrossingType.HISTORICAL_WALL; // 穿越南门/永宁门等城墙节点
+            return BarrierCrossingType.HISTORICAL_WALL;
         }
         return BarrierCrossingType.NONE;
     }
@@ -49,8 +62,7 @@ public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
     private boolean isInsideCityWall(Attraction a) {
         String name = a.getName() != null ? a.getName() : "";
         String dist = a.getDistrict() != null ? a.getDistrict() : "";
-        return (dist.contains("碑林") || dist.contains("莲湖")) &&
-                (name.contains("钟楼") || name.contains("鼓楼") || name.contains("回民街") || name.contains("书院门") || name.contains("碑林"));
+        return matches(dist, "xianTopoInnerDistrictTokens") && matches(name, "xianTopoInnerNameTokens");
     }
 
     @Override
@@ -65,35 +77,37 @@ public class XiAnHeritageTopographyStrategy implements TopographyStrategyPort {
         Attraction last = historyStopsInDay.get(size - 1);
         Attraction secondLast = historyStopsInDay.get(size - 2);
 
-        // 临潼兵马俑远郊反复折返检测
-        boolean sLintong = isLintongArea(secondLast);
-        boolean lLintong = isLintongArea(last);
-        boolean cLintong = isLintongArea(candidate);
-        if ((sLintong && !lLintong && cLintong) || (!sLintong && lLintong && !cLintong)) {
-            return 80.0; // 兵马俑远郊严禁往返拉扯
+        boolean sOutskirts = isOutskirts(secondLast);
+        boolean lOutskirts = isOutskirts(last);
+        boolean cOutskirts = isOutskirts(candidate);
+        if ((sOutskirts && !lOutskirts && cOutskirts) || (!sOutskirts && lOutskirts && !cOutskirts)) {
+            return penalty("xianTopoZigzagPenalty");
         }
         return 0.0;
     }
 
-    private boolean isLintongArea(Attraction a) {
+    private boolean isOutskirts(Attraction a) {
         if (a == null) return false;
         String name = a.getName() != null ? a.getName() : "";
         String dist = a.getDistrict() != null ? a.getDistrict() : "";
-        return dist.contains("临潼") || name.contains("兵马俑") || name.contains("华清宫");
+        return matches(dist, "xianTopoOutskirtDistrictTokens") || matches(name, "xianTopoOutskirtNameTokens");
     }
 
     @Override
     public String generateTransitCharacteristicHint(Attraction from, Attraction to, String transportPreference) {
         if (from == null || to == null) return "";
-        BarrierCrossingType crossing = detectBarrierCrossing(from, to);
-        if (crossing == BarrierCrossingType.HISTORICAL_WALL) {
-            return "路线穿越明城墙护城河进入古城内核，推荐经由永宁门（南门）步行漫游古城石阶，或乘坐地铁2号线纵贯中轴线。";
-        }
-        String n2 = to.getName() != null ? to.getName() : "";
-        if (n2.contains("兵马俑") || n2.contains("华清池")) {
-            return "前往临潼历史文化带，推荐乘坐地铁9号线至华清池/兵马俑专线，快速直达且避开外环交通拥堵。";
-        }
+        if (from == null || to == null) return "";
+        // Live route and transit facts must come from the configured route provider.
         return "";
+    }
+
+    private boolean matches(String value, String key) {
+        return value != null && taxonomy.getHints(key).stream().anyMatch(value::contains);
+    }
+
+    private double penalty(String key) {
+        try { return taxonomy.getHints(key).stream().findFirst().map(Double::parseDouble).orElse(0.0); }
+        catch (RuntimeException invalidConfig) { return 0.0; }
     }
 
     @Override

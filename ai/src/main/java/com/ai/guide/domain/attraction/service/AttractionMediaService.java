@@ -1,10 +1,10 @@
 package com.ai.guide.domain.attraction.service;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.taxonomy.gateway.SearchTaxonomyPort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
@@ -21,9 +21,11 @@ import java.util.Map;
 public class AttractionMediaService {
 
     private final GeoRouteGatewayPort routeService;
+    private final SearchTaxonomyPort taxonomy;
 
-    public AttractionMediaService(@Autowired(required = false) GeoRouteGatewayPort routeService) {
+    public AttractionMediaService(@Autowired(required = false) GeoRouteGatewayPort routeService, SearchTaxonomyPort taxonomy) {
         this.routeService = routeService;
+        this.taxonomy = taxonomy;
     }
 
     public Attraction enrich(Attraction attraction) {
@@ -47,10 +49,11 @@ public class AttractionMediaService {
         }
 
         List<String> keywords = keywords(attraction);
-        AmapResponseNormalizer.PoiCandidate selected = null;
+        com.ai.guide.domain.geo.model.GeoPoiCandidate selected = null;
         String reason = "未找到可匹配的高德 POI。";
         for (String keyword : keywords) {
-            PoiOutcome outcome = routeService.searchPoi(keyword, "重庆市");
+            String city = taxonomy.getDefaultCity();
+            GeoPoiOutcome outcome = routeService.searchPoi(keyword, city == null ? "" : city);
             reason = outcome.reason() == null || outcome.reason().isBlank() ? reason : outcome.reason();
             selected = select(outcome.candidates(), attraction);
             if (selected != null) break;
@@ -69,17 +72,17 @@ public class AttractionMediaService {
             return attraction;
         }
 
-        AmapResponseNormalizer.PoiCandidate detailed = selected;
-        PoiOutcome detail = routeService.poiDetail(selected.poiId());
-        if (detail.status() == OutcomeStatus.SUCCESS) {
-            AmapResponseNormalizer.PoiCandidate provider = select(detail.candidates(), attraction);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate detailed = selected;
+        GeoPoiOutcome detail = routeService.poiDetail(selected.poiId());
+        if (detail.status() == GeoOutcomeStatus.SUCCESS) {
+            com.ai.guide.domain.geo.model.GeoPoiCandidate provider = select(detail.candidates(), attraction);
             if (provider != null) detailed = provider;
         } else if (detail.reason() != null && !detail.reason().isBlank()) {
             reason = detail.reason();
         }
 
         attraction.setImagePoiId(detailed.poiId());
-        attraction.setImageFetchedAt((detail.status() == OutcomeStatus.SUCCESS
+        attraction.setImageFetchedAt((detail.status() == GeoOutcomeStatus.SUCCESS
                 ? detail.fetchedAt() : java.time.Instant.now()).toString());
         if (detailed.photoUrl() != null && !detailed.photoUrl().isBlank()) {
             attraction.setImage(detailed.photoUrl());
@@ -120,8 +123,8 @@ public class AttractionMediaService {
         }
     }
 
-    private AmapResponseNormalizer.PoiCandidate select(
-            List<AmapResponseNormalizer.PoiCandidate> candidates, Attraction attraction) {
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate select(
+            List<com.ai.guide.domain.geo.model.GeoPoiCandidate> candidates, Attraction attraction) {
         if (candidates == null) return null;
         List<String> expectedNames = keywords(attraction).stream()
                 .map(String::toLowerCase)
@@ -148,7 +151,7 @@ public class AttractionMediaService {
         return best;
     }
 
-    private record Scored(AmapResponseNormalizer.PoiCandidate candidate, int score) {
+    private record Scored(com.ai.guide.domain.geo.model.GeoPoiCandidate candidate, int score) {
     }
 }
 

@@ -1,15 +1,18 @@
 package com.ai.guide.domain.planner.service;
 
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
-import com.ai.guide.domain.planner.model.RouteOutcome;
-import com.ai.guide.domain.planner.model.RoutePairOutcome;
-import com.ai.guide.domain.planner.model.WeatherOutcome;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
+import com.ai.guide.domain.geo.model.GeoRouteOutcome;
+import com.ai.guide.domain.geo.model.GeoRoutePairOutcome;
+import com.ai.guide.domain.geo.model.GeoWeatherOutcome;
+import com.ai.guide.domain.dining.service.DiningVenueService;
 
 import com.ai.guide.domain.planner.model.TravelConstraints;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 import com.ai.guide.infrastructure.planner.amap.AmapPlannerGateway;
 import com.ai.guide.infrastructure.planner.amap.AmapRouteService;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -22,14 +25,14 @@ class RuntimeLocationPlannerTest {
 
     @Test
     void buildsNearbyPlanFromResolvedStartWithoutCoreCatalogOrRag() {
-        AmapResponseNormalizer.Coordinate origin = new AmapResponseNormalizer.Coordinate(106.33, 29.58);
-        AmapResponseNormalizer.Coordinate target = new AmapResponseNormalizer.Coordinate(106.335, 29.585);
-        AmapResponseNormalizer.PoiCandidate start = poi("start", "测试起点", origin);
-        AmapResponseNormalizer.PoiCandidate nearby = poi("nearby", "动态周边景点", target);
-        AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
+        com.ai.guide.domain.geo.model.GeoCoordinate origin = new com.ai.guide.domain.geo.model.GeoCoordinate(106.33, 29.58);
+        com.ai.guide.domain.geo.model.GeoCoordinate target = new com.ai.guide.domain.geo.model.GeoCoordinate(106.335, 29.585);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate start = poi("start", "测试起点", origin);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate nearby = poi("nearby", "动态周边景点", target);
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = new com.ai.guide.domain.geo.model.GeoRouteSegment(
                 "WALKING", 1000, 600, 1000, 1, List.of(), "106.33,29.58;106.335,29.585", true);
-        RouteOutcome route = new RouteOutcome(
-                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        GeoRouteOutcome route = new GeoRouteOutcome(
+                GeoOutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override
@@ -38,25 +41,25 @@ class RuntimeLocationPlannerTest {
             }
 
             @Override
-            public PoiOutcome searchPoi(String keywords, String city) {
-                return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(start), "", Instant.now());
+            public GeoPoiOutcome searchPoi(String keywords, String city) {
+                return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(start), "", Instant.now());
             }
 
             @Override
-            public PoiOutcome searchAround(String location, int radiusMeters, String types,
+            public GeoPoiOutcome searchAround(String location, int radiusMeters, String types,
                                            String keywords, String city) {
-                return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(nearby), "", Instant.now());
+                return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(nearby), "", Instant.now());
             }
 
             @Override
-            public RoutePairOutcome routePair(String origin, String destination, String city,
+            public GeoRoutePairOutcome routePair(String origin, String destination, String city,
                                               String originPoi, String destinationPoi, String preference) {
-                return new RoutePairOutcome(route, route, route, preference, false);
+                return new GeoRoutePairOutcome(route, route, route, preference, false);
             }
         };
 
         TravelConstraints constraints = new TravelConstraintParser().parse("我在测试起点 上午8点出发 给我3小时的旅游规划");
-        var trip = new RuntimeLocationPlanner(provider).plan(constraints, 1);
+        var trip = planner(provider).plan(constraints, 1);
 
         assertNotNull(trip);
         assertEquals("COMPLETED", ((java.util.Map<?, ?>) trip.get("spatialPlan")).get("status"));
@@ -71,28 +74,28 @@ class RuntimeLocationPlannerTest {
 
     @Test
     void planFromLocationHydratesWeatherForToday() {
-        AmapResponseNormalizer.Coordinate origin = new AmapResponseNormalizer.Coordinate(106.53, 29.50);
-        AmapResponseNormalizer.Coordinate target = new AmapResponseNormalizer.Coordinate(106.535, 29.505);
-        AmapResponseNormalizer.PoiCandidate start = poi("cqu", "重庆交通大学", origin);
-        AmapResponseNormalizer.PoiCandidate nearby = poi("nanping", "南滨路", target);
-        AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
+        com.ai.guide.domain.geo.model.GeoCoordinate origin = new com.ai.guide.domain.geo.model.GeoCoordinate(106.53, 29.50);
+        com.ai.guide.domain.geo.model.GeoCoordinate target = new com.ai.guide.domain.geo.model.GeoCoordinate(106.535, 29.505);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate start = poi("cqu", "重庆交通大学", origin);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate nearby = poi("nanping", "南滨路", target);
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = new com.ai.guide.domain.geo.model.GeoRouteSegment(
                 "WALKING", 1200, 720, 1200, 1, List.of(), "106.53,29.50;106.535,29.505", true);
-        RouteOutcome route = new RouteOutcome(
-                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
-        AmapResponseNormalizer.WeatherCast todayCast = new AmapResponseNormalizer.WeatherCast(
+        GeoRouteOutcome route = new GeoRouteOutcome(
+                GeoOutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        com.ai.guide.domain.geo.model.GeoWeatherCast todayCast = new com.ai.guide.domain.geo.model.GeoWeatherCast(
                 java.time.LocalDate.now().toString(), "多云", "晴", "26", "20");
-        AmapResponseNormalizer.WeatherResult weatherResult = new AmapResponseNormalizer.WeatherResult(
+        com.ai.guide.domain.geo.model.GeoWeatherForecast weatherResult = new com.ai.guide.domain.geo.model.GeoWeatherForecast(
                 java.time.LocalDate.now() + " 10:00:00", List.of(todayCast), true);
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
-            @Override public PoiOutcome searchPoi(String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
-            @Override public PoiOutcome searchAround(String l, int r, String t, String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(nearby), "", Instant.now()); }
-            @Override public RoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) { return new RoutePairOutcome(route, route, route, p, false); }
-            @Override public WeatherOutcome weather(String city) { return new WeatherOutcome(OutcomeStatus.SUCCESS, weatherResult, "", Instant.now()); }
+            @Override public GeoPoiOutcome searchPoi(String k, String c) { return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
+            @Override public GeoPoiOutcome searchAround(String l, int r, String t, String k, String c) { return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(nearby), "", Instant.now()); }
+            @Override public GeoRoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) { return new GeoRoutePairOutcome(route, route, route, p, false); }
+            @Override public GeoWeatherOutcome weather(String city) { return new GeoWeatherOutcome(GeoOutcomeStatus.SUCCESS, weatherResult, "", Instant.now()); }
         };
 
-        RuntimeLocationPlanner planner = new RuntimeLocationPlanner(provider);
+        RuntimeLocationPlanner planner = planner(provider);
         AmapPlannerGateway gateway = new AmapPlannerGateway(provider, null, planner, null, 1);
         TravelConstraints constraints = new TravelConstraintParser().parse("我在重庆交通大学 为我规划一个3小时旅游方案");
         var trip = gateway.planFromLocation(constraints, 1);
@@ -109,28 +112,28 @@ class RuntimeLocationPlannerTest {
 
     @Test
     void hourlyPlanningIncludesDiningWhenRequestedOrSpanningMealTime() {
-        AmapResponseNormalizer.Coordinate origin = new AmapResponseNormalizer.Coordinate(106.58, 29.56);
-        AmapResponseNormalizer.Coordinate target = new AmapResponseNormalizer.Coordinate(106.585, 29.565);
-        AmapResponseNormalizer.PoiCandidate start = poi("jfb", "解放碑", origin);
-        AmapResponseNormalizer.PoiCandidate nearby = poi("hyd", "洪崖洞", target);
-        AmapResponseNormalizer.PoiCandidate restaurant = new AmapResponseNormalizer.PoiCandidate(
-                "restaurant", "附近火锅店", new AmapResponseNormalizer.Coordinate(106.581, 29.561), "重庆市渝中区",
+        com.ai.guide.domain.geo.model.GeoCoordinate origin = new com.ai.guide.domain.geo.model.GeoCoordinate(106.58, 29.56);
+        com.ai.guide.domain.geo.model.GeoCoordinate target = new com.ai.guide.domain.geo.model.GeoCoordinate(106.585, 29.565);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate start = poi("jfb", "解放碑", origin);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate nearby = poi("hyd", "洪崖洞", target);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate restaurant = new com.ai.guide.domain.geo.model.GeoPoiCandidate(
+                "restaurant", "附近火锅店", new com.ai.guide.domain.geo.model.GeoCoordinate(106.581, 29.561), "重庆市渝中区",
                 "餐饮服务;中餐厅", null, null, "restaurant", null, null, 4.6, null, "050100", null);
-        AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = new com.ai.guide.domain.geo.model.GeoRouteSegment(
                 "WALKING", 800, 600, 800, 1, List.of(), "106.58,29.56;106.585,29.565", true);
-        RouteOutcome route = new RouteOutcome(
-                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        GeoRouteOutcome route = new GeoRouteOutcome(
+                GeoOutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
-            @Override public PoiOutcome searchPoi(String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
-            @Override public PoiOutcome searchAround(String l, int r, String t, String k, String c) {
-                return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(t.startsWith("05") ? restaurant : nearby), "", Instant.now());
+            @Override public GeoPoiOutcome searchPoi(String k, String c) { return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
+            @Override public GeoPoiOutcome searchAround(String l, int r, String t, String k, String c) {
+                return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(t.startsWith("05") ? restaurant : nearby), "", Instant.now());
             }
-            @Override public RoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) { return new RoutePairOutcome(route, route, route, p, false); }
+            @Override public GeoRoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) { return new GeoRoutePairOutcome(route, route, route, p, false); }
         };
 
-        RuntimeLocationPlanner planner = new RuntimeLocationPlanner(provider);
+        RuntimeLocationPlanner planner = planner(provider);
         TravelConstraints constraints = new TravelConstraintParser().parse("我在解放碑 中午12点出发 给我3小时的旅游规划 想吃火锅");
         var trip = planner.plan(constraints, 1);
 
@@ -143,34 +146,34 @@ class RuntimeLocationPlannerTest {
 
     @Test
     void enforcesStrictCategoryDiversityAndAtMostOneSquare() {
-        AmapResponseNormalizer.Coordinate origin = new AmapResponseNormalizer.Coordinate(106.4678, 29.5637);
-        AmapResponseNormalizer.PoiCandidate start = new AmapResponseNormalizer.PoiCandidate("cqu-a", "重庆大学A校园", origin,
+        com.ai.guide.domain.geo.model.GeoCoordinate origin = new com.ai.guide.domain.geo.model.GeoCoordinate(106.4678, 29.5637);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate start = new com.ai.guide.domain.geo.model.GeoPoiCandidate("cqu-a", "重庆大学A校园", origin,
                 "沙坪坝区沙正街174号重庆大学", "科教文化服务;学校;高等院校", null, null, "cqu-a", null, null);
 
-        AmapResponseNormalizer.PoiCandidate plaza1 = poi("p1", "沙坪坝历史文化名人广场", new AmapResponseNormalizer.Coordinate(106.469, 29.560));
-        AmapResponseNormalizer.PoiCandidate campusPlaza = new AmapResponseNormalizer.PoiCandidate("p2", "重庆大学思群广场",
-                new AmapResponseNormalizer.Coordinate(106.468, 29.564), "重庆大学A区内", "风景名胜;公园广场;城市广场", null, null, "p2", null, null);
-        AmapResponseNormalizer.PoiCandidate noisePlaza = poi("p3", "沙坪坝奇峰广场", new AmapResponseNormalizer.Coordinate(106.469, 29.559));
-        AmapResponseNormalizer.PoiCandidate park = poi("p4", "沙坪公园", new AmapResponseNormalizer.Coordinate(106.460, 29.550));
-        AmapResponseNormalizer.PoiCandidate museum = poi("p5", "红岩魂陈列馆", new AmapResponseNormalizer.Coordinate(106.440, 29.570));
+        com.ai.guide.domain.geo.model.GeoPoiCandidate plaza1 = poi("p1", "沙坪坝历史文化名人广场", new com.ai.guide.domain.geo.model.GeoCoordinate(106.469, 29.560));
+        com.ai.guide.domain.geo.model.GeoPoiCandidate campusPlaza = new com.ai.guide.domain.geo.model.GeoPoiCandidate("p2", "重庆大学思群广场",
+                new com.ai.guide.domain.geo.model.GeoCoordinate(106.468, 29.564), "重庆大学A区内", "风景名胜;公园广场;城市广场", null, null, "p2", null, null);
+        com.ai.guide.domain.geo.model.GeoPoiCandidate noisePlaza = poi("p3", "沙坪坝奇峰广场", new com.ai.guide.domain.geo.model.GeoCoordinate(106.469, 29.559));
+        com.ai.guide.domain.geo.model.GeoPoiCandidate park = poi("p4", "沙坪公园", new com.ai.guide.domain.geo.model.GeoCoordinate(106.460, 29.550));
+        com.ai.guide.domain.geo.model.GeoPoiCandidate museum = poi("p5", "红岩魂陈列馆", new com.ai.guide.domain.geo.model.GeoCoordinate(106.440, 29.570));
 
-        AmapResponseNormalizer.RouteResult segment = new AmapResponseNormalizer.RouteResult(
+        com.ai.guide.domain.geo.model.GeoRouteSegment segment = new com.ai.guide.domain.geo.model.GeoRouteSegment(
                 "WALKING", 600, 480, 600, 1, List.of(), "106.4678,29.5637;106.469,29.560", true);
-        RouteOutcome route = new RouteOutcome(
-                OutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
+        GeoRouteOutcome route = new GeoRouteOutcome(
+                GeoOutcomeStatus.SUCCESS, segment, "", "test", Instant.now());
 
         AmapRouteService provider = new AmapRouteService(null) {
             @Override public boolean isConfigured() { return true; }
-            @Override public PoiOutcome searchPoi(String k, String c) { return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
-            @Override public PoiOutcome searchAround(String l, int r, String t, String k, String c, int pages) {
-                return new PoiOutcome(OutcomeStatus.SUCCESS, List.of(plaza1, campusPlaza, noisePlaza, park, museum), "", Instant.now());
+            @Override public GeoPoiOutcome searchPoi(String k, String c) { return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(start), "", Instant.now()); }
+            @Override public GeoPoiOutcome searchAround(String l, int r, String t, String k, String c, int pages) {
+                return new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(plaza1, campusPlaza, noisePlaza, park, museum), "", Instant.now());
             }
-            @Override public RoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) {
-                return new RoutePairOutcome(route, route, route, p, false);
+            @Override public GeoRoutePairOutcome routePair(String o, String d, String c, String op, String dp, String p) {
+                return new GeoRoutePairOutcome(route, route, route, p, false);
             }
         };
 
-        RuntimeLocationPlanner planner = new RuntimeLocationPlanner(provider);
+        RuntimeLocationPlanner planner = planner(provider);
         TravelConstraints constraints = new TravelConstraintParser().parse("我在重庆大学A校园 上午8点出发 给我3小时的旅游规划");
         var trip = planner.plan(constraints, 1);
 
@@ -204,25 +207,42 @@ class RuntimeLocationPlannerTest {
     @Test
     void detectCategoryCorrectlyClassifiesDiverseVenues() {
         assertEquals(RuntimeLocationPlanner.PoiCategory.SQUARE,
-                RuntimeLocationPlanner.detectCategory("沙坪坝历史文化名人广场", "风景名胜;公园广场;城市广场"));
+                RuntimeLocationPlanner.detectCategory("沙坪坝历史文化名人广场", "风景名胜;公园广场;城市广场", "", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.PARK_NATURE,
-                RuntimeLocationPlanner.detectCategory("沙坪公园", "风景名胜;公园广场;综合公园"));
+                RuntimeLocationPlanner.detectCategory("沙坪公园", "风景名胜;公园广场;综合公园", "", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.HISTORIC_CULTURE,
-                RuntimeLocationPlanner.detectCategory("红岩魂陈列馆", "风景名胜;文博院馆;纪念馆"));
+                RuntimeLocationPlanner.detectCategory("红岩魂陈列馆", "风景名胜;文博院馆;纪念馆", "", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.HISTORIC_CULTURE,
-                RuntimeLocationPlanner.detectCategory("磁器口古镇", "风景名胜;古镇老街;著名古镇"));
+                RuntimeLocationPlanner.detectCategory("磁器口古镇", "风景名胜;古镇老街;著名古镇", "", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.LANDMARK_VIEW,
-                RuntimeLocationPlanner.detectCategory("任意观景地标", "风景名胜;观景点", "110209"));
+                RuntimeLocationPlanner.detectCategory("任意观景地标", "风景名胜;观景点", "110209", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.RELIGIOUS_TEMPLE,
-                RuntimeLocationPlanner.detectCategory("罗汉寺", "风景名胜;宗教名胜;寺庙"));
+                RuntimeLocationPlanner.detectCategory("罗汉寺", "风景名胜;宗教名胜;寺庙", "", new JsonTaxonomyAdapter()));
         assertEquals(RuntimeLocationPlanner.PoiCategory.COMMERCIAL_STREET,
-                RuntimeLocationPlanner.detectCategory("观音桥步行街", "购物服务;商业街;商业街区"));
+                RuntimeLocationPlanner.detectCategory("观音桥步行街", "购物服务;商业街;商业街区", "", new JsonTaxonomyAdapter()));
     }
 
-    private AmapResponseNormalizer.PoiCandidate poi(String id, String name,
-                                                      AmapResponseNormalizer.Coordinate coordinate) {
-        return new AmapResponseNormalizer.PoiCandidate(id, name, coordinate, "重庆市测试区", "风景名胜",
+    private com.ai.guide.domain.geo.model.GeoPoiCandidate poi(String id, String name,
+                                                      com.ai.guide.domain.geo.model.GeoCoordinate coordinate) {
+        return new com.ai.guide.domain.geo.model.GeoPoiCandidate(id, name, coordinate, "重庆市测试区", "风景名胜",
                 null, null, id, null, null);
+    }
+
+    private RuntimeLocationPlanner planner(AmapRouteService provider) {
+        JsonTaxonomyAdapter taxonomy = new JsonTaxonomyAdapter();
+        return new RuntimeLocationPlanner(provider, new ObjectMapper(), 6000, 40,
+                new DiningVenueService(null, provider, taxonomy), taxonomy);
+    }
+
+    @Test
+    void durationBudgetParsesHoursAndFallsBackOnlyForUnknownValues() throws Exception {
+        RuntimeLocationPlanner planner = planner(null);
+        var method = RuntimeLocationPlanner.class.getDeclaredMethod("durationMinutes", Object.class);
+        method.setAccessible(true);
+
+        assertEquals(120, method.invoke(planner, "约 2 小时"));
+        assertEquals(90, method.invoke(planner, "1.5小时"));
+        assertEquals(60, method.invoke(planner, "无明确时长"));
     }
 }
 

@@ -2,6 +2,8 @@ package com.ai.guide.domain.analytics.service;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import com.ai.guide.infrastructure.analytics.repository.JdbcAnalyticsRepositoryAdapter;
+import com.ai.guide.domain.analytics.gateway.AnalyticsRepositoryPort;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -9,7 +11,7 @@ class AnalyticsRangeRegressionTest {
  SingleConnectionDataSource source;JdbcTemplate jdbc;AnalyticsService service;
  @BeforeEach void setup(){source=new SingleConnectionDataSource("jdbc:sqlite::memory:",true);jdbc=new JdbcTemplate(source);
   jdbc.execute("CREATE TABLE service_log(id TEXT,session_id TEXT,question TEXT,emotion TEXT,intent TEXT,response_time_ms INTEGER,created_at TEXT)");
-  service=new AnalyticsService(jdbc,mock(SentimentService.class),mock(EmotionAnalysisService.class));
+  service=new AnalyticsService(new JdbcAnalyticsRepositoryAdapter(jdbc),mock(SentimentService.class),mock(EmotionAnalysisService.class));
  }
  @AfterEach void close(){source.destroy();}
  void log(String date,String emotion){jdbc.update("INSERT INTO service_log VALUES(?, 's', 'q', ?, '', 1, ?)",UUID.randomUUID().toString(),emotion,date);}
@@ -33,7 +35,7 @@ class AnalyticsRangeRegressionTest {
   assertThrows(IllegalArgumentException.class,()->service.hotQuestions("today",0));
  }
  @Test void savedPdfHasNoDependencyOnCurrentServiceLogs(){
-  var dependency=mock(JdbcTemplate.class);var exporter=new PdfExportService(dependency);
+  var dependency=mock(AnalyticsRepositoryPort.class);var exporter=new PdfExportService(new com.ai.guide.infrastructure.analytics.pdf.OpenPdfAnalyticsReportRenderer(dependency));
   byte[] pdf=exporter.exportStoredReport(Map.of("title","snapshot","type","week","periodStart","2026-10-01","periodEnd","2026-10-08","data","{\"totalServices\":73}"));
   assertTrue(pdf.length>100);assertEquals("%PDF",new String(pdf,0,4,java.nio.charset.StandardCharsets.US_ASCII));verifyNoInteractions(dependency);
  }

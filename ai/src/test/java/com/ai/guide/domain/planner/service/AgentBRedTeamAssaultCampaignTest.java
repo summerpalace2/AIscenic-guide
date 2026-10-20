@@ -1,11 +1,13 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.planner.engine.DiningCategoryGrounder;
 import com.ai.guide.domain.planner.gateway.PlannerSessionRepositoryPort;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort;
+import com.ai.guide.domain.taxonomy.gateway.TaxonomyPort;
 import com.ai.guide.domain.planner.model.*;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,7 +40,7 @@ public class AgentBRedTeamAssaultCampaignTest {
     private PlannerSessionRepositoryPort sessionRepositoryPort;
 
     @Autowired
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @Autowired
     private DiningCategoryGrounder diningCategoryGrounder;
@@ -54,7 +56,7 @@ public class AgentBRedTeamAssaultCampaignTest {
     @AfterEach
     void tearDown() {
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     private static Path resolveTaxonomyDir() {
@@ -182,8 +184,8 @@ public class AgentBRedTeamAssaultCampaignTest {
                 Files.writeString(tempDir.resolve("brand_dictionary.json"), validBrands);
                 Files.writeString(tempDir.resolve("city_names.json"), validCities);
 
-                TaxonomyProvider provider = new TaxonomyProvider(tempDir.toString());
-                TaxonomyPort.MealWindow initialLunch = provider.getMealWindow("LUNCH");
+                JsonTaxonomyAdapter provider = new JsonTaxonomyAdapter(tempDir.toString());
+                com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow initialLunch = provider.getMealWindow("LUNCH");
                 assertNotNull(initialLunch);
                 assertEquals(690, initialLunch.startMinute());
                 assertEquals(810, initialLunch.endMinute());
@@ -237,7 +239,7 @@ public class AgentBRedTeamAssaultCampaignTest {
                 Files.writeString(tempDir.resolve("brand_dictionary.json"), validBrands);
                 Files.writeString(tempDir.resolve("city_names.json"), validCities);
 
-                TaxonomyProvider provider = new TaxonomyProvider(tempDir.toString());
+                JsonTaxonomyAdapter provider = new JsonTaxonomyAdapter(tempDir.toString());
 
                 int readerThreads = 50;
                 int writerThreads = 5;
@@ -256,8 +258,8 @@ public class AgentBRedTeamAssaultCampaignTest {
                         try {
                             startGate.await();
                             for (int op = 0; op < operationsPerReader; op++) {
-                                TaxonomyPort.MealWindow lunch = provider.getMealWindow("LUNCH");
-                                TaxonomyPort.CityCuisineProfile beijing = provider.getCityProfile("北京市");
+                                com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow lunch = provider.getMealWindow("LUNCH");
+                                com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.CityCuisineProfile beijing = provider.getCityProfile("北京市");
                                 boolean isKfc = provider.isKnownBrand("肯德基");
                                 List<String> diningHints = provider.getHints("dining");
 
@@ -371,6 +373,7 @@ public class AgentBRedTeamAssaultCampaignTest {
             // 2. 模拟 10 个客户端并发阅读版本 1，各自生成了基于 revision 1 的提案
             int threadCount = 10;
             List<String> proposalIds = new ArrayList<>();
+            long proposalCreatedAt = System.currentTimeMillis();
             for (int i = 0; i < threadCount; i++) {
                 String pid = "storm-prop-" + i + "-" + UUID.randomUUID();
                 PlanAdjustmentProposal prop = PlanAdjustmentProposal.builder()
@@ -381,7 +384,8 @@ public class AgentBRedTeamAssaultCampaignTest {
                         .proposedTrip(changedTrip)
                         .optionPlans(Map.of("option-1", changedTrip))
                         .feasible(true)
-                        .expiresAt(System.currentTimeMillis() + 60000)
+                        .createdAt(proposalCreatedAt)
+                        .expiresAt(proposalCreatedAt + 60000)
                         .build();
                 proposalStore.put(prop);
                 proposalIds.add(pid);

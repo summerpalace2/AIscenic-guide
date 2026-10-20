@@ -1,11 +1,13 @@
 package com.ai.guide.domain.chat.service;
 
+import com.ai.guide.domain.user.gateway.UserPreferenceStorePort;
+import com.ai.guide.domain.taxonomy.gateway.ChatSlotTaxonomyPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -23,23 +25,15 @@ public class SlotTrackingService {
 
     private static final Logger log = LoggerFactory.getLogger(SlotTrackingService.class);
 
-    private static final String SLOTS_KEY_SUFFIX = ":slots";
-    private static final String PREFS_KEY_SUFFIX = ":preferences";
     /** interest 槽位滑动窗口上限 */
     private static final int MAX_INTEREST_ITEMS = 3;
 
     /** 槽位匹配正则：字段名 → {预编译正则 → 标准值} */
     private static final Map<String, Map<Pattern, String>> SLOT_PATTERNS;
 
-    /** 区域与核心地标名称正则（覆盖全重庆核心景区与主城九区） */
-    private static final Pattern AREA_PATTERN =
-            Pattern.compile("洪崖洞|解放碑|李子坝|鹅岭二?厂?|山城巷|湖广会馆|长江索道|三峡博物馆|磁器口|南山一棵树|" +
-                    "朝天门|大剧院|白象居|龙门浩|下浩老街|魁星楼|两路口|三峡广场|观音桥|中山四路|" +
-                    "重庆人民大礼堂|重庆美术馆|南滨路|弹子石|融汇温泉|红岩革命纪念馆|歌乐山|渣滓洞|白公馆|" +
-                    "南岸区?|九龙坡区?|沙坪坝区?|渝中区?|江北区?|渝北区?|巴南区?|北碚区?|大渡口区?");
-
-    private final RedisTemplate<String, String> redisTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final UserPreferenceStorePort preferenceStore;
+    private final ObjectMapper objectMapper;
+    private final ChatSlotTaxonomyPort taxonomy;
 
     static {
         SLOT_PATTERNS = new HashMap<>();
@@ -47,7 +41,6 @@ public class SlotTrackingService {
         // 兴趣偏好 → 滑动窗口 3 条（预编译正则）
         Map<Pattern, String> interest = new LinkedHashMap<>();
         interest.put(Pattern.compile("景点|景区|风景|玩的|游览|观赏|观光"), "景点");
-        interest.put(Pattern.compile("美食|好吃的|餐厅|吃饭|小吃|素斋|素食|甜品|甜食|甜点|甜的|吃甜"), "美食");
         interest.put(Pattern.compile("文化|历史|故事|渊源|来历|传统|佛教|禅"), "文化");
         interest.put(Pattern.compile("路线|行程|规划|怎么走|游玩顺序|游览路线|推荐路线"), "路线");
         interest.put(Pattern.compile("住宿|酒店|住哪|房间|客栈|民宿"), "住宿");
@@ -74,8 +67,15 @@ public class SlotTrackingService {
         SLOT_PATTERNS.put("crowd", crowd);
     }
 
-    public SlotTrackingService(RedisTemplate<String, String> redisTemplate) {
-        this.redisTemplate = redisTemplate;
+    @Autowired
+    public SlotTrackingService(UserPreferenceStorePort preferenceStore, ObjectMapper objectMapper, ChatSlotTaxonomyPort taxonomy) {
+        this.preferenceStore = preferenceStore;
+        this.objectMapper = objectMapper;
+        this.taxonomy = taxonomy;
+    }
+
+    public SlotTrackingService(UserPreferenceStorePort preferenceStore, ObjectMapper objectMapper) {
+        this(preferenceStore, objectMapper, ChatSlotTaxonomyPort.empty());
     }
 
     // ==================== 核心：每条消息都触发提取 ====================
@@ -91,70 +91,83 @@ public class SlotTrackingService {
                 .replaceAll("[\\p{Cf}\\u200B-\\u200D\\uFEFF]", "");
         if (message.isBlank()) return;
 
-        String key = slotsKey(userId);
-
         // interest → 滑动窗口 3 条（带否定语义识别与自愈剔除，DEF-R3-01）
         for (Map.Entry<Pattern, String> entry : SLOT_PATTERNS.get("interest").entrySet()) {
             Matcher m = entry.getKey().matcher(message);
             while (m.find()) {
                 if (isNegatedPrefix(message, m.start())) {
-                    removeSlotItem(key, "interest", entry.getValue());
+                    removeSlotItem(userId, "interest", entry.getValue());
                 } else {
-                    pushSlotItemLimited(key, "interest", entry.getValue(), MAX_INTEREST_ITEMS);
+                    pushSlotItemLimited(userId, "interest", entry.getValue(), MAX_INTEREST_ITEMS);
                 }
+            }
+        }
+        for (String keyword : taxonomy.getSlotFoodInterestKeywords()) {
+            Matcher matcher = Pattern.compile(Pattern.quote(keyword)).matcher(message);
+            while (matcher.find()) {
+                if (isNegatedPrefix(message, matcher.start())) removeSlotItem(userId, "interest", "美食");
+                else pushSlotItemLimited(userId, "interest", "美食", MAX_INTEREST_ITEMS);
             }
         }
 
         // duration → 单值覆盖
         String durationMatch = matchSlot(message, SLOT_PATTERNS.get("duration"));
         if (durationMatch != null) {
-            redisTemplate.opsForHash().put(key, "duration", durationMatch);
+            preferenceStore.writeSlot(userId, "duration", durationMatch);
         }
 
         // crowd → 单值覆盖
         String crowdMatch = matchSlot(message, SLOT_PATTERNS.get("crowd"));
         if (crowdMatch != null) {
-            redisTemplate.opsForHash().put(key, "crowd", crowdMatch);
+            preferenceStore.writeSlot(userId, "crowd", crowdMatch);
         }
 
         // area → 单值覆盖（只保留最新提到的区域）
-        Matcher matcher = AREA_PATTERN.matcher(message);
         String lastArea = null;
-        while (matcher.find()) {
-            if (!isNegatedPrefix(message, matcher.start())) {
-                lastArea = matcher.group();
+        int lastAreaIndex = -1;
+        int lastAreaLength = -1;
+        for (String area : taxonomy.getAreaNames()) {
+            Matcher matcher = Pattern.compile(Pattern.quote(area)).matcher(message);
+            while (matcher.find()) {
+                if ((matcher.start() > lastAreaIndex
+                        || (matcher.start() == lastAreaIndex && area.length() > lastAreaLength))
+                        && !isNegatedPrefix(message, matcher.start())) {
+                    lastAreaIndex = matcher.start();
+                    lastAreaLength = area.length();
+                    lastArea = area;
+                }
             }
         }
         if (lastArea != null) {
-            redisTemplate.opsForHash().put(key, "area", lastArea);
+            preferenceStore.writeSlot(userId, "area", lastArea);
         }
     }
 
     /**
      * 向指定槽位追加一条值（带滑动窗口限制，仅 interest）
      */
-    private synchronized void pushSlotItemLimited(String redisKey, String slotName, String value, int maxItems) {
+    private synchronized void pushSlotItemLimited(String userId, String slotName, String value, int maxItems) {
         try {
-            String raw = (String) redisTemplate.opsForHash().get(redisKey, slotName);
+            String raw = preferenceStore.readSlot(userId, slotName);
             List<String> items = parseList(raw);
             if (items.contains(value)) return;
             items.add(value);
             if (items.size() > maxItems) items.remove(0);
-            redisTemplate.opsForHash().put(redisKey, slotName, objectMapper.writeValueAsString(items));
+            preferenceStore.writeSlot(userId, slotName, objectMapper.writeValueAsString(items));
         } catch (Exception e) {
-            redisTemplate.opsForHash().put(redisKey, slotName, value);
+            preferenceStore.writeSlot(userId, slotName, value);
         }
     }
 
     /**
      * 从指定槽位剔除否定项（自愈剔除，DEF-R3-01）
      */
-    private synchronized void removeSlotItem(String redisKey, String slotName, String value) {
+    private synchronized void removeSlotItem(String userId, String slotName, String value) {
         try {
-            String raw = (String) redisTemplate.opsForHash().get(redisKey, slotName);
+            String raw = preferenceStore.readSlot(userId, slotName);
             List<String> items = parseList(raw);
             if (items.remove(value)) {
-                redisTemplate.opsForHash().put(redisKey, slotName, objectMapper.writeValueAsString(items));
+                preferenceStore.writeSlot(userId, slotName, objectMapper.writeValueAsString(items));
             }
         } catch (Exception ignored) {}
     }
@@ -166,10 +179,9 @@ public class SlotTrackingService {
      * interest 返回 List（滑动窗口），其余返回单元素 List
      */
     public Map<String, List<String>> getSlots(String userId) {
-        String key = slotsKey(userId);
-        Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
+        Map<String, String> entries = preferenceStore.readSlots(userId);
         Map<String, List<String>> result = new HashMap<>();
-        entries.forEach((k, v) -> result.put(k.toString(), parseList(v.toString())));
+        if (entries != null) entries.forEach((k, v) -> result.put(k, parseList(v)));
         return result;
     }
 
@@ -220,18 +232,16 @@ public class SlotTrackingService {
     // ==================== 管理接口 ====================
 
     public void clearSlots(String userId) {
-        redisTemplate.delete(slotsKey(userId));
+        preferenceStore.clearSlots(userId);
     }
 
     /**
      * 获取用户手动设置偏好（多账户：按 userId 隔离）
      */
     public Map<String, String> getManualPreferences(String userId) {
-        String key = prefsKey(userId);
-        Map<Object, Object> prefs = redisTemplate.opsForHash().entries(key);
-        Map<String, String> result = new HashMap<>();
-        prefs.forEach((k, v) -> result.put(k.toString(), v.toString()));
-        log.info("[PREF] getManualPreferences userId=" + key + ", raw=" + result);
+        Map<String, String> result = preferenceStore.readManualPreferences(userId);
+        if (result == null) result = new HashMap<>();
+        log.info("[PREF] getManualPreferences userId=" + userId + ", raw=" + result);
         return result;
     }
 
@@ -239,32 +249,19 @@ public class SlotTrackingService {
      * 保存用户手动偏好（多账户：按 userId 隔离）
      */
     public void saveManualPreferences(String userId, Map<String, String> preferences) {
-        String key = prefsKey(userId);
-        redisTemplate.opsForHash().putAll(key, preferences);
-        redisTemplate.opsForHash().put(key, "prefs_initialized", "1");
-        log.info("[PREF] saveManualPreferences userId=" + key + " count=" + preferences.size() + " data=" + preferences);
+        preferenceStore.writeManualPreferences(userId, preferences);
+        log.info("[PREF] saveManualPreferences userId=" + userId + " count=" + preferences.size() + " data=" + preferences);
     }
 
     /**
      * 清除用户手动偏好（多账户：按 userId 隔离）
      */
     public void clearManualPreferences(String userId) {
-        String key = prefsKey(userId);
-        redisTemplate.delete(key);
-        // 保留 flag 防止默认值死灰复燃
-        redisTemplate.opsForHash().put(key, "prefs_initialized", "1");
-        log.info("[PREF] clearManualPreferences userId=" + key + " (flag preserved)");
+        preferenceStore.clearManualPreferences(userId);
+        log.info("[PREF] clearManualPreferences userId=" + userId + " (flag preserved)");
     }
 
     // ==================== 私有工具 ====================
-
-    private String slotsKey(String userId) {
-        return "user:" + userId + SLOTS_KEY_SUFFIX;
-    }
-
-    private String prefsKey(String userId) {
-        return "user:" + userId + PREFS_KEY_SUFFIX;
-    }
 
     private List<String> parseList(String json) {
         if (json == null || json.isBlank()) return new ArrayList<>();

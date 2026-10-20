@@ -1,6 +1,6 @@
 package com.ai.guide.infrastructure.rag.amap;
 
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer;
+import com.ai.guide.infrastructure.geo.amap.AmapResponseNormalizer;
 
 
 
@@ -28,7 +28,13 @@ class AmapWebServiceClientTest {
         URI poi = client.buildPoiTextRequest("洪崖洞", "重庆");
         URI diningPoi = client.buildPoiTextRequest("璧山", "重庆", "050000", "navi");
         URI walking = client.buildWalkingRequest("106.000,29.000", "106.010,29.010");
-        URI transit = client.buildTransitRequest("106.000,29.000", "106.010,29.010", "重庆");
+        URI transit = client.buildTransitRequest("106.000,29.000", "106.010,29.010",
+                "023", "023", "0", "origin-poi", "destination-poi");
+        URI transitWithoutPoiPair = client.buildTransitRequest("106.000,29.000", "106.010,29.010",
+                "023", "023", "0", "origin-poi", "");
+        URI legacyTransit = client.buildTransitRequest("106.000,29.000", "106.010,29.010", "重庆");
+        URI legacyTransitStrategy = client.buildTransitRequest(
+                "106.000,29.000", "106.010,29.010", "重庆", "2");
 
         assertEquals("/v5/place/text", poi.getPath());
         assertTrue(poi.getQuery().contains("key=test-key"));
@@ -37,7 +43,15 @@ class AmapWebServiceClientTest {
         assertEquals("/v5/direction/walking", walking.getPath());
         assertTrue(walking.getQuery().contains("show_fields=cost,navi,polyline"));
         assertEquals("/v5/direction/transit/integrated", transit.getPath());
-        assertTrue(transit.getQuery().contains("city=重庆"));
+        assertTrue(transit.getQuery().contains("city1=023"));
+        assertTrue(transit.getQuery().contains("city2=023"));
+        assertTrue(transit.getQuery().contains("originpoi=origin-poi"));
+        assertTrue(transit.getQuery().contains("destinationpoi=destination-poi"));
+        assertFalse(transitWithoutPoiPair.getQuery().contains("originpoi="));
+        assertFalse(transitWithoutPoiPair.getQuery().contains("destinationpoi="));
+        assertEquals("/v3/direction/transit/integrated", legacyTransit.getPath());
+        assertEquals("/v3/direction/transit/integrated", legacyTransitStrategy.getPath());
+        assertTrue(legacyTransitStrategy.getQuery().contains("strategy=2"));
     }
 
     @Test
@@ -66,7 +80,7 @@ class AmapWebServiceClientTest {
                 }
                 """);
 
-        List<AmapResponseNormalizer.PoiCandidate> result = AmapResponseNormalizer.normalizePois(response);
+        List<com.ai.guide.domain.geo.model.GeoPoiCandidate> result = AmapResponseNormalizer.normalizePois(response);
 
         assertEquals(1, result.size());
         assertEquals("B000A1", result.get(0).poiId());
@@ -87,7 +101,7 @@ class AmapWebServiceClientTest {
                 """);
 
         AmapResponseNormalizer.GeocodeResult geocodeResult = AmapResponseNormalizer.normalizeGeocode(geocode);
-        AmapResponseNormalizer.RouteResult routeResult = AmapResponseNormalizer.normalizeWalking(walking);
+        com.ai.guide.domain.geo.model.GeoRouteSegment routeResult = AmapResponseNormalizer.normalizeWalking(walking);
 
         assertTrue(geocodeResult.resolved());
         assertEquals(106.580, geocodeResult.location().longitude());
@@ -107,7 +121,7 @@ class AmapWebServiceClientTest {
                 """);
         JsonNode error = objectMapper.readTree("{\"status\":\"0\",\"info\":\"KEY错误\",\"infocode\":\"10001\"}");
 
-        AmapResponseNormalizer.RouteResult result = AmapResponseNormalizer.normalizeTransit(transit);
+        com.ai.guide.domain.geo.model.GeoRouteSegment result = AmapResponseNormalizer.normalizeTransit(transit);
 
         assertEquals(3000, result.distanceMeters());
         assertEquals(650, result.walkingDistanceMeters());

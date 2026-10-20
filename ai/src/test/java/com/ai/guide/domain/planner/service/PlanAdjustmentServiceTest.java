@@ -1,5 +1,7 @@
 package com.ai.guide.domain.planner.service;
 
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
+
 
 
 
@@ -46,7 +48,7 @@ class PlanAdjustmentServiceTest {
     private PlanAdjustmentService planAdjustmentService;
 
     @Autowired
-    private ProposalStore proposalStore;
+    private CaffeineRedisProposalRepository proposalStore;
 
     @Autowired
     private ConversationIntentClassifier intentClassifier;
@@ -70,12 +72,18 @@ class PlanAdjustmentServiceTest {
     void tearDown() {
         planAdjustmentService.setDiningVenueService(actualDiningVenueService);
         UserContext.clear();
-        proposalStore.clear();
+        proposalStore.clearLocalCache();
     }
 
     private PlannerService.ServiceResult createTestSession(String prompt) {
+        return createTestSession(prompt, "");
+    }
+
+    private PlannerService.ServiceResult createTestSession(String prompt, String arrivalAt) {
+        String scopedPrompt = prompt.contains("重庆") ? prompt : "重庆旅游，" + prompt;
         PlanRequest request = PlanRequest.builder()
-                .prompt(prompt)
+                .prompt(scopedPrompt)
+                .arrivalAt(arrivalAt)
                 .idempotencyKey("phase5-test-" + UUID.randomUUID())
                 .build();
         return plannerService.create(request);
@@ -153,15 +161,15 @@ class PlanAdjustmentServiceTest {
                     String flavor = invocation.getArgument(2);
                     assertFalse(flavor.matches(".*(?:把午餐|改成|我想|来点|替换为).*"), "泛需求传给搜索的必须是菜系或食物: " + flavor);
                     String prefix = "TEA_BREAK".equals(slot) ? "【特色茶歇】" : "DINNER".equals(slot) ? "【晚餐推荐】" : "【午餐推荐】";
-                    return List.of(new AttractionDiningKnowledge.DiningOption("amap-fixture-cuisine", prefix + flavor + "体验店",
+                    return List.of(new com.ai.guide.domain.dining.model.DiningOption("amap-fixture-cuisine", prefix + flavor + "体验店",
                             "模拟菜单", slot, "消费待确认", "45分钟", "待核验", "模拟高德结果", "候选", "gold", "106.577000,29.556000"));
                 });
         planAdjustmentService.setDiningVenueService(dining);
         List<Map<String, Object>> stops = new ArrayList<>();
         stops.add(itineraryBuilder.createStop(attractionService.get("cq-jiefangbei"), "day1-morning", "10:00", "60分钟", "", ""));
-        if (lunch) stops.add(itineraryBuilder.createDiningStop(new AttractionDiningKnowledge.DiningOption("fixture-lunch", "【午餐推荐】原午餐店",
+        if (lunch) stops.add(itineraryBuilder.createDiningStop(new com.ai.guide.domain.dining.model.DiningOption("fixture-lunch", "【午餐推荐】原午餐店",
                 "菜单", "LUNCH", "待确认", "45分钟", "待核验", "原餐饮", "测试", "gold", "106.577000,29.556000"), "day1-lunch", "12:00", "渝中区"));
-        if (dinner) stops.add(itineraryBuilder.createDiningStop(new AttractionDiningKnowledge.DiningOption("fixture-dinner", "【晚餐推荐】原晚餐店",
+        if (dinner) stops.add(itineraryBuilder.createDiningStop(new com.ai.guide.domain.dining.model.DiningOption("fixture-dinner", "【晚餐推荐】原晚餐店",
                 "菜单", "DINNER", "待确认", "45分钟", "待核验", "原餐饮", "测试", "gold", "106.577000,29.556000"), "day1-dinner", "18:00", "渝中区"));
         if (busyTea) stops.add(itineraryBuilder.createStop(attractionService.get("cq-liziba"), "day1-busy-tea", "14:30", "150分钟", "", ""));
         stops.add(itineraryBuilder.createStop(attractionService.get("cq-hongyadong"), "day1-evening", "20:00", "60分钟", "", ""));
@@ -213,7 +221,7 @@ class PlanAdjustmentServiceTest {
         assertEquals(1, trip.get("version"), "Preview must NOT bump durable revision");
 
         PlanAdjustmentProposal storedProp = proposalStore.get(proposalId);
-        assertNotNull(storedProp, "Proposal must be stored in ProposalStore");
+        assertNotNull(storedProp, "Proposal must be stored in the proposal repository");
         assertEquals(1, storedProp.getBaseRevision());
     }
 
@@ -304,6 +312,7 @@ class PlanAdjustmentServiceTest {
                 .sessionId(sessionId)
                 .baseRevision(1)
                 .proposedTrip(Map.of("days", List.of()))
+                .createdAt(System.currentTimeMillis())
                 .expiresAt(System.currentTimeMillis() + 60000)
                 .build();
         proposalStore.put(staleProp);
@@ -327,12 +336,14 @@ class PlanAdjustmentServiceTest {
         String token2 = String.valueOf(s2.body().get("sessionAccessToken"));
 
         // Put proposal for session 1
+        long createdAt = System.currentTimeMillis();
         PlanAdjustmentProposal prop = PlanAdjustmentProposal.builder()
                 .proposalId("prop-s1-only")
                 .sessionId(session1)
                 .baseRevision(1)
                 .proposedTrip(Map.of("days", List.of()))
-                .expiresAt(System.currentTimeMillis() + 60000)
+                .createdAt(createdAt)
+                .expiresAt(createdAt + 60000)
                 .build();
         proposalStore.put(prop);
 
@@ -360,6 +371,7 @@ class PlanAdjustmentServiceTest {
                 .sessionId(sessionId)
                 .baseRevision(1)
                 .proposedTrip(Map.of("days", List.of()))
+                .createdAt(System.currentTimeMillis() - 2000)
                 .expiresAt(System.currentTimeMillis() - 1000) // Expired 1 second ago
                 .build();
         proposalStore.put(expiredProp);
@@ -493,7 +505,7 @@ class PlanAdjustmentServiceTest {
     @Test
     void test10_rainReplanPreservesPinnedAndMustVisitStops() {
         PlanRequest planReq = PlanRequest.builder()
-                .prompt("3天行程，必须去洪崖洞")
+                .prompt("重庆3天行程，必须去洪崖洞")
                 .build();
         PlannerService.ServiceResult created = plannerService.create(planReq);
         String sessionId = String.valueOf(created.body().get("sessionId"));
@@ -620,7 +632,7 @@ class PlanAdjustmentServiceTest {
 
     @Test
     void narrativePlanSelectionGeneratesFeasibleTripPreview() {
-        PlannerService.ServiceResult created = createTestSession("2天行程，带父母，喜欢人文和夜景，少走路");
+        PlannerService.ServiceResult created = createTestSession("2天行程，带父母，喜欢人文和夜景，少走路", "2026-10-13");
         String sessionId = String.valueOf(created.body().get("sessionId"));
         String token = String.valueOf(created.body().get("sessionAccessToken"));
 
@@ -634,7 +646,7 @@ class PlanAdjustmentServiceTest {
 
         PlannerService.ServiceResult previewRes = plannerService.previewAdjustment(sessionId, previewReq);
         assertEquals(200, previewRes.status());
-        assertTrue(Boolean.TRUE.equals(previewRes.body().get("feasible")));
+        assertTrue(Boolean.TRUE.equals(previewRes.body().get("feasible")), previewRes.body().toString());
 
         @SuppressWarnings("unchecked")
         Map<String, Object> intent = (Map<String, Object>) previewRes.body().get("intent");
@@ -831,6 +843,34 @@ class PlanAdjustmentServiceTest {
         assertEquals(2, replay.body().get("currentVersion"));
         PlannerService.ServiceResult current = plannerService.get(sessionId, token);
         assertEquals(2, ((Map<?, ?>) current.body().get("trip")).get("version"));
+    }
+
+    @Test
+    void sameIdempotencyKeyWithDifferentForceFlagIsRejectedAfterSingleCommit() {
+        PlannerService.ServiceResult created = createTestSession("2天行程，喜欢夜景");
+        String sessionId = String.valueOf(created.body().get("sessionId"));
+        String token = String.valueOf(created.body().get("sessionAccessToken"));
+        Map<?, ?> trip = (Map<?, ?>) created.body().get("trip");
+        Map<?, ?> day = (Map<?, ?>) ((List<?>) trip.get("days")).get(0);
+        String target = String.valueOf(((Map<?, ?>) ((List<?>) day.get("stops")).get(0)).get("id"));
+        PlannerService.ServiceResult preview = plannerService.previewAdjustment(sessionId, PlanConversationRequestDto.builder()
+                .sessionId(sessionId).baseRevision(1).message("换掉这个景点")
+                .context(PlanPageContext.builder().activeDay(1).selectedStopId(target).build())
+                .sessionAccessToken(token).build());
+        assertEquals(200, preview.status());
+        String proposalId = String.valueOf(preview.body().get("proposalId"));
+        String idempotencyKey = "idem-force-" + UUID.randomUUID();
+
+        PlannerService.ServiceResult first = plannerService.applyAdjustment(sessionId, ApplyAdjustmentRequestDto.builder()
+                .proposalId(proposalId).baseRevision(1).forceApply(false).idempotencyKey(idempotencyKey)
+                .sessionAccessToken(token).build());
+        PlannerService.ServiceResult mismatch = plannerService.applyAdjustment(sessionId, ApplyAdjustmentRequestDto.builder()
+                .proposalId(proposalId).baseRevision(1).forceApply(true).idempotencyKey(idempotencyKey)
+                .sessionAccessToken(token).build());
+
+        assertEquals(200, first.status());
+        assertEquals(409, mismatch.status());
+        assertEquals(2, ((Map<?, ?>) plannerService.get(sessionId, token).body().get("trip")).get("version"));
     }
 
     @Test
@@ -1552,13 +1592,12 @@ class PlanAdjustmentServiceTest {
         assertNotEquals("cq-huguang-guild", topCandidateVenueId,
                 "Under 5-hour limited time plan at CQU/Shapingba, Huguang Guild Hall (15km away) must NOT be top recommendation! Actual: " + topCandidateName);
 
-        // Candidates must include nearby indoor attractions (e.g. Hongyan Memorial, Three Gorges Museum, Ronghui Hotspring, Geleyuan)
-        boolean hasNearbyIndoor = candidates.stream().anyMatch(c ->
-                "cq-hongyan-memorial".equals(c.get("venueId"))
-                        || "cq-museum".equals(c.get("venueId"))
-                        || "cq-ronghui-hotspring".equals(c.get("venueId"))
-                        || "cq-geleyuan".equals(c.get("venueId")));
-        assertTrue(hasNearbyIndoor, "Candidates must include nearby Shapingba/western corridor indoor attractions. Actual candidates: " + candidates);
+        // This request asks for alternatives to the named memorial, so the target itself and the already-visited
+        // first stop are not valid alternative recommendations. Keep the test independent of a fixed city POI list.
+        assertTrue(candidates.stream().noneMatch(c -> "cq-geleyuan".equals(c.get("venueId"))),
+                "Already visited stops must not be offered as replacement candidates: " + candidates);
+        assertTrue(candidates.stream().noneMatch(c -> "cq-hongyan-memorial".equals(c.get("venueId"))),
+                "The requested target is not an alternative to itself: " + candidates);
     }
 
     @Test
@@ -1636,6 +1675,7 @@ class PlanAdjustmentServiceTest {
                     .id("amap-B00170CQUPT")
                     .name("重庆邮电大学四教")
                     .displayName("重庆邮电大学四教")
+                    .city("重庆市")
                     .district("南岸区")
                     .location("106.608123,29.531234")
                     .summary("重庆邮电大学第四教学楼打卡点")

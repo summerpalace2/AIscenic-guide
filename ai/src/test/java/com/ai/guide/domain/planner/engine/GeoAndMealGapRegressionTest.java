@@ -1,14 +1,14 @@
 package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.gateway.GeoRouteGatewayPort;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort.MealWindow;
-import com.ai.guide.domain.planner.model.OutcomeStatus;
-import com.ai.guide.domain.planner.model.PoiOutcome;
+import com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort;
+import com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow;
+import com.ai.guide.domain.geo.model.GeoOutcomeStatus;
+import com.ai.guide.domain.geo.model.GeoPoiOutcome;
 import com.ai.guide.domain.planner.model.TravelConstraints;
 import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer.Coordinate;
-import com.ai.guide.domain.rag.pipeline.AmapResponseNormalizer.PoiCandidate;
+import com.ai.guide.domain.geo.model.GeoCoordinate;
+import com.ai.guide.domain.geo.model.GeoPoiCandidate;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -36,7 +36,7 @@ class GeoAndMealGapRegressionTest {
         Attraction anchor = PlanAdjustmentHelper.resolveStopAnchor(Map.of("name", "未知景点"), null);
         assertNull(anchor.getLocation());
         assertEquals("", anchor.getDistrict());
-        assertNull(PlanAdjustmentHelper.resolveDefaultCoordinate(Map.of(), null, List.of(Map.of("location", "NaN,NaN"))));
+        assertNull(PlanAdjustmentHelper.resolveDefaultCoordinate(Map.of(), null, List.of(Map.of("location", "NaN,NaN")), 50_000.0));
         assertFalse(PlanAdjustmentHelper.isValidCoordinate("116.3,39.9,unexpected"));
         assertFalse(PlanAdjustmentHelper.isValidCoordinate("Infinity,39"));
     }
@@ -45,8 +45,8 @@ class GeoAndMealGapRegressionTest {
     void localCentroidAvoidsProviderAndColdStartUsesRequestedCity() {
         GeoRouteGatewayPort gateway = mock(GeoRouteGatewayPort.class);
         when(gateway.isConfigured()).thenReturn(true);
-        var poi = new PoiCandidate("gov", "杭州市政府", new Coordinate(120.2, 30.2), "杭州", "政府", null, null, null, null, null);
-        when(gateway.searchPoi("杭州市政府", "杭州")).thenReturn(new PoiOutcome(OutcomeStatus.SUCCESS, List.of(poi), "", Instant.now()));
+        var poi = new GeoPoiCandidate("gov", "杭州市政府", new GeoCoordinate(120.2, 30.2), "杭州", "政府", null, null, null, null, null);
+        when(gateway.searchPoi("杭州市政府", "杭州")).thenReturn(new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(poi), "", Instant.now()));
         var resolver = new DynamicGeoCentroidResolver(gateway);
         assertEquals("120.200000,30.200000", resolver.resolve(Map.of("city", "杭州"), null, List.of()));
         verify(gateway).searchPoi("杭州市政府", "杭州");
@@ -60,10 +60,10 @@ class GeoAndMealGapRegressionTest {
     void coldStartProviderFailureAndInvalidResultRemainUnresolved() {
         GeoRouteGatewayPort gateway = mock(GeoRouteGatewayPort.class);
         when(gateway.isConfigured()).thenReturn(true);
-        when(gateway.searchPoi(anyString(), anyString())).thenReturn(new PoiOutcome(OutcomeStatus.TIMEOUT, List.of(), "timeout", Instant.now()));
+        when(gateway.searchPoi(anyString(), anyString())).thenReturn(new GeoPoiOutcome(GeoOutcomeStatus.TIMEOUT, List.of(), "timeout", Instant.now()));
         assertNull(new DynamicGeoCentroidResolver(gateway).resolveCityCenter("武汉市"));
-        var poison = new PoiCandidate("gov", "政府", new Coordinate(Double.NaN, 30), "", "", null, null, null, null, null);
-        when(gateway.searchPoi(anyString(), anyString())).thenReturn(new PoiOutcome(OutcomeStatus.SUCCESS, List.of(poison), "", Instant.now()));
+        var poison = new GeoPoiCandidate("gov", "政府", new GeoCoordinate(Double.NaN, 30), "", "", null, null, null, null, null);
+        when(gateway.searchPoi(anyString(), anyString())).thenReturn(new GeoPoiOutcome(GeoOutcomeStatus.SUCCESS, List.of(poison), "", Instant.now()));
         assertNull(new DynamicGeoCentroidResolver(gateway).resolveCityCenter("西安市"));
     }
 

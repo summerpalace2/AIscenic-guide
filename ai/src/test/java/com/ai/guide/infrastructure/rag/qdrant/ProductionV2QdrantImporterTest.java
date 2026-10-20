@@ -1,6 +1,6 @@
 package com.ai.guide.infrastructure.rag.qdrant;
 
-import com.ai.guide.domain.rag.pipeline.ProductionV2ChunkService;
+import com.ai.guide.infrastructure.rag.importer.ProductionV2ChunkService;
 
 
 

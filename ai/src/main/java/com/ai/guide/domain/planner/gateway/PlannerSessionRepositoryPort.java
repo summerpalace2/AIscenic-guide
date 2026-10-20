@@ -57,6 +57,13 @@ public interface PlannerSessionRepositoryPort {
 
     List<StoredSession> list(String ownerType, String ownerId);
 
+    /** Deletes only an unacknowledged formal Open session with its initial revision. */
+    boolean deleteUnchangedUserSession(String sessionId, String ownerId, int expectedVersion);
+
+    boolean activatePendingFormalOpen(String sessionId, String ownerId);
+
+    int deleteExpiredPendingFormalOpens(long cutoffEpochMillis);
+
     MutationResult update(StoredSession current, Map<String, Object> trip,
                           int expectedVersion, String mutationType, String label,
                           String reason, List<String> changedSegments);

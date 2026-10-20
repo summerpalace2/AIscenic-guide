@@ -1,16 +1,17 @@
 package com.ai.guide.domain.planner.service;
 import com.ai.guide.domain.planner.model.*;
-import com.ai.guide.domain.planner.service.taxonomy.TaxonomyProvider;
+import com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class AdjustmentLoopIntentTest {
     @Test void optimizeVerbWorksOnEitherSideOfItsObject() {
         var classifier = new ConversationIntentClassifier();
+        classifier.setTaxonomy(new JsonTaxonomyAdapter());
         for (String text : new String[]{"将傍晚和晚间行程优化为最佳夜景观景点", "优化傍晚和晚间行程为夜景路线"}) {
             var intent = classifier.classify(text, PlanPageContext.builder().activeDay(2).build());
             assertEquals(ConversationIntentType.REPLAN_DAY, intent.getType());
             assertEquals(2, intent.getDayNumber()); assertTrue(intent.getPreferences().contains("NIGHT_VIEW"));
-            AdjustmentTimeScopeResolver.resolve(intent, new TaxonomyProvider());
+            AdjustmentTimeScopeResolver.resolve(intent, new JsonTaxonomyAdapter());
             assertEquals(1020, intent.getTargetStartMinute()); assertEquals(1440, intent.getTargetEndMinute());
         }
     }
@@ -20,7 +21,7 @@ class AdjustmentLoopIntentTest {
     }
     @Test void nonContiguousTimePartsRequireClarification() {
         var intent = PlanAdjustmentIntent.builder().type(ConversationIntentType.REPLAN_DAY).rawMessage("优化上午和晚间行程").build();
-        AdjustmentTimeScopeResolver.resolve(intent,new TaxonomyProvider());
+        AdjustmentTimeScopeResolver.resolve(intent,new JsonTaxonomyAdapter());
         assertTrue(intent.isRequiresClarification()); assertNull(intent.getTargetStartMinute());
     }
 }

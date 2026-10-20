@@ -1,0 +1,10 @@
+{
+  "outcome": "benefited",
+  "reason": "采用 FQ6 约束取消后的回执归属与写入边界，采用 FQ2 核对实际跨层契约；独立浏览器与真实调用发现并修复模式重绘读值、授权站点上下文缺失和保存重开后的模型会话分裂。",
+  "effect": "已由受控浏览器、实际模型行程三轮和传输回归验证相关路径；原失败与跳过保留。效果限于覆盖路径，不证明任意对话均正确，不推算节省时间。",
+  "evidence": [
+    {"role": "change", "path": "D:/loop-p0-functional-inventory-1-home/server/index.mjs"},
+    {"role": "verification", "path": "D:/loop-p0-functional-inventory-1-home/frontend/cp6-chat-matrix-controlled-frozen.log"},
+    {"role": "verification", "path": "D:/scenic-guide/chat-sse-final-full-regression.log"}
+  ]
+}

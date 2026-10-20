@@ -1,0 +1,116 @@
+{
+  "checkpoint": "CP4.1",
+  "capturedAt": "2026-10-09",
+  "repository": "D:\\scenic-guide",
+  "head": "46b1653e81050e3cdd9f23506b327bc6676bcbd8",
+  "startingCandidate": "docs/refactor/CP4_1_STARTING_CANDIDATE.json",
+  "startingCandidateSha256": "0859c497297b90136b49a7f92a7d7f4b04cac7c9df1d6adcd3ad291e5b3ae9db",
+  "testEnvironment": {
+    "isolatedCopy": "C:\\Users\\summer\\AppData\\Local\\Temp\\scenic-guide-cp4-1-ce10aa17fc5a4613bf274800c4165608",
+    "cleanCommand": "mvnw.cmd clean test executed only in isolated copy ai/",
+    "sharedTargetCleaned": false
+  },
+  "testCommand": "mvnw.cmd -B '-Dtest=PlannerSaveApplicationServiceTest,PlannerSaveConsistencyTest,TripSaveCapacityRegressionTest,PlannerControllerTest,TripServiceTest,PlannerDraftRestoreTest,ColaArchitectureGuardTest' clean test",
+  "testSummary": "55 tests, 0 failures, 0 errors, 0 skipped; BUILD SUCCESS",
+  "rawTestLog": "docs/refactor/CP4_1_TEST.log",
+  "trackedPatch": "docs/refactor/CP4_1_TRACKED_PATCH.patch",
+  "trackedPatchDefinition": "git diff --binary HEAD restricted to CP4.1 touched tracked paths; pre-existing CP0-CP3 hunks in overlapping files may be present",
+  "trackedPatchCommand": "git -C D:\\scenic-guide diff --binary HEAD --output=D:\\scenic-guide\\docs\\refactor\\CP4_1_TRACKED_PATCH.patch -- <listed tracked paths>",
+  "files": [
+    {
+      "path": "ai/src/main/java/com/ai/guide/adapter/planner/web/PlannerController.java",
+      "sha256": "a1e9584ba71cb795e9878c932127c31a21a9ee2268855b514c9f00a506c000d8",
+      "bytes": 12300
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/planner/PlannerApplicationService.java",
+      "sha256": "6bc9f7ccb823a1de0194013dbb347feffbb2e870abee3fefa3789f21c800b901",
+      "bytes": 14966
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/planner/PlanningApplicationService.java",
+      "sha256": "1aa1c88414319877c758e118a96f0e16bf527ac867618df6e842cb0126b66089",
+      "bytes": 2510
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/service/PlannerService.java",
+      "sha256": "c0a53539ab2f92acb5be42b36ffeccee43d17596eeb1ca657ad04aecb7f0e7cc",
+      "bytes": 60065
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/adapter/planner/web/PlannerControllerTest.java",
+      "sha256": "a2c667afc5eb24f2bde50449982b8d409f2192e49d438e2864631550e2f7435f",
+      "bytes": 11422
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/architecture/ColaArchitectureGuardTest.java",
+      "sha256": "4eba5dd7d0f16db67fce77068e0575a092e28c5db1c18d6ec9ba9964c97718cb",
+      "bytes": 17410
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/domain/trip/service/PlannerSaveConsistencyTest.java",
+      "sha256": "f72e5d05d95abbbaadecc51e1ff9442aca67315b965fa31534e995636c762971",
+      "bytes": 8961
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/domain/trip/service/TripSaveCapacityRegressionTest.java",
+      "sha256": "b8526e896d78b7c14f6af822b3829174eb3536290fc84bdc8ad8ae87c19e05c9",
+      "bytes": 15466
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/application/planner/PlannerSaveApplicationService.java",
+      "sha256": "2cfe7af84956264564e6546903617ec1f8aed40c87cb52d47ff4ad4ddee174cc",
+      "bytes": 6435
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/gateway/PlannerSaveUseCasePort.java",
+      "sha256": "abf6d31758ef4467219fae73f57e02473fd6d1a0e82e57212cd7360601999ad4",
+      "bytes": 400
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerSaveActor.java",
+      "sha256": "3bcd5a61b05dfa2f07fd7f1d4bd27724519dc877aca1142e4c0d29a1987815a4",
+      "bytes": 191
+    },
+    {
+      "path": "ai/src/main/java/com/ai/guide/domain/planner/model/PlannerSaveResult.java",
+      "sha256": "7eb93b1e3526ace06d1b0a17dfaf64164cf6046c1363178c6f3cb6bd3aecc844",
+      "bytes": 562
+    },
+    {
+      "path": "ai/src/test/java/com/ai/guide/application/planner/PlannerSaveApplicationServiceTest.java",
+      "sha256": "b3b1ad38288553094b26ae51f315bc4f1852155ae2a622f8a9ca797fcc0f2fcc",
+      "bytes": 7332
+    },
+    {
+      "path": "docs/refactor/CP4_1_IMPLEMENTATION_REPORT.md",
+      "sha256": "717a3259ad6785e81db799d8831f7ec692536f0ebf95dc513b53792eade89ef5",
+      "bytes": 7931
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/refactor/CP4_1_TRACKED_PATCH.patch",
+      "sha256": "27ea7183a4d65edd81344920edf92a4a1c7c018b69d8e3068e0f6cd739efb4fd",
+      "bytes": 48195
+    },
+    {
+      "path": "docs/refactor/CP4_1_TEST.log",
+      "sha256": "5559d1103c4c1e110657c41ba422e9f7a60afa5eca6d3d37820084254a310017",
+      "bytes": 22220
+    },
+    {
+      "path": "docs/refactor/CP4_1_IMPLEMENTATION_REPORT.md",
+      "sha256": "717a3259ad6785e81db799d8831f7ec692536f0ebf95dc513b53792eade89ef5",
+      "bytes": 7931
+    }
+  ],
+  "reviewStatus": "awaiting B/C; not self-accepted",
+  "limitations": [
+    "TripServiceTest Spring context logged default Qdrant UNAVAILABLE asynchronously; tests passed and RAG degraded explicitly.",
+    "No BFF/frontend/Open/Restore/schema changes or live external service validation.",
+    "The first compile attempt failed on unsupported ArchUnit DSL and was fixed; the initial diagnostic output was not preserved as a separate raw file."
+  ],
+  "trackedPatchReproducedSha256": "27ea7183a4d65edd81344920edf92a4a1c7c018b69d8e3068e0f6cd739efb4fd",
+  "trackedPatchHashReproduced": true
+}

@@ -1,41 +1,32 @@
 package com.ai.guide.domain.user.service;
 
-
-import com.ai.guide.common.security.JwtUtil;
+import com.ai.guide.domain.user.gateway.JwtTokenIssuerPort;
+import com.ai.guide.domain.user.gateway.UserAccountRepositoryPort;
+import com.ai.guide.domain.user.gateway.PasswordEncoderPort;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.RowMapper;
-import java.util.List;
-import java.util.Map;
+
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class UserServiceRolePolicyTest {
-
     @Test
     void currentDatabaseRoleAndStatusAreValidatedAtJwtBoundary() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        UserService service = new UserService(jdbcTemplate, mock(JwtUtil.class));
-        String query = "SELECT id, username, role, status FROM users WHERE id = ?";
-
-        when(jdbcTemplate.query(eq(query), any(RowMapper.class), eq("disabled-user")))
-                .thenReturn(List.of(new UserService.AuthenticatedPrincipal(
-                        "disabled-user", "disabled@example.invalid", "USER", "disabled")));
-        when(jdbcTemplate.query(eq(query), any(RowMapper.class), eq("unknown-role-user")))
-                .thenReturn(List.of(new UserService.AuthenticatedPrincipal(
-                        "unknown-role-user", "unknown@example.invalid", "OWNER", "active")));
-        when(jdbcTemplate.query(eq(query), any(RowMapper.class), eq("active-user")))
-                .thenReturn(List.of(new UserService.AuthenticatedPrincipal(
-                        "active-user", "active@example.invalid", "ADMIN", "active")));
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        UserService service = new UserService(repository, mock(PasswordEncoderPort.class), mock(JwtTokenIssuerPort.class), null);
+        when(repository.findPrincipal("disabled-user")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Principal("disabled-user", "disabled@example.invalid", "USER", "disabled")));
+        when(repository.findPrincipal("unknown-role-user")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Principal("unknown-role-user", "unknown@example.invalid", "OWNER", "active")));
+        when(repository.findPrincipal("active-user")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Principal("active-user", "active@example.invalid", "ADMIN", "active")));
 
         assertNull(service.findActivePrincipal("disabled-user"));
         assertNull(service.findActivePrincipal("unknown-role-user"));
@@ -44,44 +35,41 @@ class UserServiceRolePolicyTest {
 
     @Test
     void invalidRoleOrStatusIsRejectedBeforeMutation() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        UserService service = new UserService(jdbcTemplate, mock(JwtUtil.class));
-        when(jdbcTemplate.queryForList(anyString(), eq("user-1")))
-                .thenReturn(List.of(Map.of("id", "user-1", "role", "USER", "status", "active")));
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        UserService service = new UserService(repository, mock(PasswordEncoderPort.class), mock(JwtTokenIssuerPort.class), null);
+        when(repository.findAuthority("user-1")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Authority("user-1", "USER", "active")));
 
         assertThrows(IllegalArgumentException.class, () -> service.updateUser("user-1", "OWNER", null));
         assertThrows(IllegalArgumentException.class, () -> service.updateUser("user-1", null, "pending"));
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+        verify(repository, never()).updateRoleAndStatus(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
     void finalActiveAdministratorCannotBeDemotedOrDisabled() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        UserService service = new UserService(jdbcTemplate, mock(JwtUtil.class));
-        when(jdbcTemplate.queryForList(anyString(), eq("admin-1")))
-                .thenReturn(List.of(Map.of("id", "admin-1", "role", "ADMIN", "status", "active")));
-        when(jdbcTemplate.queryForObject(contains("COUNT(*)"), eq(Integer.class), eq("admin-1")))
-                .thenReturn(0);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        UserService service = new UserService(repository, mock(PasswordEncoderPort.class), mock(JwtTokenIssuerPort.class), null);
+        when(repository.findAuthority("admin-1")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Authority("admin-1", "ADMIN", "active")));
+        when(repository.countOtherActiveAdministrators("admin-1")).thenReturn(0);
 
-        assertThrows(IllegalArgumentException.class,
-                () -> service.updateUser("admin-1", "USER", null));
-        assertThrows(IllegalArgumentException.class,
-                () -> service.updateUser("admin-1", null, "disabled"));
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+        assertThrows(IllegalArgumentException.class, () -> service.updateUser("admin-1", "USER", null));
+        assertThrows(IllegalArgumentException.class, () -> service.updateUser("admin-1", null, "disabled"));
+        verify(repository, never()).updateRoleAndStatus(anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
     void administratorMayChangeWhenAnotherActiveAdministratorRemains() {
-        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
-        UserService service = new UserService(jdbcTemplate, mock(JwtUtil.class));
-        when(jdbcTemplate.queryForList(anyString(), eq("admin-1")))
-                .thenReturn(List.of(Map.of("id", "admin-1", "role", "ADMIN", "status", "active")));
-        when(jdbcTemplate.queryForObject(contains("COUNT(*)"), eq(Integer.class), eq("admin-1")))
-                .thenReturn(1);
-        when(jdbcTemplate.update(contains("UPDATE users SET role"), any(Object[].class))).thenReturn(1);
+        UserAccountRepositoryPort repository = mock(UserAccountRepositoryPort.class);
+        UserService service = new UserService(repository, mock(PasswordEncoderPort.class), mock(JwtTokenIssuerPort.class), null);
+        when(repository.findAuthority("admin-1")).thenReturn(Optional.of(
+                new UserAccountRepositoryPort.Authority("admin-1", "ADMIN", "active")));
+        when(repository.countOtherActiveAdministrators("admin-1")).thenReturn(1);
+        when(repository.updateRoleAndStatus(anyString(), anyString(), anyString(), anyString())).thenReturn(1);
 
         service.updateUser("admin-1", "USER", null);
 
-        verify(jdbcTemplate).update(contains("UPDATE users SET role"), any(Object[].class));
+        verify(repository).updateRoleAndStatus(org.mockito.ArgumentMatchers.eq("admin-1"),
+                org.mockito.ArgumentMatchers.eq("USER"), org.mockito.ArgumentMatchers.eq("active"), anyString());
     }
 }

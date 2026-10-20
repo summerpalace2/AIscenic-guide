@@ -1,0 +1,147 @@
+{
+  "scope": "all backend production Java and all src/main/resources assets",
+  "production_java_files": 349,
+  "resource_files": 22,
+  "json_and_jsonl_files_validated": 18,
+  "invalid_json_assets": [],
+  "taxonomy_json_assets": [
+    "attraction_aliases.json",
+    "brand_dictionary.json",
+    "candidate_ranking_policy.json",
+    "city_names.json",
+    "city_strategy_mappings.json",
+    "dining_taxonomy.json",
+    "dynamic_short_trip_policy.json",
+    "intent_radar_rules.json",
+    "poi_category_policies.json",
+    "poi_identity_policy.json",
+    "rag_query_expansion.json"
+  ],
+  "resource_inventory": [
+    {
+      "file": "application.yml",
+      "classification": "runtime configuration and environment-overridable provider defaults"
+    },
+    {
+      "file": "attractions.json",
+      "classification": "curated POI catalog seed data"
+    },
+    {
+      "file": "dining_brands.txt",
+      "classification": "legacy asset; production code has no reader, README documents status"
+    },
+    {
+      "file": "dining_venues.json",
+      "classification": "curated POI catalog seed data"
+    },
+    {
+      "file": "Dockerfile",
+      "classification": "build/runtime packaging configuration"
+    },
+    {
+      "file": "knowledge_documents.jsonl",
+      "classification": "curated knowledge corpus"
+    },
+    {
+      "file": "taxonomy/attraction_aliases.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/brand_dictionary.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/candidate_ranking_policy.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/cities/beijing.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/cities/hangzhou.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/cities/wuhan.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/cities/xian.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/city_names.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/city_strategy_mappings.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/dining_taxonomy.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/dynamic_short_trip_policy.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/intent_radar_rules.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/poi_category_policies.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/poi_identity_policy.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/rag_query_expansion.json",
+      "classification": "externalized taxonomy dictionary or policy"
+    },
+    {
+      "file": "taxonomy/README.md",
+      "classification": "externalized taxonomy dictionary or policy"
+    }
+  ],
+  "curated_seed_classification": {
+    "attractions.json": {
+      "coordinate_records": 41,
+      "classification": "curated POI seed records, not executable fallback coordinates"
+    },
+    "dining_venues.json": {
+      "coordinate_records": 50,
+      "classification": "curated POI seed records, not executable fallback coordinates"
+    }
+  },
+  "legacy_dining_brands_asset_exists": true,
+  "provider_endpoints_in_infrastructure": [
+    {
+      "file": "com/ai/guide/infrastructure/rag/amap/AmapWebServiceClient.java",
+      "line": 15,
+      "literal": "\"https://restapi.amap.com\"",
+      "classification": "provider adapter/protocol endpoint; config override reviewed separately"
+    },
+    {
+      "file": "com/ai/guide/infrastructure/trip/pdf/TripPlanPdfService.java",
+      "line": 507,
+      "literal": "\"https://uri.amap.com/navigation?to=\"",
+      "classification": "provider adapter/protocol endpoint; config override reviewed separately"
+    },
+    {
+      "file": "com/ai/guide/infrastructure/trip/pdf/TripPlanPdfService.java",
+      "line": 514,
+      "literal": "\"https://uri.amap.com/search?keyword=\"",
+      "classification": "provider adapter/protocol endpoint; config override reviewed separately"
+    }
+  ],
+  "findings": [],
+  "rule_limitations": [
+    "Literal rules are a review aid and cannot prove arbitrary semantic generalization.",
+    "Provider URLs in infrastructure adapters and curated seed coordinates are intentionally classified separately from domain fallbacks.",
+    "A clean result applies only to the listed patterns; source/config review remains required for policies not expressible as literals."
+  ]
+}

@@ -4,6 +4,7 @@ package com.ai.guide.domain.planner.model.topography;
  * 通用高程圈层划分枚举
  */
 public enum ElevationTier {
+    UNVERIFIED(0, "地形信息不足，待核验"),
     HIGH_ALTITUDE(3, "高山/制高点高地"),
     UPPER_PLATEAU(2, "台地/高架上半城"),
     LOWLAND_VALLEY(1, "谷地/平坦江岸带"),

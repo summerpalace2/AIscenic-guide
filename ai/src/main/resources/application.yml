@@ -1,10 +1,18 @@
+app:
+  settings:
+    default-site-name: "${APP_DEFAULT_SITE_NAME:渝游智策}"
+    default-language: "${APP_DEFAULT_LANGUAGE:zh}"
+    tts-enabled: "${APP_TTS_ENABLED:true}"
+    knowledge-sync-enabled: "${APP_KNOWLEDGE_SYNC_ENABLED:true}"
+    default-max-upload-size-mb: "${APP_DEFAULT_MAX_UPLOAD_SIZE_MB:50}"
+
 spring:
   main:
     allow-bean-definition-overriding: true
   servlet:
     multipart:
-      max-file-size: 50MB
-      max-request-size: 50MB
+      max-file-size: "${app.settings.default-max-upload-size-mb}MB"
+      max-request-size: "${app.settings.default-max-upload-size-mb}MB"
   data:
     redis:
       # YUYOUZHICE_REDIS_* is canonical for local/runtime configuration;
@@ -36,6 +44,8 @@ alibabacloud:
     embedding-url: "${DASHSCOPE_EMBEDDING_URL:https://dashscope.aliyuncs.com/api/v1/services/embeddings/text-embedding/text-embedding}"
 bailian:
   rerank-url: "${BAILIAN_RERANK_URL:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank}"
+  connect-timeout-ms: "${BAILIAN_CONNECT_TIMEOUT_MS:3000}"
+  read-timeout-ms: "${BAILIAN_READ_TIMEOUT_MS:3000}"
 qdrant:
   host: "${QDRANT_HOST:localhost}"
   port: "${QDRANT_PORT:6334}"
@@ -48,6 +58,16 @@ qdrant:
 baidu:
   api-key: "${BAIDU_API_KEY:}"
   secret-key: "${BAIDU_SECRET_KEY:}"
+  connect-timeout-ms: "${BAIDU_CONNECT_TIMEOUT_MS:5000}"
+  read-timeout-ms: "${BAIDU_READ_TIMEOUT_MS:15000}"
+  voice:
+    asr-url: "${BAIDU_ASR_URL:https://vop.baidu.com/server_api}"
+    tts-url: "${BAIDU_TTS_URL:https://tsn.baidu.com/text2audio}"
+    token-url: "${BAIDU_TOKEN_URL:https://aip.baidubce.com/oauth/2.0/token}"
+web-search:
+  baidu:
+    search-url: "${BAIDU_WEB_SEARCH_URL:https://www.baidu.com/s}"
+    favicon-url: "${BAIDU_WEB_FAVICON_URL:https://www.baidu.com/favicon.ico}"
 jwt:
   # Persistent deployments must provide JWT_SECRET; tests supply a test-only value.
   secret: "${JWT_SECRET:}"
@@ -61,8 +81,22 @@ admin:
     username: "${ADMIN_BOOTSTRAP_USERNAME:}"
     password: "${ADMIN_BOOTSTRAP_PASSWORD:}"
 planner:
+  request-timeout-ms: "${PLANNER_REQUEST_TIMEOUT_MS:45000}"
+  geo-centroid:
+    max-span-meters: "${PLANNER_GEO_CENTROID_MAX_SPAN_METERS:50000}"
   v1:
     enabled: "${PLANNER_V1_ENABLED:true}"
+  runtime-location:
+    search-radius-meters: "${PLANNER_RUNTIME_SEARCH_RADIUS_METERS:6000}"
+    max-candidates: "${PLANNER_RUNTIME_MAX_CANDIDATES:40}"
+    medium-budget-minutes: "${PLANNER_RUNTIME_MEDIUM_BUDGET_MINUTES:180}"
+    long-budget-minutes: "${PLANNER_RUNTIME_LONG_BUDGET_MINUTES:300}"
+    short-radius-meters: "${PLANNER_RUNTIME_SHORT_RADIUS_METERS:4000}"
+    medium-radius-meters: "${PLANNER_RUNTIME_MEDIUM_RADIUS_METERS:6000}"
+    long-radius-meters: "${PLANNER_RUNTIME_LONG_RADIUS_METERS:8000}"
+    short-page-count: "${PLANNER_RUNTIME_SHORT_PAGE_COUNT:2}"
+    medium-page-count: "${PLANNER_RUNTIME_MEDIUM_PAGE_COUNT:3}"
+    long-page-count: "${PLANNER_RUNTIME_LONG_PAGE_COUNT:3}"
   llm:
     # 意图识别与行程叙事共用独立、有界的模型调用线程池，避免占用公共异步线程。
     executor-core-size: "${PLANNER_LLM_EXECUTOR_CORE_SIZE:2}"
@@ -77,6 +111,13 @@ planner:
       timeout-ms: "${PLANNER_LLM_NARRATIVE_TIMEOUT_MS:30000}"
 context:
   keep-recent: 12
+rag:
+  semantic:
+    enabled: "${RAG_SEMANTIC_ENABLED:true}"
+    # DeepSeek-specific measured requests; disable when switching to an incompatible provider.
+    disable-thinking: "${RAG_SEMANTIC_DISABLE_THINKING:true}"
+    timeout-ms: "${RAG_SEMANTIC_TIMEOUT_MS:15000}"
+    max-output-chars: "${RAG_SEMANTIC_MAX_OUTPUT_CHARS:8000}"
 chat:
   stream:
     timeout-ms: "${CHAT_STREAM_TIMEOUT_MS:120000}"
@@ -116,6 +157,7 @@ amap:
     # 规划请求内的路线段批处理调度边界；不使用公共 ForkJoinPool。
     hydration-concurrency: "${AMAP_WEB_SERVICE_HYDRATION_CONCURRENCY:8}"
     hydration-queue-capacity: "${AMAP_WEB_SERVICE_HYDRATION_QUEUE_CAPACITY:64}"
+    hydration-route-timeout-ms: "${AMAP_WEB_SERVICE_HYDRATION_ROUTE_TIMEOUT_MS:15000}"
     qps-cooldown-ms: "${AMAP_WEB_SERVICE_QPS_COOLDOWN_MS:2000}"
     poi-max-keywords: "${AMAP_WEB_SERVICE_POI_MAX_KEYWORDS:3}"
     request-cache:
@@ -149,3 +191,7 @@ management:
   info:
     env:
       enabled: false
+
+# Empty uses the embedded OFL Chinese font. Explicit overrides must be embeddable CJK TTF/TTC files.
+pdf:
+  font-file: "${PDF_FONT_FILE:}"

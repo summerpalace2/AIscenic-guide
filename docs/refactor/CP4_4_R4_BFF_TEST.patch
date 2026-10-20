@@ -1,0 +1,551 @@
+diff --git a/server/formal-trip-bff-contract.test.mjs b/server/formal-trip-bff-contract.test.mjs
+new file mode 100644
+index 0000000..9e0daa4
+--- /dev/null
++++ b/server/formal-trip-bff-contract.test.mjs
+@@ -0,0 +1,545 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import vm from 'node:vm';
++import { readFile } from 'node:fs/promises';
++
++const indexSource = await readFile(new URL('./index.mjs', import.meta.url), 'utf8');
++
++function extract(startMarker, endMarker, source = indexSource) {
++  const start = source.indexOf(startMarker);
++  const end = source.indexOf(endMarker, start);
++  assert.ok(start >= 0 && end > start, `route markers not found: ${startMarker}`);
++  return source.slice(start, end);
++}
++
++const saveRoute = extract(
++  "  if (req.method === 'POST' && url.pathname === '/api/trips/save')",
++  "  if (req.method === 'POST' && /^\\/api\\/trips\\/[^/]+\\/draft\\/restore$/.test(url.pathname))"
++);
++const restoreRoute = extract(
++  "  if (req.method === 'POST' && /^\\/api\\/trips\\/[^/]+\\/draft\\/restore$/.test(url.pathname))",
++  "  if (req.method === 'POST' && /^\\/api\\/trips\\/[^/]+\\/open$/.test(url.pathname))"
++);
++const openRoute = extract(
++  "  if (req.method === 'POST' && /^\\/api\\/trips\\/[^/]+\\/open$/.test(url.pathname))",
++  "  if (['GET', 'PUT'].includes(req.method) && /^\\/api\\/trips\\/[^/]+\\/workspace$/.test(url.pathname))"
++);
++
++const projectionStart = indexSource.indexOf('function savedTripProjection(');
++const projectionEnd = indexSource.indexOf('\nfunction formalTripHistoryProjection(', projectionStart);
++assert.ok(projectionStart >= 0 && projectionEnd > projectionStart);
++const savedProjectionSource = indexSource.slice(projectionStart, projectionEnd);
++const openSessionStart = indexSource.indexOf('function openFormalTripSession(');
++const openSessionEnd = indexSource.indexOf('\nfunction plannerCapability(', openSessionStart);
++assert.ok(openSessionStart >= 0 && openSessionEnd > openSessionStart);
++const openSessionSource = indexSource.slice(openSessionStart, openSessionEnd);
++
++const errorStart = indexSource.indexOf('const SAFE_JAVA_ERROR_MESSAGES = Object.freeze({');
++const errorEnd = indexSource.indexOf('\nfunction plannerAdjustmentErrorResponse(', errorStart);
++assert.ok(errorStart >= 0 && errorEnd > errorStart);
++const javaErrorSource = indexSource.slice(errorStart, errorEnd);
++
++class HarnessJavaCoreError extends Error {
++  constructor(status, code, message) {
++    super(message);
++    this.status = status;
++    this.code = code;
++  }
++}
++
++const user = { id: 'owner-1' };
++const sessionFixture = () => ({
++  id: 'web-session-1', userId: 'owner-1', deviceId: 'device-1', formalTripId: 'formal-1',
++  javaSessionId: 'java-session-1', sessionAccessToken: 'server-capability',
++  syncRevision: 4, trip: { version: 4, title: 'Draft title', formalTripId: 'formal-1' }
++});
++
++function harness({ route, pathname, method = 'POST', input = {}, authenticated = true,
++  session = sessionFixture(), java = {}, persistFailure = false, workspaceFailure = false,
++  openResponse = null } = {}) {
++  const calls = [];
++  const persistedDrafts = [];
++  const draftMap = new Map();
++  const registrationChecks = [];
++  const workspaces = [];
++  const liveSessions = new Map();
++  const defaultJava = {
++    async savePlannerSession(...args) {
++      calls.push(['savePlannerSession', ...args]);
++      return { trip: { id: 'formal-1', title: 'Saved', currentVersion: 5, updatedAt: 1700000000000,
++        plan: { title: 'Draft title', version: 5, formalTripId: 'formal-1' } } };
++    },
++    async tripVersions(...args) { calls.push(['tripVersions', ...args]); return [{ versionNumber: 5, changeReason: 'saved' }]; },
++    async restorePlannerDraft(...args) {
++      calls.push(['restorePlannerDraft', ...args]);
++      return { trip: { title: 'Restored', version: 5, sourceTripId: 'formal-1' }, syncRevision: 7 };
++    },
++    async openPlannerTrip(...args) {
++      calls.push(['openPlannerTrip', ...args]);
++      const tripId = args[0];
++      // Mirrors the top-level PlannerOpenApplicationService response JSON;
++      // sessionAccessToken is the CreateResult accessToken capability.
++      return openResponse || {
++        ok: true, sessionId: 'java-session-new', sessionAccessToken: 'new-capability', syncRevision: 2,
++        formalTripId: tripId, formalTripVersion: 8,
++        trip: { title: 'Opened', version: 1, formalTripId: tripId, sourceTripId: tripId, sourceTripVersion: 8 }
++      };
++    },
++    async getTrip(token, tripId) {
++      const args = [token, tripId];
++      calls.push(['getTrip', ...args]);
++      return { id: tripId, title: 'Formal', currentVersion: 8, updatedAt: 1700000000000,
++        plan: { title: 'Formal', version: 8, days: [] } };
++    }
++  };
++  const javaCore = { ...defaultJava, ...java };
++  const context = vm.createContext({
++    req: { method, input, deviceId: 'device-1' },
++    url: { pathname },
++    res: {},
++    requestSignal: { marker: 'request-signal' },
++    authUser: async () => authenticated ? user : null,
++    body: async req => req.input,
++    restorePlannerSession: async (id) => {
++      calls.push(['restorePlannerSession', id]);
++      if (!session || session.userId !== user.id || session.id !== id) return null;
++      return session;
++    },
++    javaTokenFor: () => 'java-owner-token',
++    javaCore,
++    persistentStore: {
++      async savePlannerDraft(value) {
++        registrationChecks.push(['draft', liveSessions.has(value.id)]);
++        draftMap.set(value.id, structuredClone(value));
++        if (persistFailure) throw new Error('test persistence failure');
++        persistedDrafts.push(structuredClone(value));
++      },
++      async deletePlannerDraft(id) { draftMap.delete(id); },
++      getTripWorkspace: () => null,
++      async saveTripWorkspace(value) { workspaces.push(structuredClone(value)); return null; }
++    },
++    requestDeviceId: () => 'device-1',
++    sessions: liveSessions,
++    clone: value => structuredClone(value),
++    json: (_res, status, data) => ({ status, data }),
++    JavaCoreError: HarnessJavaCoreError,
++    performance,
++    Date,
++    Math,
++    Number,
++    String,
++    Boolean,
++    Array,
++    Object,
++    Promise,
++    Map,
++    structuredClone,
++    randomUUID: () => 'chat-epoch-1',
++    hydrateFormalTripWorkspace: () => null,
++    persistFormalTripWorkspace: async value => {
++      registrationChecks.push(['workspace', liveSessions.has(value.id)]);
++      if (workspaceFailure) throw new Error('test workspace persistence failure');
++      workspaces.push(structuredClone(value)); return null;
++    },
++    itineraryMemorySnapshot: () => ({ source: 'test' }),
++    plannerCapability: value => ({ legacyMode: !value.javaSessionId, adjustmentCapability: value.javaSessionId ? 'V1_PROPOSAL' : 'LEGACY' }),
++    savedTripProjection: null,
++    shadowMetrics: { record: value => value },
++    compareShadow: value => ({ operation: value.operation, compared: true }),
++    writeBffDiagnostic: async () => {},
++    diagnosticError: error => ({ message: error.message })
++  });
++  vm.runInContext(savedProjectionSource, context);
++  vm.runInContext(openSessionSource, context);
++  vm.runInContext(javaErrorSource, context);
++  vm.runInContext(`globalThis.handle = async function() { ${route} };`, context);
++  return { handle: context.handle, calls, persistedDrafts, draftMap, workspaces, liveSessions, registrationChecks, session, javaCore };
++}
++
++test('formal save uses the authenticated Java planner session and returns saved projection', async () => {
++  const h = harness({ route: saveRoute, pathname: '/api/trips/save', input: {
++    plannerSessionId: 'web-session-1', trip: { title: 'spoof', formalTripId: 'spoof-id', version: 99 }
++  } });
++  const result = await h.handle();
++
++  assert.equal(result.status, 200, JSON.stringify(result));
++  assert.equal(result.data.ok, true);
++  assert.equal(result.data.saved.id, 'formal-1');
++  assert.equal(result.data.saved.trip.formalTripId, 'formal-1');
++  assert.equal(result.data.saved.trip.version, 5);
++  assert.equal(result.data.isUpdate, true);
++  assert.deepEqual(JSON.parse(JSON.stringify(h.calls.filter(([name]) => name === 'savePlannerSession'))), [[
++    'savePlannerSession', 'java-session-1', { sessionAccessToken: 'server-capability' }, 'java-owner-token'
++  ]]);
++  assert.equal(h.calls.some(([name]) => name === 'tripVersions'), true);
++  assert.equal(h.persistedDrafts.length, 1);
++  assert.equal(h.session.trip.title, 'Draft title');
++  assert.equal(h.session.trip.formalTripId, 'formal-1');
++});
++
++test('save rejects unauthenticated and missing planner sessions before Java writes', async () => {
++  const unauthenticated = harness({ route: saveRoute, pathname: '/api/trips/save', authenticated: false,
++    input: { plannerSessionId: 'web-session-1', trip: {} } });
++  assert.equal((await unauthenticated.handle()).status, 401);
++  assert.equal(unauthenticated.calls.some(([name]) => name === 'savePlannerSession'), false);
++
++  const missing = harness({ route: saveRoute, pathname: '/api/trips/save', session: null,
++    input: { plannerSessionId: 'missing', trip: {} } });
++  const result = await missing.handle();
++  assert.equal(result.status, 404);
++  assert.equal(result.data.code, 'PLANNER_SESSION_NOT_FOUND');
++  assert.equal(result.data.recoverable, true);
++  assert.equal(missing.calls.some(([name]) => name === 'savePlannerSession'), false);
++});
++
++test('save maps a Java stale-version response without changing the BFF draft', async () => {
++  const h = harness({ route: saveRoute, pathname: '/api/trips/save',
++    input: { plannerSessionId: 'web-session-1', trip: { title: 'browser copy' } },
++    java: { async savePlannerSession() { throw new HarnessJavaCoreError(409, 'CONFLICT', 'stale'); } }
++  });
++  const result = await h.handle();
++  assert.equal(result.status, 409);
++  assert.equal(result.data.ok, false);
++  assert.equal(result.data.code, 'CONFLICT');
++  assert.equal(result.data.message, '数据版本已变化，请刷新后重试。');
++  assert.equal(h.session.trip.title, 'Draft title');
++  assert.equal(h.persistedDrafts.length, 0);
++});
++
++test('formal restore bridges server-owned session capability and updates cache only after Java success', async () => {
++  const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore', input: {
++    sessionId: 'web-session-1', expectedVersion: 4,
++    trip: { title: 'edited backup', sourceTripVersion: 8, days: [{ day: 1, stops: [] }] }
++  } });
++  const result = await h.handle();
++
++  assert.equal(result.status, 200);
++  assert.equal(result.data.sessionId, 'web-session-1');
++  assert.equal(result.data.trip.title, 'Restored');
++  assert.equal(result.data.trip.version, 5);
++  const call = h.calls.find(([name]) => name === 'restorePlannerDraft');
++  assert.deepEqual(JSON.parse(JSON.stringify(call)), ['restorePlannerDraft', 'java-session-1', {
++    trip: { title: 'edited backup', sourceTripVersion: 8, days: [{ day: 1, stops: [] }] },
++    expectedVersion: 4, sessionAccessToken: 'server-capability'
++  }, 'java-owner-token', { marker: 'request-signal' }]);
++  assert.equal(h.session.trip.title, 'Restored');
++  assert.equal(h.session.syncRevision, 7);
++  assert.equal(h.persistedDrafts.length, 1);
++  assert.equal(h.persistedDrafts[0].syncRevision, 7);
++});
++
++test('restore rejects missing Java syncRevision without overwriting the BFF draft', async () => {
++  const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++    input: { sessionId: 'web-session-1', expectedVersion: 4, trip: { sourceTripVersion: 8, days: [] } },
++    java: { async restorePlannerDraft() { return { trip: { title: 'Restored', version: 5 } }; } }
++  });
++  const result = await h.handle();
++  assert.equal(result.status, 502);
++  assert.equal(result.data.code, 'PLANNER_RESTORE_CONTRACT_INVALID');
++  assert.equal(h.session.trip.title, 'Draft title');
++  assert.equal(h.session.syncRevision, 4);
++  assert.equal(h.persistedDrafts.length, 0);
++});
++
++test('restore rejects wrong owner or formal trip and preserves state on stale Java conflict', async () => {
++  const unauthenticated = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++    authenticated: false, input: { sessionId: 'web-session-1', trip: {} }
++  });
++  assert.equal((await unauthenticated.handle()).status, 401);
++  assert.equal(unauthenticated.calls.some(([name]) => name === 'restorePlannerDraft'), false);
++
++  for (const overrides of [
++    { session: null },
++    { session: { ...sessionFixture(), userId: 'other-owner' } },
++    { session: { ...sessionFixture(), formalTripId: 'other-trip' } },
++    { session: { ...sessionFixture(), javaSessionId: '' } }
++  ]) {
++    const h = harness({ ...overrides, route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++      input: { sessionId: 'web-session-1', expectedVersion: 4, trip: {} } });
++    assert.equal((await h.handle()).status, 404);
++    assert.equal(h.calls.some(([name]) => name === 'restorePlannerDraft'), false);
++  }
++
++  const stale = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++    input: { sessionId: 'web-session-1', expectedVersion: 4, trip: {} },
++    java: { async restorePlannerDraft() { throw new HarnessJavaCoreError(409, 'CONFLICT', 'stale'); } }
++  });
++  const result = await stale.handle();
++  assert.equal(result.status, 409);
++  assert.equal(result.data.ok, false);
++  assert.equal(result.data.code, 'CONFLICT');
++  assert.equal(result.data.message, '数据版本已变化，请刷新后重试。');
++  assert.equal(stale.session.trip.version, 4);
++  assert.equal(stale.persistedDrafts.length, 0);
++});
++
++test('formal open creates and persists a new owner-scoped planner session', async () => {
++  const h = harness({ route: openRoute, pathname: '/api/trips/formal%2F1/open' });
++  const result = await h.handle();
++
++  assert.equal(result.status, 200);
++  assert.equal(result.data.javaSessionId, 'java-session-new');
++  assert.equal(result.data.sessionAccessToken, 'new-capability');
++  assert.equal(result.data.savedTripId, 'formal/1');
++  assert.equal(result.data.formalTripVersion, 8);
++  assert.equal(result.data.trip.sourceTripVersion, 8);
++  assert.equal(result.data.trip.savedTripId, 'formal/1');
++  assert.equal(result.data.legacyMode, false);
++  assert.equal(result.data.adjustmentCapability, 'V1_PROPOSAL');
++  assert.equal(h.calls[0][0], 'openPlannerTrip');
++  assert.deepEqual(h.calls[0].slice(1), ['formal/1', 'java-owner-token', { marker: 'request-signal' }]);
++  assert.equal(h.calls.some(([name]) => name === 'getTrip'), false);
++  assert.deepEqual(JSON.parse(JSON.stringify(result.data.workspace)), {
++    chatMessages: [], chatMode: 'chat', plannerConversationContext: null,
++    itineraryMemorySnapshot: { source: 'test' }
++  });
++  assert.equal(h.persistedDrafts.length, 1);
++  const opened = [...h.liveSessions.values()][0];
++  assert.equal(opened.userId, 'owner-1');
++  assert.equal(opened.deviceId, 'device-1');
++  assert.equal(opened.formalTripId, 'formal/1');
++  assert.equal(opened.javaSessionId, 'java-session-new');
++  assert.equal(opened.sessionAccessToken, 'new-capability');
++  assert.equal(opened.syncRevision, 2);
++  assert.equal(h.persistedDrafts[0].syncRevision, 2);
++  assert.deepEqual(h.registrationChecks, [['workspace', false], ['draft', false]]);
++});
++
++test('open fails closed when Java omits sessionId before reading Trip or creating BFF state', async () => {
++  const h = harness({ route: openRoute, pathname: '/api/trips/formal-1/open',
++    openResponse: { sessionAccessToken: 'orphan-capability', formalTripVersion: 8, trip: { title: 'Opened' } }
++  });
++  const result = await h.handle();
++  assert.equal(result.status, 502);
++  assert.equal(result.data.code, 'PLANNER_OPEN_CONTRACT_INVALID');
++  assert.equal(result.data.ok, false);
++  assert.equal(h.calls.some(([name]) => name === 'openPlannerTrip'), true);
++  assert.equal(h.calls.some(([name]) => name === 'getTrip'), false);
++  assert.equal(h.liveSessions.size, 0);
++  assert.equal(h.persistedDrafts.length, 0);
++  assert.equal(h.draftMap.size, 0);
++  assert.equal(h.workspaces.length, 0);
++});
++
++test('open rejects missing or inconsistent Java snapshot fields before creating BFF state', async () => {
++  const valid = {
++    ok: true, sessionId: 'java-session-new', sessionAccessToken: 'capability', syncRevision: 2,
++    formalTripId: 'formal-1', formalTripVersion: 8,
++    trip: { title: 'Opened', version: 1, formalTripId: 'formal-1', sourceTripId: 'formal-1', sourceTripVersion: 8 }
++  };
++  const invalidResponses = [
++    ...[{ id: 'fake' }, ['java-session'], 123, '', '   '].map(sessionId => ({ ...valid, sessionId })),
++    { ...valid, formalTripId: undefined },
++    { ...valid, formalTripVersion: undefined },
++    { ...valid, formalTripVersion: '8' },
++    { ...valid, syncRevision: undefined },
++    { ...valid, syncRevision: '2' },
++    { ...valid, sessionAccessToken: '' },
++    { ...valid, trip: undefined },
++    { ...valid, trip: { ...valid.trip, version: '1' } },
++    { ...valid, trip: { ...valid.trip, formalTripId: 'another-trip' } },
++    { ...valid, trip: { ...valid.trip, sourceTripId: 'another-trip' } },
++    { ...valid, trip: { ...valid.trip, sourceTripVersion: 7 } }
++  ];
++  for (const openResponse of invalidResponses) {
++    const h = harness({ route: openRoute, pathname: '/api/trips/formal-1/open',
++      openResponse
++    });
++    const result = await h.handle();
++    assert.equal(result.status, 502, `response=${JSON.stringify(openResponse)}`);
++    assert.equal(result.data.code, 'PLANNER_OPEN_CONTRACT_INVALID');
++    assert.equal(h.calls.some(([name]) => name === 'getTrip'), false);
++    assert.equal(h.liveSessions.size, 0);
++    assert.equal(h.persistedDrafts.length, 0);
++    assert.equal(h.draftMap.size, 0);
++    assert.equal(h.workspaces.length, 0);
++  }
++});
++
++test('open leaves no usable BFF session when workspace or draft persistence fails', async () => {
++  for (const options of [{ workspaceFailure: true }, { persistFailure: true }]) {
++    const h = harness({ ...options, route: openRoute, pathname: '/api/trips/formal-1/open' });
++    await assert.rejects(h.handle());
++    assert.equal(h.liveSessions.size, 0, JSON.stringify(options));
++    assert.equal(h.draftMap.size, 0, JSON.stringify(options));
++    assert.equal(h.registrationChecks.every(([, registered]) => registered === false), true);
++    assert.equal(h.calls.some(([name]) => name === 'openPlannerTrip'), true);
++    assert.equal(h.calls.some(([name]) => name === 'getTrip'), false);
++    assert.equal(h.workspaces.length, options.workspaceFailure ? 0 : 1);
++    assert.equal(h.persistedDrafts.length, 0);
++  }
++});
++
++test('restore rejects invalid Java sync revisions without overwriting the BFF draft', async () => {
++  for (const syncRevision of [0, -1, 4, 4.5, Number.NaN, '8', true]) {
++    const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++      input: { sessionId: 'web-session-1', expectedVersion: 4, trip: { days: [] } },
++      java: { async restorePlannerDraft() { return { trip: { title: 'Invalid', version: 5 }, syncRevision }; } }
++    });
++    const result = await h.handle();
++    assert.equal(result.status, 502, `syncRevision=${syncRevision}`);
++    assert.equal(result.data.code, 'PLANNER_RESTORE_CONTRACT_INVALID');
++    assert.equal(h.session.trip.title, 'Draft title');
++    assert.equal(h.session.syncRevision, 4);
++    assert.equal(h.persistedDrafts.length, 0);
++  }
++});
++
++test('restore rejects missing or invalid Java trip versions without overwriting the BFF draft', async () => {
++  for (const version of [undefined, 0, -1, 4, 4.5, '5', true]) {
++    const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++      input: { sessionId: 'web-session-1', expectedVersion: 4, trip: { days: [] } },
++      java: { async restorePlannerDraft() {
++        return { trip: { title: 'Invalid version', ...(version === undefined ? {} : { version }) }, syncRevision: 7 };
++      } }
++    });
++    const result = await h.handle();
++    assert.equal(result.status, 502, `version=${version}`);
++    assert.equal(result.data.code, 'PLANNER_RESTORE_CONTRACT_INVALID');
++    assert.equal(h.session.trip.title, 'Draft title');
++    assert.equal(h.session.syncRevision, 4);
++    assert.equal(h.persistedDrafts.length, 0);
++  }
++});
++
++test('late restore response cannot overwrite a newer BFF planner snapshot', async () => {
++  for (const newerState of [
++    { trip: { title: 'Newer', version: 6 }, syncRevision: 8 },
++    // Save/apply paths can leave the BFF sync revision behind trip.version.
++    { trip: { title: 'Newer via apply', version: 6 }, syncRevision: 3 },
++    // Save can refresh formal-trip source metadata without advancing either counter.
++    { trip: { ...sessionFixture().trip, sourceTripVersion: 9 }, syncRevision: 4 }
++  ]) {
++    let resolveRestore;
++    const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++      input: { sessionId: 'web-session-1', expectedVersion: 4, trip: { days: [] } },
++      java: { restorePlannerDraft() {
++        return new Promise(resolve => { resolveRestore = resolve; });
++      } }
++    });
++    const pending = h.handle();
++    await new Promise(resolve => setImmediate(resolve));
++    h.session.trip = newerState.trip;
++    h.session.syncRevision = newerState.syncRevision;
++    resolveRestore({ trip: { title: 'Late stale response', version: 5 }, syncRevision: 7 });
++    const result = await pending;
++    assert.equal(result.status, 409);
++    assert.equal(result.data.code, 'PLANNER_REVISION_CONFLICT');
++    assert.equal(h.session.trip.title, newerState.trip.title);
++    assert.equal(h.session.syncRevision, newerState.syncRevision);
++    assert.equal(h.persistedDrafts.length, 0);
++  }
++
++  let resolveRestoreWithoutRevision;
++  const h = harness({ route: restoreRoute, pathname: '/api/trips/formal-1/draft/restore',
++    input: { sessionId: 'web-session-1', expectedVersion: 4, trip: { days: [] } },
++    java: { restorePlannerDraft() {
++      return new Promise(resolve => { resolveRestoreWithoutRevision = resolve; });
++    } }
++  });
++  const pending = h.handle();
++  await new Promise(resolve => setImmediate(resolve));
++  h.session.trip = { title: 'Newer without sync movement', version: 6 };
++  resolveRestoreWithoutRevision({ trip: { title: 'Late stale response without revision', version: 5 } });
++  const result = await pending;
++  assert.equal(result.status, 409);
++  assert.equal(result.data.code, 'PLANNER_REVISION_CONFLICT');
++  assert.equal(h.session.trip.title, 'Newer without sync movement');
++  assert.equal(h.persistedDrafts.length, 0);
++});
++
++test('open rejects unauthenticated requests and preserves Java missing-trip status', async () => {
++  const unauthenticated = harness({ route: openRoute, pathname: '/api/trips/formal-1/open', authenticated: false });
++  assert.equal((await unauthenticated.handle()).status, 401);
++  assert.equal(unauthenticated.calls.length, 0);
++
++  const missing = harness({ route: openRoute, pathname: '/api/trips/formal-1/open',
++    java: { async openPlannerTrip() { throw new HarnessJavaCoreError(404, 'JAVA_REQUEST_REJECTED', 'missing'); } }
++  });
++  const result = await missing.handle();
++  assert.equal(result.status, 404);
++  assert.equal(result.data.ok, false);
++  assert.equal(result.data.code, 'JAVA_REQUEST_REJECTED');
++  assert.equal(result.data.message, '请求未被 Java Core Backend 接受。');
++  assert.equal(missing.persistedDrafts.length, 0);
++});
++
++test('open does not persist or register a BFF session if Java Open fails', async () => {
++  let javaOpenCalled = false;
++  const h = harness({ route: openRoute, pathname: '/api/trips/formal-1/open',
++    java: { async openPlannerTrip() {
++      javaOpenCalled = true;
++      throw new HarnessJavaCoreError(404, 'JAVA_REQUEST_REJECTED', 'missing');
++    } }
++  });
++  const result = await h.handle();
++  assert.equal(result.status, 404);
++  assert.equal(result.data.code, 'JAVA_REQUEST_REJECTED');
++  assert.equal(javaOpenCalled, true);
++  assert.equal(h.calls.some(([name]) => name === 'getTrip'), false);
++  assert.equal(h.liveSessions.size, 0);
++  assert.equal(h.persistedDrafts.length, 0);
++  assert.equal(h.draftMap.size, 0);
++  assert.equal(h.workspaces.length, 0);
++});
++
++test('Java client sends the Save/Open/Restore methods to the Java V1 URLs with owner and capability credentials', async () => {
++  const previous = {
++    coreUrl: process.env.CORE_BACKEND_URL,
++    legacyUrl: process.env.YUYOUZHICE_JAVA_CORE_URL,
++    stub: process.env.YUYOUZHICE_JAVA_TEST_STUB
++  };
++  process.env.CORE_BACKEND_URL = 'http://java-contract.test';
++  process.env.YUYOUZHICE_JAVA_TEST_STUB = '0';
++  const { createJavaCoreClient, javaCoreConfig, JavaCoreError } = await import(`./java-core-client.mjs?cp44=${Date.now()}`);
++  assert.equal(javaCoreConfig.testStub, false);
++  const originalFetch = globalThis.fetch;
++  const calls = [];
++  globalThis.fetch = async (url, options) => {
++    calls.push({ url: String(url), options });
++    return { ok: true, status: 200, json: async () => ({ success: true, data: { ok: true } }) };
++  };
++  try {
++    const client = createJavaCoreClient();
++    await client.savePlannerSession('java/session', { sessionAccessToken: 'plan-cap' }, 'owner-token');
++    const signal = new AbortController().signal;
++    await client.openPlannerTrip('formal/trip', 'owner-token', signal);
++    const restoreTrip = { sourceTripVersion: 8, days: [{ day: 1, stops: [] }] };
++    await client.restorePlannerDraft('java/session', { trip: restoreTrip, expectedVersion: 4,
++      sessionAccessToken: 'plan-cap' }, 'owner-token', signal);
++
++    assert.equal(calls[0].url, 'http://java-contract.test/ai/planner/v1/sessions/java%2Fsession/save');
++    assert.equal(calls[0].options.method, 'POST');
++    assert.equal(calls[0].options.headers.authorization, 'Bearer owner-token');
++    assert.equal(calls[0].options.headers['x-plan-session-token'], 'plan-cap');
++    assert.equal(calls[0].options.body, undefined);
++
++    assert.equal(calls[1].url, 'http://java-contract.test/ai/planner/v1/trips/formal%2Ftrip/open');
++    assert.equal(calls[1].options.method, 'POST');
++    assert.equal(calls[1].options.headers.authorization, 'Bearer owner-token');
++    assert.equal(calls[1].options.body, undefined);
++    assert.equal(calls[1].options.signal.aborted, false);
++
++    assert.equal(calls[2].url, 'http://java-contract.test/ai/planner/v1/sessions/java%2Fsession/restore-draft');
++    assert.equal(calls[2].options.method, 'POST');
++    assert.equal(calls[2].options.headers.authorization, 'Bearer owner-token');
++    assert.equal(calls[2].options.headers['x-plan-session-token'], 'plan-cap');
++    assert.deepEqual(JSON.parse(calls[2].options.body), { trip: restoreTrip, expectedVersion: 4 });
++
++    globalThis.fetch = async (url, options) => {
++      calls.push({ url: String(url), options });
++      return { ok: false, status: 409,
++        json: async () => ({ success: false, code: 409, message: 'stale revision', data: { latestVersion: 9 } }) };
++    };
++    await assert.rejects(client.restorePlannerDraft('java-session', {
++      trip: restoreTrip, expectedVersion: 4, sessionAccessToken: 'plan-cap'
++    }, 'owner-token'), error => error instanceof JavaCoreError
++      && error.status === 409 && error.code === 'CONFLICT'
++      && error.details.latestVersion === 9);
++  } finally {
++    globalThis.fetch = originalFetch;
++    if (previous.coreUrl === undefined) delete process.env.CORE_BACKEND_URL; else process.env.CORE_BACKEND_URL = previous.coreUrl;
++    if (previous.legacyUrl === undefined) delete process.env.YUYOUZHICE_JAVA_CORE_URL; else process.env.YUYOUZHICE_JAVA_CORE_URL = previous.legacyUrl;
++    if (previous.stub === undefined) delete process.env.YUYOUZHICE_JAVA_TEST_STUB; else process.env.YUYOUZHICE_JAVA_TEST_STUB = previous.stub;
++  }
++});

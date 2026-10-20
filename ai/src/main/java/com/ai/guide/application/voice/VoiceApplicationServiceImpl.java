@@ -1,8 +1,8 @@
 package com.ai.guide.application.voice;
 
-import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.voice.gateway.VoiceGatewayPort;
-import org.springframework.http.ResponseEntity;
+import com.ai.guide.domain.voice.model.VoiceSynthesisResult;
+import com.ai.guide.domain.voice.model.VoiceTranscriptionResult;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -40,17 +40,21 @@ public class VoiceApplicationServiceImpl implements VoiceApplicationService {
     }
 
     @Override
-    public Result<String> transcribe(Map<String, String> body) {
+    public VoiceTranscriptionResult transcribe(Map<String, String> body) {
         if (body == null) {
-            return Result.error(400, "音频数据为空");
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频数据为空");
         }
         String audioDataUrl = body.get("audio");
         if (audioDataUrl == null || audioDataUrl.isBlank()) {
-            return Result.error(400, "音频数据为空");
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频数据为空");
         }
 
-        if(audioDataUrl.length()>14*1024*1024)return Result.error(413,"音频超过10MB上限");
-        if(audioDataUrl.startsWith("data:")&&!audioDataUrl.matches("(?s)data:audio/(?:wav|x-wav|wave);base64,.*"))return Result.error(400,"仅支持WAV音频");
+        if (audioDataUrl.length() > 14 * 1024 * 1024) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PAYLOAD_TOO_LARGE, "音频超过10MB上限");
+        }
+        if (audioDataUrl.startsWith("data:") && !audioDataUrl.matches("(?s)data:audio/(?:wav|x-wav|wave);base64,.*")) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "仅支持WAV音频");
+        }
         // 提取纯 base64（去掉 "data:audio/wav;base64," 前缀）
         String base64Audio = audioDataUrl;
         int commaIdx = audioDataUrl.indexOf(",");
@@ -62,38 +66,97 @@ public class VoiceApplicationServiceImpl implements VoiceApplicationService {
         try {
             audioBytes = Base64.getDecoder().decode(base64Audio);
         } catch (IllegalArgumentException e) {
-            return Result.error(400, "音频格式参数异常，请重新录制");
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频格式参数异常，请重新录制");
         }
 
-        if(audioBytes.length==0 || audioBytes.length>10*1024*1024)return Result.error(400,"音频数据为空或超过大小上限");
+        if (audioBytes.length == 0) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "音频数据为空或超过大小上限");
+        }
+        if (audioBytes.length > 10 * 1024 * 1024) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.PAYLOAD_TOO_LARGE, "音频数据为空或超过大小上限");
+        }
+        if (!validAsrWav(audioBytes)) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST,
+                    "仅支持16kHz、单声道、16位PCM的WAV录音，时长不超过60秒");
+        }
         String pid=body.containsKey("dev_pid")?body.get("dev_pid"):"1537";
-        if(pid==null || !Set.of("1537","1737","1637","1837").contains(pid.trim()))return Result.error(400,"dev_pid参数不支持");
+        if (pid == null || !Set.of("1537", "1737", "1637", "1837").contains(pid.trim())) {
+            return VoiceTranscriptionResult.failure(VoiceTranscriptionResult.Status.INVALID_REQUEST, "dev_pid参数不支持");
+        }
         int devPid=Integer.parseInt(pid.trim());
         return voiceGatewayPort.transcribe(audioBytes, base64Audio, devPid);
     }
 
+    /** Inspect RIFF chunks instead of assuming a fixed 44-byte WAV header. */
+    private static boolean validAsrWav(byte[] wav) {
+        if (wav.length < 44 || !tag(wav, 0, "RIFF") || !tag(wav, 8, "WAVE")
+                || unsigned32(wav, 4) != wav.length - 8L) return false;
+        boolean foundFormat = false;
+        boolean foundData = false;
+        int offset = 12;
+        while (offset + 8 <= wav.length) {
+            long size = unsigned32(wav, offset + 4);
+            long end = (long) offset + 8 + size;
+            if (end > wav.length || end + (size & 1L) > wav.length) return false;
+            if (tag(wav, offset, "fmt ")) {
+                if (foundFormat || size < 16) return false;
+                int start = offset + 8;
+                if (unsigned16(wav, start) != 1 || unsigned16(wav, start + 2) != 1
+                        || unsigned32(wav, start + 4) != 16_000
+                        || unsigned32(wav, start + 8) != 32_000
+                        || unsigned16(wav, start + 12) != 2
+                        || unsigned16(wav, start + 14) != 16) return false;
+                foundFormat = true;
+            } else if (tag(wav, offset, "data")) {
+                if (foundData || size == 0 || (size & 1L) != 0 || size > 60L * 16_000 * 2) return false;
+                foundData = true;
+            }
+            offset = (int) (end + (size & 1L));
+        }
+        return offset == wav.length && foundFormat && foundData;
+    }
+
+    private static boolean tag(byte[] bytes, int offset, String value) {
+        if (offset < 0 || offset + 4 > bytes.length) return false;
+        for (int i = 0; i < 4; i++) if (bytes[offset + i] != (byte) value.charAt(i)) return false;
+        return true;
+    }
+
+    private static int unsigned16(byte[] bytes, int offset) {
+        return (bytes[offset] & 255) | ((bytes[offset + 1] & 255) << 8);
+    }
+
+    private static long unsigned32(byte[] bytes, int offset) {
+        return Integer.toUnsignedLong((bytes[offset] & 255) | ((bytes[offset + 1] & 255) << 8)
+                | ((bytes[offset + 2] & 255) << 16) | ((bytes[offset + 3] & 255) << 24));
+    }
+
     @Override
-    public ResponseEntity<byte[]> synthesize(Map<String, String> body) {
+    public VoiceSynthesisResult synthesize(Map<String, String> body) {
         if (body == null) {
-            return ResponseEntity.badRequest().build();
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.BAD_REQUEST, "请求内容不能为空");
         }
         String text = body.get("text");
         if (text == null || text.isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.BAD_REQUEST, "待合成文本不能为空");
         }
 
-        if(text.length()>2000)return ResponseEntity.status(413).build();
-        if(runtimePolicy!=null&&!runtimePolicy.isTtsEnabled())return ResponseEntity.status(503).build();
+        if (text.length() > 2000) {
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.PAYLOAD_TOO_LARGE, "合成文本超过长度限制");
+        }
+        if (runtimePolicy != null && !runtimePolicy.isTtsEnabled()) {
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.UNAVAILABLE, "语音合成功能暂不可用");
+        }
         // 解析音色参数：前端传入百度 per 编号，白名单校验，显式非法值拒绝
         String per = body.getOrDefault("voice", DEFAULT_VOICE_PER);
         if (!VALID_PER.contains(per)) {
-            return ResponseEntity.badRequest().build();
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.BAD_REQUEST, "音色参数不支持");
         }
 
         // 语言：zh=中文 / en=英文（百度 TTS lan 参数），显式非法值拒绝
         String lang = body.getOrDefault("lang", "zh");
         if (!"en".equals(lang) && !"zh".equals(lang)) {
-            return ResponseEntity.badRequest().build();
+            return VoiceSynthesisResult.failure(VoiceSynthesisResult.Status.BAD_REQUEST, "语言参数不支持");
         }
 
         return voiceGatewayPort.synthesize(text, per, lang);

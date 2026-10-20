@@ -1,0 +1,110 @@
+{
+  "diningMinimumBudgetMinutes": 90,
+  "stopBudgetBaseMinutes": 45,
+  "minutesPerStop": 55,
+  "minimumStops": 2,
+  "maximumStops": 7,
+  "longParkBudgetMinutes": 240,
+  "shortTripMaxParks": 1,
+  "longTripMaxParks": 2,
+  "minimumStopDurationMinutes": 30,
+  "unknownStopDurationMinutes": 60,
+  "unknownTravelDurationMinutes": 30,
+  "minimumRemainingForStopMinutes": 25,
+  "minimumVisitRemainderMinutes": 20,
+  "diningUrgencyMinimumRemainingMinutes": 45,
+  "diningUrgencyMaximumRemainingMinutes": 95,
+  "explicitFoodDiningLeadMinutes": 45,
+  "minimumRemainingToAddDiningMinutes": 40,
+  "transitPreferredDistanceKm": 1.5,
+  "estimateTravelMinutesPerKm": 4.0,
+  "minimumEstimatedTravelMinutes": 5,
+  "duplicateCandidateDistanceKm": 0.25,
+  "routeFallback": {
+    "distanceSafetyMultiplier": 1.35,
+    "nearbyDistanceKm": 1.2,
+    "nearbyMinimumMinutes": 15,
+    "nearbySpeedKmh": 2.25,
+    "sameDistrictTransitMaximumKm": 5.0,
+    "sameDistrictWalkingMeters": 400,
+    "sameDistrictMinimumMinutes": 10,
+    "sameDistrictSpeedKmh": 30.0,
+    "sameDistrictOverheadMinutes": 10,
+    "farDistrictThresholdKm": 30.0,
+    "farDistrictWalkingMeters": 200,
+    "farDistrictMinimumMinutes": 45,
+    "farDistrictSpeedKmh": 55.0,
+    "farDistrictOverheadMinutes": 20,
+    "crossDistrictWalkingMeters": 500,
+    "crossDistrictMinimumMinutes": 20,
+    "crossDistrictSpeedKmh": 22.0,
+    "crossDistrictOverheadMinutes": 12
+  },
+  "categoryOccurrenceLimits": {
+    "SQUARE": 1,
+    "RELIGIOUS_TEMPLE": 1,
+    "COMMERCIAL_STREET": 1
+  },
+  "visitDurationRules": [
+    {
+      "nameKeywords": ["打卡点", "雕像", "雕塑", "纪念碑", "刻石", "牌匾", "机位", "拍摄", "亭"],
+      "typeKeywords": ["观景点", "摄影"],
+      "minimumRemainingMinutes": 0,
+      "durationMinutes": 20
+    },
+    {
+      "nameKeywords": ["老街", "古镇", "步道", "森林公园", "植物园", "动物园", "风景区", "度假区"],
+      "typeKeywords": ["公园广场", "国家级景点"],
+      "minimumRemainingMinutes": 180,
+      "durationMinutes": 75
+    },
+    {
+      "nameKeywords": ["老街", "古镇", "步道", "森林公园", "植物园", "动物园", "风景区", "度假区"],
+      "typeKeywords": ["公园广场", "国家级景点"],
+      "minimumRemainingMinutes": 90,
+      "durationMinutes": 60
+    },
+    {
+      "nameKeywords": ["老街", "古镇", "步道", "森林公园", "植物园", "动物园", "风景区", "度假区"],
+      "typeKeywords": ["公园广场", "国家级景点"],
+      "minimumRemainingMinutes": 0,
+      "durationMinutes": 45
+    },
+    {
+      "nameKeywords": ["旧址", "故居", "展馆", "博物馆", "纪念馆", "礼堂", "书院", "寺", "庙", "观", "阁", "塔"],
+      "typeKeywords": ["文物古迹", "寺庙道观"],
+      "minimumRemainingMinutes": 120,
+      "durationMinutes": 45
+    },
+    {
+      "nameKeywords": ["旧址", "故居", "展馆", "博物馆", "纪念馆", "礼堂", "书院", "寺", "庙", "观", "阁", "塔"],
+      "typeKeywords": ["文物古迹", "寺庙道观"],
+      "minimumRemainingMinutes": 0,
+      "durationMinutes": 35
+    },
+    {
+      "nameKeywords": ["广场"],
+      "typeKeywords": [],
+      "minimumRemainingMinutes": 120,
+      "durationMinutes": 35
+    },
+    {
+      "nameKeywords": ["广场"],
+      "typeKeywords": [],
+      "minimumRemainingMinutes": 0,
+      "durationMinutes": 25
+    },
+    {
+      "nameKeywords": [],
+      "typeKeywords": ["风景名胜", "文博院馆", "公园广场"],
+      "minimumRemainingMinutes": 120,
+      "durationMinutes": 60
+    },
+    {
+      "nameKeywords": [],
+      "typeKeywords": ["风景名胜", "文博院馆", "公园广场"],
+      "minimumRemainingMinutes": 0,
+      "durationMinutes": 45
+    }
+  ]
+}

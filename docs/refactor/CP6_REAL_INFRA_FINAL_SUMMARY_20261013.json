@@ -1,0 +1,25 @@
+{
+  "targetTests": {
+    "passed": 4,
+    "run": 4
+  },
+  "after": {
+    "run": 6,
+    "skipped": 0,
+    "failures": 0
+  },
+  "before": {
+    "run": 6,
+    "skipped": 0,
+    "failures": 1
+  },
+  "parserCases": 9,
+  "sourceDiffCheckExit": 0,
+  "jarSha256": "4C1156FF566483DA997A789D619100601C46FEBBA8465B55AE541BDD61D81205",
+  "httpChecks": 4,
+  "scope": "Windows disposable PG16.15/Redis7.4.3 community port",
+  "tripRegression": {
+    "passed": 54,
+    "run": 54
+  }
+}

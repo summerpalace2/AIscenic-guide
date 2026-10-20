@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.dao.DuplicateKeyException;
 import java.util.List;
 import java.util.Map;
 
@@ -165,11 +166,14 @@ public class TripRepository implements TripRepositoryPort {
     @Override
     public void reserveIdempotency(String ownerId, String operation, String key,
                                    String fingerprint, String tripId, long now) {
-        jdbcTemplate.update(
+        int reserved = jdbcTemplate.update(
                 "INSERT INTO trip_idempotency (owner_id, operation, idempotency_key, " +
                         "request_fingerprint, trip_id, version_number, response_json, created_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                        "ON CONFLICT (owner_id, operation, idempotency_key) DO NOTHING",
                 ownerId, operation, key, fingerprint, tripId, 0, "{}", now);
+        // A SQL uniqueness error would abort PostgreSQL's transaction before the service can replay.
+        if (reserved == 0) throw new DuplicateKeyException("Trip idempotency reservation already exists");
     }
 
     @Override

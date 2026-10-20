@@ -1,8 +1,7 @@
 package com.ai.guide.domain.analytics.service;
 
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -39,18 +38,18 @@ public class EmotionAnalysisService {
             NEUTRAL：提问、请求推荐、客观陈述、没有明显情绪，或无法确定。
             """;
 
-    private final ChatClient chatClient;
+    private final LanguageModelPort languageModel;
     private final ExecutorService executor;
     private final SentimentService ruleBasedSentiment;
     private final boolean enabled;
     private final long timeoutMs;
 
-    public EmotionAnalysisService(ChatClient.Builder builder,
+    public EmotionAnalysisService(LanguageModelPort languageModel,
                                   @Qualifier("emotionExecutor") ExecutorService executor,
                                   SentimentService ruleBasedSentiment,
                                   @Value("${analytics.emotion-ai-enabled:true}") boolean enabled,
                                   @Value("${analytics.emotion-ai-timeout-ms:4500}") long timeoutMs) {
-        this.chatClient = builder.build();
+        this.languageModel = languageModel;
         this.executor = executor;
         this.ruleBasedSentiment = ruleBasedSentiment;
         this.enabled = enabled;
@@ -128,13 +127,9 @@ public class EmotionAnalysisService {
     /** 同步执行一次分类，仅由情绪线程池调用。 */
     private SentimentService.Sentiment classify(String text, SentimentService.Sentiment fallback) {
         try {
-            String response = chatClient.prompt()
-                    .messages(
-                            new SystemMessage(CLASSIFIER_PROMPT),
-                            new UserMessage("用户原话：" + text)
-                    )
-                    .call()
-                    .content();
+            String response = languageModel.completeText(java.util.List.of(
+                    new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, CLASSIFIER_PROMPT),
+                    new LanguageModelMessage(LanguageModelMessage.Role.USER, "用户原话：" + text)));
             SentimentService.Sentiment parsed = parseLabel(response);
             SentimentService.Sentiment result = parsed != null ? parsed : fallback;
             recordSuccess();

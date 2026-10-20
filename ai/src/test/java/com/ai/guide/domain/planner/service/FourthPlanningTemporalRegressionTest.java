@@ -1,4 +1,7 @@
 package com.ai.guide.domain.planner.service;
+
+import com.ai.guide.domain.planner.gateway.ProposalRepositoryPort;
+import com.ai.guide.infrastructure.planner.proposal.CaffeineRedisProposalRepository;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.domain.attraction.model.Attraction;
 import com.ai.guide.domain.attraction.service.AttractionService;
@@ -22,9 +25,9 @@ class FourthPlanningTemporalRegressionTest {
   return new LinkedHashMap<>(Map.of("id",id,"venueId",venue,"name",name,"time",time,"duration",duration,"district","中心区"));
  }
  static Map<String,Object> trip(List<Map<String,Object>> stops) {
-  return new LinkedHashMap<>(Map.of("days",new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("day",1,"date","2026-10-07","stops",new ArrayList<>(stops)))))));
+  return new LinkedHashMap<>(Map.of("city","测试城","days",new ArrayList<>(List.of(new LinkedHashMap<>(Map.of("day",1,"date","2026-10-07","stops",new ArrayList<>(stops)))))));
  }
- record Fixture(PlanAdjustmentService service,ProposalStore store,PlannerSessionRepositoryPort repo) {
+ record Fixture(PlanAdjustmentService service,ProposalRepositoryPort store,PlannerSessionRepositoryPort repo) {
   PlannerService.ServiceResult preview(String text,String pending) {
    return service.preview("audit-session",PlanConversationRequestDto.builder().message(text).baseRevision(1)
     .context(PlanPageContext.builder().activeDay(1).pendingIntentId(pending).build()).build());
@@ -40,6 +43,8 @@ class FourthPlanningTemporalRegressionTest {
   var b=Attraction.builder().id("test-b").location("116.31,39.91").name("测试码头").duration("90分钟").district("中心区").summary("开放码头").intro("介绍").build();
   var anchor=Attraction.builder().id("anchor").location("116.32,39.92").name("测试公园").duration("60分钟").district("中心区").summary("公园").intro("介绍").build();
   var attractions=mock(AttractionService.class); when(attractions.list(null,null)).thenReturn(List.of(a,b,anchor));
+  for(var v:List.of(a,b,anchor)) v.setCity("测试城");
+  when(attractions.list("测试城",null,null)).thenReturn(List.of(a,b,anchor));
   for(var v:List.of(a,b,anchor)) when(attractions.get(v.getId())).thenReturn(v);
   var builder=mock(ItineraryBuilderPort.class); when(builder.attractionServiceList()).thenReturn(List.of(a,b,anchor));
   when(builder.createStop(any(),anyString(),anyString(),anyString(),anyString(),nullable(String.class))).thenAnswer(call -> {
@@ -69,8 +74,8 @@ class FourthPlanningTemporalRegressionTest {
    catch(Exception error) {throw new RuntimeException(error);}
    extractor=new LlmIntentExtractor((system,user)->modelReply,mapper,new ConversationIntentClassifier(),true,true,0.75,500);
   }
-  var verifier=new PlanVerifier(); var store=new ProposalStore();
-  return new Fixture(new PlanAdjustmentService(repo,builder,attractions,costs,verifier,new RouteAwarePlanner(costs,verifier,new LocalPlanRepairer()),store,extractor,mapper,new PlannerMetricsLogger()),store,repo);
+  var verifier=new PlanVerifier(); var store=new CaffeineRedisProposalRepository();
+  return new Fixture(new PlanAdjustmentService(repo,builder,attractions,costs,verifier,new RouteAwarePlanner(costs,verifier,com.ai.guide.testing.PlannerTaxonomyFixtures.localPlanRepairer()),store,extractor,mapper,new PlannerMetricsLogger()),store,repo);
  }
  @BeforeEach void authorize() { UserContext.set("audit-owner","USER"); }
  @AfterEach void clear() { UserContext.clear(); }

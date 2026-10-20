@@ -1,9 +1,5 @@
 package com.ai.guide.domain.chat.model;
 
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.MessageType;
-import java.util.Collections;
-import java.util.Map;
 
 /**
  * 对话历史消息实体记录
@@ -14,19 +10,4 @@ import java.util.Map;
  * @param type    消息角色类型 (如 "user", "assistant", "system")
  * @param content 消息正文文本
  */
-public record ChatMessageRecord(String type, String content) implements Message {
-    @Override
-    public MessageType getMessageType() {
-        return MessageType.fromValue(type);
-    }
-
-    @Override
-    public String getContent() {
-        return content;
-    }
-
-    @Override
-    public Map<String, Object> getMetadata() {
-        return Collections.emptyMap();
-    }
-}
+public record ChatMessageRecord(String type, String content) {}

@@ -16,7 +16,7 @@ import java.util.Map;
  * 受控文旅地标与景点探索控制器
  *
  * 所属适配层：adapter.attraction.web
- * 架构职责：作为重庆 24+ 大核心文旅地标元数据的唯一权威下发入口，委派应用服务提供景点检索、分类过滤、详情富媒体展示及事实核验信息。
+ * 架构职责：作为文旅地点元数据的权威下发入口，委派应用服务提供检索、分类过滤、详情富媒体展示及事实核验信息。
  */
 @RestController
 @RequestMapping("/ai/attractions")
@@ -30,9 +30,10 @@ public class AttractionController {
 
     @GetMapping
     public Result<List<Attraction>> list(
+            @RequestParam(required = false) String city,
             @RequestParam(required = false) String district,
             @RequestParam(required = false) String category) {
-        return attractionApplicationService.list(district, category);
+        return attractionApplicationService.list(city, district, category);
     }
 
     @GetMapping("/{id}")

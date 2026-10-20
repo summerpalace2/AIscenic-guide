@@ -1,7 +1,7 @@
 package com.ai.guide.domain.planner.engine;
 
 import com.ai.guide.domain.attraction.model.Attraction;
-import com.ai.guide.domain.planner.gateway.TaxonomyPort.MealWindow;
+import com.ai.guide.domain.taxonomy.gateway.DiningTaxonomyPort.MealWindow;
 import com.ai.guide.domain.planner.service.ItineraryBuilderPort;
 import com.ai.guide.domain.planner.service.adjustment.PlanAdjustmentHelper;
 import org.springframework.stereotype.Component;

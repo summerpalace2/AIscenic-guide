@@ -1,0 +1,10 @@
+{
+  "postgresqlRealSqlReadWrite": true,
+  "redisAuthenticatedReadWrite": true,
+  "redisUnauthenticatedRejected": true,
+  "redisAofEnabled": true,
+  "smokeKeysCleaned": true,
+  "pgListen": "127.0.0.1",
+  "redisListen": "127.0.0.1",
+  "productionServicesUntouched": true
+}

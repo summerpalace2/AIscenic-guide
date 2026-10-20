@@ -486,7 +486,7 @@ travel_memory（CONFIRMED）
 
 不要将 `.env`、数据库文件、API Key 或生产向量库凭据提交到 Git。
 
-> 当前源码中的 `ScenicGuideApplication` 仍保留 Windows 本地 canonical `.env` 路径逻辑。跨机器、Docker 或 Linux 部署时应优先使用进程环境变量，或在部署前将该路径逻辑改为可配置项。
+> Java 仅读取启动工作目录的 `.env`，不存在时读取父目录的 `.env`；进程环境与 JVM 参数优先。Docker/部署平台可直接注入进程环境。不会读取开发机器的固定目录。
 
 ## 完整项目结构
 
@@ -976,76 +976,33 @@ GET /actuator/info
 - 高德 Web Service Key
 - 可选：PostgreSQL、百度 ASR/TTS、百炼 Rerank
 
-### 关键环境变量
+### 唯一配置模板
 
-```dotenv
-DEEPSEEK_API_KEY=your-deepseek-api-key
-DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
+字段、默认值与兼容别名统一维护在 [ai/.env.example](ai/.env.example)。不要把旧 Web 仓库中的废弃模板当作第二配置来源。
 
-YUYOUZHICE_REDIS_HOST=localhost
-YUYOUZHICE_REDIS_PORT=6379
-YUYOUZHICE_REDIS_PASSWORD=
-YUYOUZHICE_REDIS_SSL=false
+首次运行，将该模板复制为 `ai/.env` 并填入自己的配置；不要覆盖已经存在的文件。仓库不包含可用密钥：
 
-QDRANT_HOST=localhost
-QDRANT_PORT=6334
-QDRANT_API_KEY=
-QDRANT_PRODUCTION_V2_COLLECTION=scenic_guide_production_v3_rebuild
+- `JWT_SECRET` 必须至少包含 32 个 UTF-8 字节；BFF 使用独立的 `YUYOUZHICE_AUTH_SECRET`。
+- 当前 Spring AI 初始化要求非空 `DEEPSEEK_API_KEY`。假值可能仅让进程启动，不能使聊天正常工作；真实聊天需有效模型凭据。
+- 高德、Embedding/Rerank、语音等功能分别需要对应供应商配置。Java Qdrant 使用 gRPC HOST/PORT，工具使用 REST URL，二者集合名应对齐。
+- 默认 SQLite 仅用于本地开发。显式选择 PostgreSQL 但未提供地址会在启动时报错，不静默退回 SQLite；生产数据库与 Redis 等环境必须单独提供。
 
-DASHSCOPE_API_KEY=your-dashscope-api-key
-AMAP_WEB_SERVICE_KEY=your-amap-key
-BAIDU_API_KEY=your-baidu-api-key
-BAIDU_SECRET_KEY=your-baidu-secret-key
-
-JWT_SECRET=replace-with-a-long-random-secret
-JWT_REVOCATION_REDIS_ENABLED=false
-
-KNOWLEDGE_DB_TYPE=sqlite
-KNOWLEDGE_DB_URL=
-KNOWLEDGE_DB_USERNAME=
-KNOWLEDGE_DB_PASSWORD=
-```
-
-Zeabur PostgreSQL 可直接使用 POSTGRES_CONNECTION_STRING / POSTGRES_URI，或分项变量 POSTGRES_HOST、POSTGRES_PORT、POSTGRES_DATABASE、POSTGRES_USERNAME、POSTGRES_PASSWORD；同时兼容旧变量名 POSTGRES_DB、POSTGRES_USER。显式选择 PostgreSQL 却缺少连接地址时，应用会在启动时报错，避免误回退到本地 SQLite。
-
-规划相关开关：
-
-```dotenv
-PLANNER_V1_ENABLED=true
-PLANNER_LLM_INTENT_ENABLED=false
-PLANNER_LLM_INTENT_MINIMUM_CONFIDENCE=0.75
-PLANNER_LLM_INTENT_TIMEOUT_MS=3500
-PLANNER_LLM_NARRATIVE_ENABLED=false
-PLANNER_LLM_NARRATIVE_TIMEOUT_MS=30000
-```
-
-动态高德相关配置包括：
-
-```dotenv
-AMAP_WEB_SERVICE_TIMEOUT_MS=6000
-AMAP_WEB_SERVICE_ROUTE_TIMEOUT_MS=6500
-AMAP_WEB_SERVICE_MAX_CONCURRENCY=2
-AMAP_WEB_SERVICE_HYDRATION_CONCURRENCY=2
-AMAP_WEB_SERVICE_REQUEST_CACHE_ENABLED=true
-AMAP_WEB_SERVICE_REQUEST_DEDUP_ENABLED=true
-AMAP_WEB_SERVICE_POI_CACHE_TTL_MS=60000
-AMAP_WEB_SERVICE_ROUTE_CACHE_TTL_MS=10000
-AMAP_WEB_SERVICE_WEATHER_CACHE_TTL_MS=60000
-```
+Java 读取当前工作目录 `.env`，未找到才读取父目录 `.env`。为明确使用 `ai/.env`，进入 `ai` 目录启动；进程环境、JVM 参数及 Spring 命令行配置优先于文件值。BFF 与导入工具需通过 `SCENIC_GUIDE_JAVA_DIR` 指向这个 Java 模块目录；不会猜测另一台机器的路径。不要将真实 `.env`、数据库或供应商凭据提交到 Git。
 
 ### 启动
 
 Windows：
 
 ```powershell
-.\mvnw.cmd -pl ai spring-boot:run
+cd ai
+.\mvnw.cmd spring-boot:run
 ```
 
 Linux / macOS：
 
 ```bash
-./mvnw -pl ai spring-boot:run
+cd ai
+./mvnw spring-boot:run
 ```
 
 默认 Java 服务端口为 `8080`。
@@ -1070,7 +1027,7 @@ Windows：
 
 ```bash
 docker build -t ai-scenic-guide .
-docker run --rm -p 8080:8080 --env-file .env ai-scenic-guide
+docker run --rm -p 8080:8080 --env-file ai/.env ai-scenic-guide
 ```
 
 Redis、Qdrant、PostgreSQL 和外部模型服务需要单独提供，应用容器不会自动托管这些依赖。
@@ -1123,7 +1080,7 @@ README 需要和实际代码保持一致，当前版本仍有以下边界：
 6. 旅行记忆属于用户确认式结构化偏好，不是完整的通用长期聊天记忆；
 7. SQLite 适合本地开发和演示，生产环境建议 PostgreSQL；
 8. 当前 `main` 仍是模块化单体，不应把它描述成已经拆分完成的微服务体系；
-9. 源码中的本地 `.env` canonical 路径仍有 Windows 环境耦合，跨平台部署应使用进程环境变量或先完成配置路径治理。
+9. Java 配置文件按启动工作目录/父目录查找；跨项目 BFF/工具需显式指定 Java 目录，部署环境推荐直接注入进程变量。
 
 ## 质量验证方向
 

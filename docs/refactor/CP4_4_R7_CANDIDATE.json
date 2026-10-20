@@ -1,0 +1,70 @@
+{
+  "checkpoint": "CP4.4-R7-staged-planner-persistence",
+  "capturedAt": "2026-10-09",
+  "status": "frozen pending independent B/C review; not accepted",
+  "parentCandidate": {
+    "id": "CP4.4-R6-open-persistence-rollback",
+    "path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R6_CANDIDATE.json",
+    "sha256": "cd756d5920355158a243d42b27ac4d2b4a0fb3c0a9b91cfdc2f8217eabdcd041"
+  },
+  "repository": {
+    "root": "C:\\Users\\summer\\Documents\\Codex\\2026-08-12\\loop-p0-functional-inventory-1-home",
+    "head": "6eb2a07a98fc55eb51c051b57934badddc828bd6",
+    "baselineTrackedPatchSha256": "4b987f497aeaa18ac99eef08d0e1df6f43356093",
+    "currentTrackedPatchSha256": "467f3755c4b026a1781a1b4cf1e83706782b63c2",
+    "trackedPatchPath": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R7_BFF_TRACKED_PATCH.patch",
+    "trackedPatchFileSha256": "145f0cb43c02b6d288f2e51bb0ed5fba677ed63c80bfde1d490812c8999c87d2",
+    "scopedFileSha256": {
+      "server/index.mjs": "8994f1159f2619466a8b192be643f4f951976fe0df2b48ecb17595baa125a071",
+      "server/persistent-store.mjs": "ba4f0f044ff589c2461070b93a52e168cfd85f079e029b74486e3a9975c102a9",
+      "server/formal-trip-bff-contract.test.mjs": "92e65f08bd6b238e094070e2d8d0ac793a55dca5c5f2649abc35dcfdde163864",
+      "server/persistent-store-open-rollback.test.mjs": "de0d791e7625a95c86b046de6052924467d3a7b06569daaf551d4f415a5a2a3f"
+    }
+  },
+  "scope": {
+    "production": [
+      "Stage planner draft/workspace saves and deletes in cloned Maps; write the prospective JSON state and replace committed Maps only after rename succeeds",
+      "Use the same serial write queue for staged mutation and ordinary writes; rejected writes remain observable while later writes recover",
+      "Include clearPlannerDrafts in staged persistence",
+      "Keep Open order draft -> workspace -> register and preserve best-effort draft cleanup"
+    ],
+    "tests": [
+      "Gate imported rename to verify synchronous getters show only committed workspace/draft values during pending save/delete/clear",
+      "Inject rename failures and verify old committed state remains visible and unchanged",
+      "Retain real temp-directory rename failure, overlapping same-key write rollback, and recovery tests",
+      "Verify Open ordering, cleanup, no final local residue, and no BFF registration on the tested failure paths"
+    ],
+    "noStageOrCommit": true
+  },
+  "tests": {
+    "command": "node --test server/formal-trip-bff-contract.test.mjs server/draft-restore-route.test.mjs server/planner-bridge-contract.test.mjs server/trip-delete-version.test.mjs server/persistent-store-open-rollback.test.mjs",
+    "nodeVersion": "v24.14.0",
+    "result": "31 tests; 31 pass; 0 fail; 0 skipped",
+    "rawLog": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R7_BFF_TEST.log",
+    "rawLogSha256": "4304509739f34fcbbc320f1286df8e57bf3795af693ee2ccbbbc865fe9636d71",
+    "additional": [
+      "node --check server/index.mjs",
+      "node --check server/persistent-store.mjs",
+      "node --check server/formal-trip-bff-contract.test.mjs",
+      "node --check server/persistent-store-open-rollback.test.mjs",
+      "git diff --check"
+    ]
+  },
+  "reviewNotes": {
+    "getterSemantics": "Getters read only committed Maps; staged candidates are local copies not visible through getters or exposed tripWorkspaces Map.",
+    "sameKeyMutationSemantics": "Staged mutations share writeQueue; each next mutation clones committed state only after the previous write has committed or rejected.",
+    "clearPlannerDrafts": "Now staged and serialized as requested; no runtime caller was found in repository search.",
+    "openOrder": ["draft", "workspace", "register"]
+  },
+  "verificationLimits": [
+    "Rename-gate tests pause/fail imported filesystem rename using Node built-in module mocking; a separate test uses actual temp-directory rename failures",
+    "BFF route tests use controlled persistence fakes; no live services or production data",
+    "Persistent filesystem failure can also prevent best-effort draft cleanup; the route records cleanup failure",
+    "The Java planner session is created before BFF persistence and has no delete-session compensation endpoint"
+  ],
+  "artifacts": {
+    "report": {"path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R7_OPEN_PERSISTENCE_REPORT.md", "sha256": "7ad12cb1bce9f46c46485784113bd9fac162286bfa7b11cd43e91efcfc2ab970"},
+    "testLog": {"path": "D:\\scenic-guide\\docs\\refactor\\CP4_4_R7_BFF_TEST.log", "sha256": "4304509739f34fcbbc320f1286df8e57bf3795af693ee2ccbbbc865fe9636d71"}
+  },
+  "stagedOrCommitted": false
+}

@@ -4,6 +4,18 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RuntimeAttractionDetailServiceTest {
+    @Test void projectsProviderCityForBothIdAndNameLookupWithoutUsingRequestedCity() {
+        var gateway = org.mockito.Mockito.mock(com.ai.guide.domain.geo.gateway.GeoRouteGatewayPort.class);
+        org.mockito.Mockito.when(gateway.isConfigured()).thenReturn(true);
+        var poi = new com.ai.guide.domain.geo.model.GeoPoiCandidate("poi", "探针馆", null, "地址", "博物馆", null, null, null, null, null, null, null, null, null, "杭州市");
+        var outcome = new com.ai.guide.domain.geo.model.GeoPoiOutcome(com.ai.guide.domain.geo.model.GeoOutcomeStatus.SUCCESS, java.util.List.of(poi), "", java.time.Instant.now());
+        org.mockito.Mockito.when(gateway.poiDetail("poi")).thenReturn(outcome);
+        org.mockito.Mockito.when(gateway.searchPoi("探针馆", "北京")).thenReturn(outcome);
+        var service = new RuntimeAttractionDetailService(gateway);
+        assertEquals("杭州市", service.toAttraction("amap-poi").getCity());
+        assertEquals("杭州市", service.searchAndBuildAttraction("探针馆", "北京").getCity());
+    }
+
     @Test
     void extractsAdministrativeDistrictAcrossCitiesWithoutLandmarkWhitelist() {
         var service = new RuntimeAttractionDetailService(null);

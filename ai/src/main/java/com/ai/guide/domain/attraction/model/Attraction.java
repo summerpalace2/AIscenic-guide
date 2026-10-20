@@ -22,8 +22,14 @@ public class Attraction {
     /** 景点名称 */
     private String name;
 
+    /** Curated names of this same entity; not map-search hints or nearby attractions. */
+    private List<String> aliases;
+
     /** 展现名称 */
     private String displayName;
+
+    /** 所属城市，用于隔离城市目录查询。 */
+    private String city;
 
     /** 所在行政区 */
     private String district;
@@ -107,6 +113,14 @@ public class Attraction {
     private String imagePoiId;
     private String imageFetchedAt;
 
+    /** Request-local POI identity used to keep preselection and hydration on the same venue. */
+    private String resolvedPoiId;
+
+    /** Official catalog provenance; only verifiedFields may be attributed to this source. */
+    private String sourceUrl;
+    private String verifiedAt;
+    private List<String> verifiedFields;
+
     public String getEffectiveAccessibility() {
         if (accessibility != null && !accessibility.isBlank()) return accessibility;
         if ("低".equals(walkDifficulty) || hasTagOrFeature("无障碍") || hasTagOrFeature("少走路") || hasTagOrFeature("长辈友好")) {
@@ -120,19 +134,14 @@ public class Attraction {
     public String getEffectiveEnvironment() {
         if (environment != null && !environment.isBlank()) return environment;
         if (Boolean.TRUE.equals(indoor)) return "INDOOR";
+        if (indoor == null) return "UNKNOWN";
         if (hasTagOrFeature("室内外") || hasTagOrFeature("室内外展陈")) return "MIXED";
         return "OUTDOOR";
     }
 
     public int getEffectiveVisitMinutes() {
         if (recommendedVisitMinutes != null && recommendedVisitMinutes > 0) return recommendedVisitMinutes;
-        String dur = duration == null ? "" : duration;
-        if (dur.contains("180")) return 180;
-        if (dur.contains("120")) return 120;
-        if (dur.contains("90")) return 90;
-        if (dur.contains("60")) return 60;
-        if (dur.contains("45")) return 45;
-        return 90;
+        return 0;
     }
 
     public boolean hasTagOrFeature(String keyword) {

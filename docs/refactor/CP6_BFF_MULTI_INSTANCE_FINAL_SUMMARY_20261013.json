@@ -1,0 +1,68 @@
+{
+  "javaDefault": {
+    "run": 1252,
+    "passed": 1229,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 23
+  },
+  "surefireXmlAggregate": {
+    "run": 1200,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 23
+  },
+  "javaTargeted": {
+    "run": 249,
+    "passed": 249,
+    "realInfrastructure": 7,
+    "realChatRedis": 6
+  },
+  "nodeFinal": {
+    "run": 112,
+    "passed": 112,
+    "skipped": 0,
+    "realRedisModuleCases": 5
+  },
+  "httpClusterStages": 15,
+  "jarSha256": "FA7F6E9721878B957A0C73E68196059BDFF33D9FC0FE0C42508AAC71C15AF050",
+  "scope": "Windows isolated PG16.15/community Redis7.4.3; local HTTP suppliers",
+  "surefireXmlActualTestcases": {
+    "run": 1252,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 23
+  },
+  "nestedSuiteAttributeDifferences": [
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.AgentARedTeamAssaultTest.xml",
+      "rootAttribute": 0,
+      "actualCases": 6
+    },
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.AgentARedTeamJointAssaultV2Test.xml",
+      "rootAttribute": 0,
+      "actualCases": 10
+    },
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.AgentBRedTeamAssaultCampaignTest.xml",
+      "rootAttribute": 0,
+      "actualCases": 7
+    },
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.AgentCRedTeamUltimateAssaultTest.xml",
+      "rootAttribute": 0,
+      "actualCases": 10
+    },
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.P2PlatformGovernanceAssaultTest.xml",
+      "rootAttribute": 0,
+      "actualCases": 12
+    },
+    {
+      "report": "TEST-com.ai.guide.domain.planner.service.RealUserDiningExploitAssaultTest.xml",
+      "rootAttribute": 0,
+      "actualCases": 7
+    }
+  ]
+}

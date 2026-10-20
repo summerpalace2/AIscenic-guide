@@ -1,26 +1,22 @@
 package com.ai.guide.domain.memory.service;
 
 import com.ai.guide.domain.memory.model.TravelMemory;
+import com.ai.guide.domain.memory.port.MemoryRepositoryPort;
+import com.ai.guide.domain.ai.gateway.LanguageModelPort;
+import com.ai.guide.domain.ai.model.LanguageModelMessage;
 import com.ai.guide.domain.preferences.model.UserPreferencesPatch;
 import com.ai.guide.domain.preferences.model.UserPreferences;
 import com.ai.guide.domain.preferences.service.PreferencesService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
-import com.ai.guide.domain.planner.service.IntentLanguagePolicy;
+import com.ai.guide.domain.language.IntentLanguagePolicy;
 import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -44,30 +40,29 @@ public class TravelMemoryService {
 
             研判原则：
             1. 长期/通用偏好（判定为 true）：
-               - 饮食口味/偏好/忌口/过敏（如：“我不吃辣”、“不能吃海鲜”、“特别喜欢地道老火锅与江湖菜”、“对小吃毫无抵抗力”、“吃素”）
+               - 饮食口味/偏好/忌口/过敏（如：表达喜欢或避开某类饮食、说明明确禁忌或过敏信息）
                - 体力节奏/步行耐受/无障碍（如：“我膝盖不好不能多爬坡”、“有婴儿车要平路”、“体力有限不要特种兵”、“精力充沛想多逛几个”）
                - 出行方式/作息习惯/天气偏好（如：“出门只打车”、“夜猫子起不来床”、“特别怕晒受不了大太阳”、“下雨天更偏向室内展馆”）
                - 兴趣追求/同行人群（如：“重度摄影爱好者要绝佳机位”、“带爸妈出来玩以舒适为主”、“独爱古建筑和博物馆”）
             2. 临时单次行程操作或普通问答（判定为 false）：
-               - 如：“今天先去解放碑”、“把李子坝换掉”、“帮我看一下这个景点的门票”、“明天天气怎么样”、“取消第二个方案”、“导航到洪崖洞”
+               - 如：“今天先去某个景点”、“把这个站点换掉”、“查看景点门票”、“查询天气”、“取消当前方案”、“导航到该地点”
 
             输出规则（必须严格仅输出单个合法 JSON 对象，严禁包含任何 Markdown 格式或解释）：
             {
               "hasPreference": true 或 false,
               "category": "DIET | PACE | ACCESSIBILITY | TRANSPORT | BUDGET | WEATHER | TIME | STAY | COMPANION | INTEREST | CUSTOM",
-              "content": "20字以内的规范偏好陈述（如：饮食偏好麻辣浓郁与地道火锅 / 偏好少走路，尽量避开台阶与陡坡 / 偏爱历史文化场馆与小众古建）",
+              "content": "20字以内的规范偏好陈述，保留用户实际提到的饮食、体力、文化或出行习惯",
               "confidence": 0.75 到 1.0 的浮点数
             }
             若未识别到长期个人偏好，输出：
             {"hasPreference": false}
             """;
 
-    private final JdbcTemplate jdbc;
+    private final MemoryRepositoryPort memoryRepository;
     private final PreferencesService preferencesService;
-    private final ChatClient chatClient;
+    private final LanguageModelPort languageModel;
     private final ObjectMapper objectMapper;
     private final MemoryPreferenceProjector preferenceProjector;
-    private final TransactionTemplate transactions;
     @org.springframework.beans.factory.annotation.Value("${memory.prompt.max-chars:6000}")
     private int promptMaxChars = 6000;
     @org.springframework.beans.factory.annotation.Value("${memory.content.max-chars:6000}")
@@ -79,11 +74,8 @@ public class TravelMemoryService {
     }
 
     private String boundedPrompt(String userId) {
-        List<TravelMemory> memories = jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at "
-                        + "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC",
-                (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
-                        rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"),
-                        rs.getLong("created_at"), rs.getLong("updated_at")), userId);
+        if (memoryRepository == null) return "";
+        List<TravelMemory> memories = memoryRepository.findConfirmedByUserIdOrderByUpdatedAtDesc(userId);
         var critical = new java.util.LinkedHashSet<String>();
         var optional = new java.util.LinkedHashSet<String>();
         for (TravelMemory item : memories) {
@@ -120,32 +112,30 @@ public class TravelMemoryService {
     }
 
     /** Lightweight constructor retained for pure candidate unit tests. */
-    public TravelMemoryService(JdbcTemplate jdbc) {
-        this(jdbc, null, null, null);
+    public TravelMemoryService(MemoryRepositoryPort memoryRepository) {
+        this(memoryRepository, null, null, null);
     }
 
-    public TravelMemoryService(JdbcTemplate jdbc, PreferencesService preferencesService) {
-        this(jdbc, preferencesService, null, null);
+    public TravelMemoryService(MemoryRepositoryPort memoryRepository, PreferencesService preferencesService) {
+        this(memoryRepository, preferencesService, null, null);
     }
 
-    public TravelMemoryService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbc,
+    public TravelMemoryService(MemoryRepositoryPort memoryRepository,
                                PreferencesService preferencesService,
-                               @Autowired(required = false) ChatClient.Builder chatClientBuilder,
+                               @Autowired(required = false) LanguageModelPort languageModel,
                                @Autowired(required = false) ObjectMapper objectMapper) {
-        this(jdbc, preferencesService, chatClientBuilder, objectMapper, new MemoryPreferenceProjector(null));
+        this(memoryRepository, preferencesService, languageModel, objectMapper, new MemoryPreferenceProjector(null));
     }
 
     @Autowired
-    public TravelMemoryService(@Qualifier("knowledgeJdbcTemplate") JdbcTemplate jdbc,
+    public TravelMemoryService(MemoryRepositoryPort memoryRepository,
                                PreferencesService preferencesService,
-                               @Autowired(required = false) ChatClient.Builder chatClientBuilder,
+                               @Autowired(required = false) LanguageModelPort languageModel,
                                @Autowired(required = false) ObjectMapper objectMapper,
                                MemoryPreferenceProjector preferenceProjector) {
-        this.jdbc = jdbc;
-        this.transactions = jdbc != null && jdbc.getDataSource() != null
-                ? new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())) : null;
+        this.memoryRepository = memoryRepository;
         this.preferencesService = preferencesService;
-        this.chatClient = chatClientBuilder != null ? chatClientBuilder.build() : null;
+        this.languageModel = languageModel;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         this.preferenceProjector = preferenceProjector;
     }
@@ -158,12 +148,8 @@ public class TravelMemoryService {
         if (limit < 1 || limit > 100 || offset < 0) {
             throw new IllegalArgumentException("记忆分页要求limit为1至100，offset不得为负数");
         }
-        if (!validUser(userId) || jdbc == null) return List.of();
-        return jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
-                        "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?",
-                (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
-                        rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
-                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId, limit, offset)
+        if (!validUser(userId) || memoryRepository == null) return List.of();
+        return memoryRepository.findConfirmedByUserIdPaged(userId, limit, offset)
                 .stream().map(preferenceProjector::project).toList();
     }
 
@@ -198,145 +184,97 @@ public class TravelMemoryService {
      * 高频偏好场景确定性规则库（0ms 秒级直通，涵盖核心旅行生活高频画像）
      */
     Candidate matchRuleCandidate(String text) {
-        if (text.matches(".*(过敏|忌口|清真|素食|純素|纯素|乳糖不耐).*")
-                || text.matches(".*(不吃|不喝|不想吃|不想喝|不能吃|免葱|忌内脏|不喜欢|不爱|讨厌).*")
-                && !text.matches(".*(不是不|并非不|不会不|没有不).*")
-                && (text.contains("吃") || text.contains("喝") || matchPositiveDiet(text))) {
+        boolean dietSignal = hasAny(text, preferenceProjector.vocabulary("dietRestrictionKeywords"));
+        boolean negationException = hasAny(text, preferenceProjector.vocabulary("dietNegationExceptions"));
+        if (dietSignal && !negationException && (text.contains("吃") || text.contains("喝") || matchPositiveDiet(text))) {
             return new Candidate("DIET", text, 0.96);
         }
         // 无障碍与适老化
-        if (text.matches(".*(轮椅|无障碍|婴儿车|推车|腿脚不便|行动不便|拄拐|拐杖|术后|台阶高).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryAccessibility"))) {
             return new Candidate("ACCESSIBILITY", "出行需要无障碍、少台阶与便于休息的安排", 0.95);
         }
 
-        // 饮食偏好：过敏、忌口、禁忌（最高优门禁，DEF-R3-03）
-        if (text.matches(".*(过敏|忌口|清真|素食|纯素|不能吃花生|海鲜过敏|不吃内脏|忌内脏|乳糖不耐).*")) {
-            return new Candidate("DIET", text, 0.96);
-        }
-
-        // 饮食偏好：双重否定吃辣（如：“不是不吃辣”、“并非不吃辣”，识别为吃辣偏好）
-        if (text.matches(".*(不是不|并非不|不会不|没有不)[^，。！？\n]*辣.*")) {
-            return new Candidate("DIET", "饮食偏好麻辣、地道重庆火锅与江湖菜风味", 0.94);
-        }
-
-        // 饮食偏好：清淡、少辣、不吃辣（否定优先门禁，DEF-R3-03）
-        if (text.matches(".*(不吃辣|不能吃辣|少辣|清淡|不辣|免辣|怕辣|不能碰辣|不吃香菜|不吃.*海鲜|不吃肉|少油|少盐|免葱|养生餐).*")) {
-            if (text.matches(".*(火锅|串串|汤锅).*")) {
-                return new Candidate("DIET", "饮食偏好清淡少辣（火锅偏好清汤或番茄锅，避开辛辣刺激）", 0.94);
-            }
-            return new Candidate("DIET", "饮食偏好清淡少辣，避开刺激性食物与忌口", 0.92);
-        }
-
-        // A rejection or mixed preference keeps every source clause; positive food
-        // words elsewhere must not override the rejected object.
-        if (IntentLanguagePolicy.clauses(text).stream().anyMatch(clause -> IntentLanguagePolicy.positiveText(clause).isBlank())
-                && !text.matches(".*(不是不|并非不|不会不|没有不).*")) {
-            return new Candidate(text.contains("吃") || text.contains("喝") || matchPositiveDiet(text)
-                    ? "DIET" : "CUSTOM", text, 0.92);
-        }
-
-        // 饮食偏好：火锅、重辣、江湖菜（排除否定语义后的正向偏好）
-        if (text.matches(".*(火锅|老火锅|九宫格|串串|冷锅串串|美蛙鱼头|麻辣|喜辣|爱吃辣|能吃辣|喜欢.*辣|多点辣|偏好.*辣|推荐.*辣|辣的食物|重口味|重辣|微辣|无辣不欢|嗜辣|江湖菜|毛血旺|辣子鸡|水煮鱼|川菜|烧烤).*")) {
-            return new Candidate("DIET", "饮食偏好麻辣、地道重庆火锅与江湖菜风味", 0.94);
-        }
-
-        // 饮食/休闲偏好：老茶馆、盖碗茶、茶楼、品茗慢生活
-        if (text.matches(".*(茶馆|老茶馆|盖碗茶|喝茶|品茶|茶楼|茶舍|茶道|工夫茶).*")) {
-            return new Candidate("DIET", "偏好特色老茶馆、盖碗茶与慢生活品茗体验", 0.94);
-        }
-
-        // 饮食/休闲偏好：景观咖啡、下午茶、特调
-        if (text.matches(".*(咖啡|下午茶|拿铁|特调|烘焙|精酿).*")) {
-            return new Candidate("DIET", "偏好景观咖啡馆、独立特调与下午茶小憩", 0.93);
-        }
-
-        // 饮食偏好：甜食甜点、糖水、冰粉
-        if (text.matches(".*(甜的|甜品|甜食|吃甜|想吃甜|糖水|冰粉|凉糕).*")) {
-            return new Candidate("DIET", "偏好甜品糖水与特色甜点", 0.92);
-        }
-
-        // 饮食偏好：街头名点、小吃、夜市
-        if (text.matches(".*(小吃|酸辣粉|小面|重庆小面|抄手|老麻抄手|豆花|陈麻花|糍粑|夜市|路边摊).*")) {
-            return new Candidate("DIET", "偏好街头特色小吃、巴渝名点与市井烟火风味", 0.92);
-        }
+        // Food preference categories and their aliases/summaries are taxonomy assets.
+        var dietFacet = preferenceProjector.matchingFacet("DIET", text);
+        if (dietFacet != null) return new Candidate("DIET", dietFacet.summary(), 0.92);
 
         // 体力节奏：少走路、平路、慢节奏
-        if (text.matches(".*(少走|少走路|不想走|走不动|爬不动|懒得走|有点懒|很懒|太懒|偷懒|犯懒|不想动|少爬坡|少台阶|轻松一点|不爱走路|体力.*有限|慢节奏|休闲|不想太累|别太赶|不要特种兵|不特种兵|平地|平路|省力|省腿).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryPaceLow"))) {
             return new Candidate("PACE", "偏好少走路，优先平路、电梯与短步行", 0.93);
         }
 
         // 体力节奏：特种兵、高密度、深度游
-        if (text.matches(".*(特种兵|多走走|充实|暴走|多看几个|多安排点|多逛几个|深度游|不怕累|精力充沛|徒步).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryPaceHigh"))) {
             return new Candidate("PACE", "偏好高密度充实游览，体力充沛，愿意多走多看", 0.89);
         }
 
         // 交通偏好：打车、网约车
-        if (text.matches(".*(打车|出租车|网约车|滴滴|包车|自驾|租车|晕车|不想挤).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryTransportTaxi"))) {
             return new Candidate("TRANSPORT", "出行时优先打车或网约车", 0.91);
         }
 
         // 交通偏好：地铁、公交、轻轨
-        if (text.matches(".*(地铁|公交|公共交通|轻轨|轨道交通|体验轻轨|低碳出行).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryTransportTransit"))) {
             return new Candidate("TRANSPORT", "出行时更愿意使用公共交通", 0.86);
         }
 
         // 预算：经济型、性价比、穷游
-        if (text.matches(".*(预算有限|省钱|性价比|免费|穷游|学生党|平价|实惠).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryBudgetLow"))) {
             return new Candidate("BUDGET", "出行时重视预算与性价比，优先平价与免费景点", 0.85);
         }
 
         // 预算：高端品质
-        if (text.matches(".*(品质|高端|讲究品质|黑珍珠|预算充足|不差钱|高档).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryBudgetHigh"))) {
             return new Candidate("BUDGET", "注重出行品质与舒适度，偏好高端体验", 0.88);
         }
 
         // 天气体感：怕晒、避雨、室内
-        if (text.matches(".*(怕晒|怕热|容易中暑|雨天|下雨.*室内|避雨|避暑|防晒|吹空调).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryWeather"))) {
             return new Candidate("WEATHER", "行程更在意天气体感，优先阴凉、室内或可避雨安排", 0.87);
         }
 
         // 作息时间：晚起、从容、夜猫子
-        if (text.matches(".*(不喜欢早起|睡到自然醒|晚起|起不来|夜猫子|上午不出发|下午才出门).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryTime"))) {
             return new Candidate("TIME", "出行节奏不宜太早，偏好从容晚起安排", 0.84);
         }
 
         // 住宿倾向：安静、江景、近地铁
-        if (text.matches(".*(酒店.*安静|住宿.*安静|住得.*方便|靠近地铁.*住|住江景).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryStay"))) {
             return new Candidate("STAY", "住宿更看重安静、江景与交通便利", 0.82);
         }
 
         // 同行人照顾：亲子、儿童
-        if (text.matches(".*(带娃|孩子|宝宝|小朋友|亲子|游乐场|童趣|推车出行).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryCompanionChild"))) {
             return new Candidate("COMPANION", "出行时常需要兼顾亲子与儿童体验", 0.84);
         }
 
         // 同行人照顾：父母、长辈、老年人
-        if (text.matches(".*(父母|长辈|老人|爸妈|带老人|老年人).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryCompanionSenior"))) {
             return new Candidate("COMPANION", "出行时常需要兼顾长辈的体力与舒适度", 0.84);
         }
 
         // 同行人照顾：情侣、蜜月、朋友
-        if (text.matches(".*(情侣|对象|爱人|两个人|闺蜜|朋友|蜜月).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryCompanionFriends"))) {
             return new Candidate("COMPANION", "通常以情侣或朋友结伴方式安排行程", 0.84);
         }
 
         // 兴趣体验：拍照、摄影、绝佳机位
-        if (text.matches(".*(拍照|摄影|出片|机位|找角度|打卡地|美照|好看|旅拍|汉服).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryInterestPhotography"))) {
             return new Candidate("INTEREST", "旅行时重视摄影出片与绝佳机位视角", 0.85);
         }
 
-        // 兴趣体验：山城夜景、魔幻8D、两江漫步
-        if (text.matches(".*(夜景|江景|两江|赛博朋克|魔幻|立交桥|索道|轻轨穿楼|citywalk|城市漫步|天台).*")) {
-            return new Candidate("INTEREST", "喜欢山城夜景、魔幻8D与滨江漫步体验", 0.85);
+        // 兴趣体验：通用夜景偏好，不自动推断成特定城市体验
+        if (hasPositivePreferenceMention(text, preferenceProjector.vocabulary("memoryInterestNight"))) {
+            return new Candidate("INTEREST", "偏好夜景观赏体验", 0.85);
         }
 
         // 兴趣体验：人文历史、文创老街、展览古迹
-        if (text.matches(".*(博物馆|美术馆|展览|人文|历史|古迹|老建筑|非遗|红色|文化|古镇|老街|文创|书店).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryInterestHistory"))) {
             return new Candidate("INTEREST", "偏爱人文历史与室内文化场馆", 0.87);
         }
 
         // 兴趣体验：自然山水、户外风光
-        if (text.matches(".*(自然|徒步|爬山|山水|公园|江岸|森林|峡谷|天坑|地质|吸氧).*")) {
+        if (hasAny(text, preferenceProjector.vocabulary("memoryInterestNature"))) {
             return new Candidate("INTEREST", "偏爱自然山水、高山峡谷与户外风光", 0.82);
         }
 
@@ -360,13 +298,12 @@ public class TravelMemoryService {
      * 异步大模型语义提炼（Smart-Path，超时熔断保护，不阻塞主流程）
      */
     private Candidate extractWithLlm(String text) {
-        if (chatClient == null) return null;
+        if (languageModel == null) return null;
         try {
             CompletableFuture<String> future = CompletableFuture.supplyAsync(() ->
-                    chatClient.prompt()
-                            .messages(new SystemMessage(LLM_MEMORY_SYSTEM_PROMPT), new UserMessage(text))
-                            .call()
-                            .content()
+                    languageModel.completeText(List.of(
+                            new LanguageModelMessage(LanguageModelMessage.Role.SYSTEM, LLM_MEMORY_SYSTEM_PROMPT),
+                            new LanguageModelMessage(LanguageModelMessage.Role.USER, text)))
             );
             String raw = future.get(2500, TimeUnit.MILLISECONDS);
             if (raw == null || raw.isBlank()) return null;
@@ -396,17 +333,20 @@ public class TravelMemoryService {
 
     private int spicePolarity(String content) {
         if (content == null) return 0;
-        String normalized = content.replace("不是不吃辣", "吃辣").replace("并非不吃辣", "吃辣")
-                .replace("不会不吃辣", "吃辣").replace("没有不吃辣", "吃辣");
-        if (normalized.matches(".*(清淡|少辣|不吃辣|不能吃辣|免辣|不辣|怕辣).*")) return -1;
-        String positive = IntentLanguagePolicy.positiveText(normalized);
-        return positive.matches(".*(麻辣|喜辣|爱吃辣|辣味|吃辣|重辣|嗜辣|无辣不欢).*") ? 1 : 0;
+        String positive = content;
+        boolean negationException = hasAny(content, preferenceProjector.vocabulary("dietNegationExceptions"));
+        if (negationException) {
+            for (String exception : preferenceProjector.vocabulary("dietNegationExceptions")) positive = positive.replace(exception, "");
+            return hasAny(positive, preferenceProjector.vocabulary("spicyPositiveAliases")) ? 1 : 0;
+        }
+        if (hasAny(content, preferenceProjector.vocabulary("spicyNegativeAliases"))) return -1;
+        positive = IntentLanguagePolicy.positiveText(positive);
+        return hasAny(positive, preferenceProjector.vocabulary("spicyPositiveAliases")) ? 1 : 0;
     }
 
     private void handleConflictingMemories(String userId, String newContent, String excludedId) {
-        if (!validUser(userId) || newContent == null || jdbc == null) return;
-        for (Map<String,Object> row : jdbc.queryForList(
-                "SELECT id, content FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED'", userId)) {
+        if (!validUser(userId) || newContent == null || memoryRepository == null) return;
+        for (Map<String,Object> row : memoryRepository.findActiveIdAndContent(userId)) {
             String id = String.valueOf(row.get("id"));
             if (id.equals(excludedId)) continue;
             String old = String.valueOf(row.get("content"));
@@ -414,30 +354,63 @@ public class TravelMemoryService {
             boolean conflict = before != 0 && after != 0 && before != after;
             String oldPositive = IntentLanguagePolicy.positiveText(old);
             String newPositive = IntentLanguagePolicy.positiveText(newContent);
-            conflict |= newContent.matches(".*(少走路|少爬坡|平路|避台阶).*")
-                    && oldPositive.matches(".*(特种兵|暴走|多走走).*");
-            conflict |= newPositive.matches(".*(特种兵|暴走|多走走).*")
-                    && old.matches(".*(少走路|少爬坡|平路|避台阶).*");
+            conflict |= hasAny(newContent, preferenceProjector.vocabulary("lowWalkingPreferenceAliases"))
+                    && hasAny(oldPositive, preferenceProjector.vocabulary("highWalkingPreferenceAliases"));
+            conflict |= hasAny(newPositive, preferenceProjector.vocabulary("highWalkingPreferenceAliases"))
+                    && hasAny(old, preferenceProjector.vocabulary("lowWalkingPreferenceAliases"));
             if (conflict) {
                 var kept = new ArrayList<String>();
                 for (String clause : old.split("[，,；;。\\n、]+")) {
                     boolean conflicting = spicePolarity(clause) != 0 && after != 0 && spicePolarity(clause) != after;
-                    conflicting |= newContent.matches(".*(少走路|少爬坡|平路|避台阶).*") && IntentLanguagePolicy.positiveText(clause).matches(".*(特种兵|暴走|多走走).*");
-                    conflicting |= newPositive.matches(".*(特种兵|暴走|多走走).*") && clause.matches(".*(少走路|少爬坡|平路|避台阶).*");
+                    conflicting |= hasAny(newContent, preferenceProjector.vocabulary("lowWalkingPreferenceAliases")) && hasAny(IntentLanguagePolicy.positiveText(clause), preferenceProjector.vocabulary("highWalkingPreferenceAliases"));
+                    conflicting |= hasAny(newPositive, preferenceProjector.vocabulary("highWalkingPreferenceAliases")) && hasAny(clause, preferenceProjector.vocabulary("lowWalkingPreferenceAliases"));
                     if (!conflicting) { if (!clause.isBlank()) kept.add(clause.trim()); continue; }
                     // Only retire a standalone preference clause. Unknown residual meaning must survive.
-                    String residual = clause.replaceAll("不能吃辣|不是不吃辣|并非不吃辣|不会不吃辣|没有不吃辣|不吃辣|爱吃辣|无辣不欢|麻辣|喜辣|辣味|吃辣|重辣|嗜辣|清淡|少辣|免辣|不辣|怕辣|少走路|少爬坡|平路|避台阶|特种兵|暴走|多走走", "");
+                    String residual = clause;
+                    for (String word : allConflictPreferenceWords()) residual = residual.replace(word, "");
                     residual = preferenceProjector.removePresentationWords(residual).replaceAll("[\\s\\p{P}]+", "");
                     if (!residual.isBlank()) throw new IllegalArgumentException("旧记忆包含相互冲突的偏好和其他信息，请先编辑这条记忆，保留过敏、同行人与其他限制：" + old);
                 }
-                if (kept.isEmpty()) jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", System.currentTimeMillis(), id, userId);
-                else jdbc.update("UPDATE travel_memory SET content = ?, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", String.join("，", kept), System.currentTimeMillis(), id, userId);
+                if (kept.isEmpty()) memoryRepository.softDelete(id, userId, System.currentTimeMillis());
+                else memoryRepository.updateContent(id, userId, String.join("，", kept), System.currentTimeMillis());
             }
         }
     }
 
+    private boolean hasAny(String text, List<String> words) {
+        return text != null && words.stream().filter(word -> word != null && !word.isBlank()).anyMatch(text::contains);
+    }
+
+    private boolean hasPositivePreferenceMention(String text, List<String> words) {
+        if (text == null) return false;
+        List<String> negations = preferenceProjector.vocabulary("preferenceNegationMarkers");
+        for (String word : words) {
+            if (word == null || word.isBlank()) continue;
+            int from = 0;
+            int index;
+            while ((index = text.indexOf(word, from)) >= 0) {
+                String preceding = text.substring(Math.max(0, index - 12), index);
+                boolean negated = negations.stream().anyMatch(marker -> {
+                    int markerIndex = preceding.lastIndexOf(marker);
+                    return markerIndex >= 0 && preceding.length() - markerIndex - marker.length() <= 4;
+                });
+                if (!negated) return true;
+                from = index + word.length();
+            }
+        }
+        return false;
+    }
+
+    private List<String> allConflictPreferenceWords() {
+        var words = new java.util.LinkedHashSet<String>();
+        for (String key : List.of("spicyPositiveAliases", "spicyNegativeAliases", "lowWalkingPreferenceAliases", "highWalkingPreferenceAliases", "dietNegationExceptions")) {
+            words.addAll(preferenceProjector.vocabulary(key));
+        }
+        return words.stream().sorted(java.util.Comparator.comparingInt(String::length).reversed()).toList();
+    }
+
     private <T> T atomic(Supplier<T> action) {
-        return transactions == null ? action.get() : transactions.execute(status -> action.get());
+        return memoryRepository == null ? action.get() : memoryRepository.runInTransaction(action);
     }
 
     public TravelMemory confirm(String userId, String content, String category, String sourceType) {
@@ -450,29 +423,25 @@ public class TravelMemoryService {
 
     private TravelMemory confirmAtomic(String userId, String content, String category, String sourceType, String sourceRef) {
         requireUser(userId);
+        if (memoryRepository == null) throw new IllegalArgumentException("记忆服务暂不可用");
         String safeContent = completeText(content, contentMaxChars, "记忆内容");
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
         String safeCategory = normalizeCategory(category);
         long now = System.currentTimeMillis();
         handleConflictingMemories(userId, safeContent, null);
-        List<TravelMemory> same = jdbc.query("SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
-                        "FROM travel_memory WHERE user_id = ? AND category = ? AND content = ? AND status = 'CONFIRMED' LIMIT 1",
-                (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
-                        rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"),
-                        rs.getLong("created_at"), rs.getLong("updated_at")), userId, safeCategory, safeContent);
-        if (!same.isEmpty()) {
-            TravelMemory existing = same.get(0);
-            jdbc.update("UPDATE travel_memory SET updated_at = ? WHERE id = ? AND user_id = ?", now, existing.id(), userId);
+        TravelMemory existing = memoryRepository.findSameConfirmed(userId, safeCategory, safeContent);
+        if (existing != null) {
+            memoryRepository.touchUpdatedAt(existing.id(), userId, now);
             synthesizePrependPrompt(userId, false);
             return preferenceProjector.project(new TravelMemory(existing.id(), existing.category(), existing.content(), existing.sourceType(), existing.sourceRef(), existing.status(), existing.confidence(), existing.createdAt(), now));
         }
         String id = "mem-" + UUID.randomUUID();
         String source = "USER_EDIT".equalsIgnoreCase(sourceType) ? "USER_EDIT" : "CHAT_CONFIRMED";
         String safeSourceRef = sourceRef == null ? "" : clean(sourceRef, 120);
-        jdbc.update("INSERT INTO travel_memory (id, user_id, category, content, source_type, source_ref, status, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?)",
-                id, userId, safeCategory, safeContent, source, safeSourceRef, source.equals("USER_EDIT") ? 1.0 : 0.9, now, now);
+        TravelMemory created = new TravelMemory(id, safeCategory, safeContent, source, safeSourceRef, "CONFIRMED", source.equals("USER_EDIT") ? 1.0 : 0.9, now, now);
+        memoryRepository.save(created, userId);
         synthesizePrependPrompt(userId, false);
-        return preferenceProjector.project(new TravelMemory(id, safeCategory, safeContent, source, safeSourceRef, "CONFIRMED", source.equals("USER_EDIT") ? 1.0 : 0.9, now, now));
+        return preferenceProjector.project(created);
     }
 
     public TravelMemory update(String userId, String id, String content, String category) {
@@ -481,13 +450,13 @@ public class TravelMemoryService {
 
     private TravelMemory updateAtomic(String userId, String id, String content, String category) {
         requireUser(userId);
-        Integer existing = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'", Integer.class, id, userId);
-        if (existing == null || existing == 0) throw new IllegalArgumentException("旅行记忆不存在或无权修改");
+        if (memoryRepository == null || !memoryRepository.existsConfirmed(id, userId)) {
+            throw new IllegalArgumentException("旅行记忆不存在或无权修改");
+        }
         String safeContent = completeText(content, contentMaxChars, "记忆内容");
         if (safeContent.isBlank()) throw new IllegalArgumentException("记忆内容不能为空");
         handleConflictingMemories(userId, safeContent, id);
-        int changed = jdbc.update("UPDATE travel_memory SET content = ?, category = ?, source_type = 'USER_EDIT', confidence = 1.0, updated_at = ? WHERE id = ? AND user_id = ? AND status = 'CONFIRMED'",
-                safeContent, normalizeCategory(category), System.currentTimeMillis(), id, userId);
+        int changed = memoryRepository.updateContentAndCategory(id, userId, safeContent, normalizeCategory(category), System.currentTimeMillis());
         if (changed == 0) throw new IllegalArgumentException("旅行记忆不存在或无权修改");
         synthesizePrependPrompt(userId, false);
         return list(userId).stream().filter(item -> item.id().equals(id)).findFirst().orElseThrow();
@@ -499,29 +468,28 @@ public class TravelMemoryService {
 
     private void deleteAtomic(String userId, String id) {
         requireUser(userId);
-        jdbc.update("UPDATE travel_memory SET status = 'DELETED', updated_at = ? WHERE id = ? AND user_id = ?", System.currentTimeMillis(), id, userId);
+        if (memoryRepository != null) {
+            memoryRepository.softDelete(id, userId, System.currentTimeMillis());
+        }
         synthesizePrependPrompt(userId, false);
     }
 
     /** Stores one concise user preference cue, never a full transcript or assistant reply. */
     public void captureObservation(String userId, String content, String sourceSession) {
         requireUser(userId);
-        if (jdbc == null) return;
+        if (memoryRepository == null) return;
         String cue = clean(content, 400);
         if (cue.isBlank() || suggest(cue) == null) return;
         long now = System.currentTimeMillis();
         String session = clean(sourceSession, 120);
-        Integer duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory_observation WHERE user_id = ? AND content = ? AND status = 'PENDING'", Integer.class, userId, cue);
-        if (duplicate != null && duplicate > 0) return;
-        jdbc.update("INSERT INTO travel_memory_observation (id, user_id, content, source_session, status, created_at) VALUES (?, ?, ?, ?, 'PENDING', ?)",
-                "obs-" + UUID.randomUUID(), userId, cue, session, now);
+        if (memoryRepository.hasPendingObservation(userId, cue)) return;
+        memoryRepository.insertObservation("obs-" + UUID.randomUUID(), userId, cue, session, now);
     }
 
     public List<MemoryCandidate> candidates(String userId) {
         requireUser(userId);
-        if (jdbc == null) return List.of();
-        return jdbc.query("SELECT id, category, content, source_ref, status, confidence, created_at, updated_at FROM travel_memory_candidate WHERE user_id = ? AND status = 'PENDING' ORDER BY updated_at DESC LIMIT 12",
-                (rs, row) -> new MemoryCandidate(rs.getString("id"), rs.getString("category"), rs.getString("content"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
+        if (memoryRepository == null) return List.of();
+        return memoryRepository.findPendingCandidatesByUserId(userId, 12);
     }
 
     public TravelMemory confirmCandidate(String userId, String candidateId) {
@@ -530,20 +498,20 @@ public class TravelMemoryService {
 
     private TravelMemory confirmCandidateAtomic(String userId, String candidateId) {
         requireUser(userId);
-        if (jdbc == null) throw new IllegalArgumentException("记忆服务暂不可用");
-        List<MemoryCandidate> rows = jdbc.query("SELECT id, category, content, source_ref, status, confidence, created_at, updated_at FROM travel_memory_candidate WHERE id = ? AND user_id = ? AND status = 'PENDING'",
-                (rs, row) -> new MemoryCandidate(rs.getString("id"), rs.getString("category"), rs.getString("content"), rs.getString("source_ref"), rs.getString("status"), rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), candidateId, userId);
+        if (memoryRepository == null) throw new IllegalArgumentException("记忆服务暂不可用");
+        List<MemoryCandidate> rows = memoryRepository.findPendingCandidateByIdAndUserId(candidateId, userId);
         if (rows.isEmpty()) throw new IllegalArgumentException("记忆候选不存在或已处理");
         MemoryCandidate candidate = rows.get(0);
-        int claimed = jdbc.update("UPDATE travel_memory_candidate SET status = 'CONFIRMED', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'PENDING'", System.currentTimeMillis(), candidateId, userId);
+        int claimed = memoryRepository.updateCandidateStatus(candidateId, userId, "CONFIRMED", System.currentTimeMillis());
         if (claimed != 1) throw new IllegalArgumentException("记忆候选不存在或已处理");
-        TravelMemory memory = confirm(userId, candidate.content(), candidate.category(), "CHAT_CONFIRMED", candidate.sourceRef());
-        return memory;
+        return confirm(userId, candidate.content(), candidate.category(), "CHAT_CONFIRMED", candidate.sourceRef());
     }
 
     public void dismissCandidate(String userId, String candidateId) {
         requireUser(userId);
-        if (jdbc != null) jdbc.update("UPDATE travel_memory_candidate SET status = 'DISMISSED', updated_at = ? WHERE id = ? AND user_id = ? AND status = 'PENDING'", System.currentTimeMillis(), candidateId, userId);
+        if (memoryRepository != null) {
+            memoryRepository.updateCandidateStatus(candidateId, userId, "DISMISSED", System.currentTimeMillis());
+        }
     }
 
     /**
@@ -552,8 +520,8 @@ public class TravelMemoryService {
      */
     @Scheduled(fixedDelay = 60 * 60 * 1000L, initialDelay = 60 * 1000L)
     public void reviewQueuedObservations() {
-        if (jdbc == null || preferencesService == null) return;
-        List<String> users = jdbc.query("SELECT DISTINCT user_id FROM travel_memory_observation WHERE status = 'PENDING'", (rs, row) -> rs.getString(1));
+        if (memoryRepository == null || preferencesService == null) return;
+        List<String> users = memoryRepository.findDistinctPendingObservationUserIds();
         for (String userId : users) {
             try { reviewUserObservations(userId); } catch (RuntimeException ignored) { /* retry on the next scheduled pass */ }
         }
@@ -561,24 +529,23 @@ public class TravelMemoryService {
 
     private void reviewUserObservations(String userId) {
         if (!Boolean.TRUE.equals(preferencesService.get(userId).legacyMetadata().get("travelMemoryEnabled"))) return;
-        List<Observation> observations = jdbc.query("SELECT id, content FROM travel_memory_observation WHERE user_id = ? AND status = 'PENDING' ORDER BY created_at ASC LIMIT 60",
-                (rs, row) -> new Observation(rs.getString("id"), rs.getString("content")), userId);
+        List<MemoryRepositoryPort.ObservationRecord> observations = memoryRepository.findPendingObservationsByUserId(userId, 60);
         Map<String,Candidate> detected = new LinkedHashMap<>();
-        for (Observation observation : observations) detected.put(observation.id(), suggest(observation.content()));
+        for (var observation : observations) detected.put(observation.id(), suggest(observation.content()));
         // Extraction may call a model. Only DB writes and the projection CAS belong in the transaction.
         atomic(() -> {
             UserPreferences preferences = preferencesService.get(userId);
             Map<String,Object> metadata = new LinkedHashMap<>(preferences.legacyMetadata());
             if (!Boolean.TRUE.equals(metadata.get("travelMemoryEnabled"))) return null;
             long now = System.currentTimeMillis();
-            for (Observation observation : observations) {
-                int claimed = jdbc.update("UPDATE travel_memory_observation SET status = 'REVIEWED' WHERE id = ? AND user_id = ? AND status = 'PENDING'", observation.id(), userId);
+            for (var observation : observations) {
+                int claimed = memoryRepository.updateObservationStatus(observation.id(), userId, "REVIEWED");
                 if (claimed != 1) continue;
                 Candidate candidate = detected.get(observation.id());
                 if (candidate == null) continue;
-                Integer duplicate = jdbc.queryForObject("SELECT COUNT(*) FROM travel_memory_candidate WHERE user_id = ? AND category = ? AND content = ? AND status = 'PENDING'", Integer.class, userId, candidate.category(), candidate.content());
-                if (duplicate == null || duplicate == 0) jdbc.update("INSERT INTO travel_memory_candidate (id, user_id, category, content, source_ref, status, confidence, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)",
-                        "mem-candidate-" + UUID.randomUUID(), userId, candidate.category(), candidate.content(), clean(observation.content(), 120), candidate.confidence(), now, now);
+                if (!memoryRepository.hasPendingCandidate(userId, candidate.category(), candidate.content())) {
+                    memoryRepository.insertCandidate("mem-candidate-" + UUID.randomUUID(), userId, candidate.category(), candidate.content(), clean(observation.content(), 120), candidate.confidence(), now, now);
+                }
             }
             metadata.put("travelMemoryLastReviewAt", now);
             preferencesService.merge(userId, new UserPreferencesPatch(null,null,null,null,null,null,null,metadata,preferences.revision()), preferences.revision());
@@ -592,18 +559,13 @@ public class TravelMemoryService {
      * 同时保留用户之前手动定制过的专属指令（userCustomizedPrompt）。
      */
     public String synthesizePrependPrompt(String userId, boolean forceResynthesize) {
-        if (!validUser(userId) || jdbc == null) return "";
+        if (!validUser(userId) || memoryRepository == null) return "";
         UserPreferences preferences = preferencesService != null ? preferencesService.get(userId) : null;
         Map<String, Object> metadata = preferences != null ? new LinkedHashMap<>(preferences.legacyMetadata()) : new LinkedHashMap<>();
 
         String userCustomized = manualPrompt(metadata);
 
-        List<TravelMemory> items = jdbc.query(
-                "SELECT id, category, content, source_type, source_ref, status, confidence, created_at, updated_at " +
-                "FROM travel_memory WHERE user_id = ? AND status = 'CONFIRMED' ORDER BY updated_at ASC",
-                (rs, row) -> new TravelMemory(rs.getString("id"), rs.getString("category"), rs.getString("content"),
-                        rs.getString("source_type"), rs.getString("source_ref"), rs.getString("status"),
-                        rs.getDouble("confidence"), rs.getLong("created_at"), rs.getLong("updated_at")), userId);
+        List<TravelMemory> items = memoryRepository.findConfirmedByUserId(userId);
 
         // Confirmed content is already the user's chosen preference. Group it by
         // category without reinterpreting it through a vocabulary whitelist.
@@ -726,12 +688,12 @@ public class TravelMemoryService {
         if (preferences != null) {
             Object prompt = preferences.legacyMetadata().get("profilePrependPrompt");
             if (prompt instanceof String s && !s.isBlank() && !needsProjectionRefresh(preferences.legacyMetadata())) {
-                if (jdbc != null && s.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
+                if (memoryRepository != null && s.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
                 return s + "\n（请在规划行程与推荐餐厅时严格遵循上述个性化偏好约束，非用户明确要求不得违背）";
             }
         }
         String synthesized = synthesizePrependPrompt(userId, false);
-        if (jdbc != null && synthesized.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
+        if (memoryRepository != null && synthesized.length() > Math.max(1000, promptMaxChars) - 100) return boundedPrompt(userId);
         return synthesized.isBlank() ? "" : synthesized + "\n（请在规划行程与推荐餐厅时严格遵循上述个性化偏好约束，非用户明确要求不得违背）";
     }
 

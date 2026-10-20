@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("餐饮与地理组件回归（离线测试，非在线实测）")
 public class AgentCRedTeamUltimateAssaultTest {
 
-    private final DiningCategoryGrounder diningCategoryGrounder = new DiningCategoryGrounder();
-    private final PoiCategoryPolicyRegistry poiCategoryPolicyRegistry = new PoiCategoryPolicyRegistry();
+    private final DiningCategoryGrounder diningCategoryGrounder = new DiningCategoryGrounder(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
+    private final PoiCategoryPolicyRegistry poiCategoryPolicyRegistry = com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies();
 
     @Nested
     @DisplayName("攻击向量 1：复合实体与高德 TypeCode 混淆防御（Hybrid POI Ambiguity）")
@@ -93,7 +93,7 @@ public class AgentCRedTeamUltimateAssaultTest {
                     Map.of("name", "武隆天生三桥", "location", "107.750000,29.320000"),
                     Map.of("name", "巫山小三峡", "location", "109.870000,31.070000")
             );
-            String centroid = PlanAdjustmentHelper.resolveDefaultCoordinate(Collections.emptyMap(), null, stops);
+            String centroid = PlanAdjustmentHelper.resolveDefaultCoordinate(Collections.emptyMap(), null, stops, 50_000.0);
             // 杜绝落在湖北恩施无人区 (108.81, 30.19)，自动锚定最后游览点
             assertEquals("109.870000,31.070000", centroid,
                     "大跨度远郊行程自动锚定最后一个有效游览点，杜绝深山无人区质心！");
@@ -126,7 +126,7 @@ public class AgentCRedTeamUltimateAssaultTest {
             List<Map<String, Object>> stops = List.of(
                     Map.of("name", "脏数据点", "location", "NaN,NaN")
             );
-            String centroid = PlanAdjustmentHelper.resolveDefaultCoordinate(Collections.emptyMap(), null, stops);
+            String centroid = PlanAdjustmentHelper.resolveDefaultCoordinate(Collections.emptyMap(), null, stops, 50_000.0);
             assertNotEquals("NaN,NaN", centroid, "NaN 坐标毒丸被有效防御！");
             assertNull(centroid, "无有效地理证据时交给动态地理编码，不能伪造固定城市中枢");
         }
@@ -139,7 +139,7 @@ public class AgentCRedTeamUltimateAssaultTest {
         @Test
         @DisplayName("加固验收 4A：DefaultBrandDictionary 自动加载外部词库并支持动态品牌注册")
         void assault_registerBrand_isNeverInvoked() {
-            DefaultBrandDictionary dictionary = new DefaultBrandDictionary();
+            DefaultBrandDictionary dictionary = new DefaultBrandDictionary(new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
             // 外部配置文件 dining_brands.txt 中的扩展品牌如 "塔斯汀" 应被自动加载
             assertTrue(dictionary.isKnownBrand("塔斯汀"), "外部品牌字典应成功装载'塔斯汀'！");
             assertTrue(dictionary.isKnownBrand("肯德基"), "种子品牌应保留！");
@@ -152,7 +152,7 @@ public class AgentCRedTeamUltimateAssaultTest {
         @Test
         @DisplayName("风味规范化保留用户文本，不把所有早点强制改成城市预设菜名")
         void assault_breakfastFlavor_forceLockedToChongqingNoodles() throws Exception {
-            DiningVenueService service = new DiningVenueService();
+            DiningVenueService service = new DiningVenueService(new com.ai.guide.infrastructure.dining.repository.PackagedDiningVenueCatalogAdapter(new com.fasterxml.jackson.databind.ObjectMapper()), null, new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
             Method normalizeMethod = DiningVenueService.class.getDeclaredMethod("normalizeFlavor", String.class, String.class);
             normalizeMethod.setAccessible(true);
 

@@ -3,12 +3,12 @@ package com.ai.guide.application.rag;
 import com.ai.guide.common.context.UserContext;
 import com.ai.guide.common.model.Result;
 import com.ai.guide.domain.rag.model.KnowledgeDocument;
+import com.ai.guide.domain.rag.model.KnowledgeDocumentUpload;
 import com.ai.guide.domain.rag.service.KnowledgeDocumentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Map;
 
@@ -71,14 +71,17 @@ public class KnowledgeApplicationServiceImpl implements KnowledgeApplicationServ
     }
 
     @Override
-    public Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, MultipartFile file) {
+    public Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, KnowledgeDocumentUpload file) {
+        return createDocument(title, category, content, tags, file, null, null);
+    }
+    @Override public Result<Map<String, Object>> createDocument(String title, String category, String content, String tags, KnowledgeDocumentUpload file, String scope, String city) {
         String err = checkAdmin();
         if (err != null) return Result.error(403, err);
         try {
-            KnowledgeDocument doc = knowledgeService.createDocument(title, category, content, tags, file, "admin");
+            KnowledgeDocument doc = (scope == null && city == null ? knowledgeService.createDocument(title, category, content, tags, file, "admin") : knowledgeService.createDocument(title, category, content, tags, file, "admin", scope, city));
             return Result.success("创建成功", knowledgeService.toResponse(doc, true));
         } catch (IllegalArgumentException e) {
-            return Result.error(400, e.getMessage());
+            return Result.error(e instanceof com.ai.guide.domain.rag.model.KnowledgeDocumentNotFoundException ? 404 : 400, e.getMessage());
         } catch (Exception e) {
             log.error("[Knowledge] 创建失败: {}", e.getMessage());
             return Result.error(500, "创建失败，请稍后重试");
@@ -87,13 +90,16 @@ public class KnowledgeApplicationServiceImpl implements KnowledgeApplicationServ
 
     @Override
     public Result<Map<String, Object>> updateDocument(String docId, String title, String category, String content, String tags) {
+        return updateDocument(docId, title, category, content, tags, null, null);
+    }
+    @Override public Result<Map<String, Object>> updateDocument(String docId, String title, String category, String content, String tags, String scope, String city) {
         String err = checkAdmin();
         if (err != null) return Result.error(403, err);
         try {
-            KnowledgeDocument doc = knowledgeService.updateDocument(docId, title, category, content, tags);
+            KnowledgeDocument doc = (scope == null && city == null ? knowledgeService.updateDocument(docId, title, category, content, tags) : knowledgeService.updateDocument(docId, title, category, content, tags, scope, city));
             return Result.success("更新成功", knowledgeService.toResponse(doc, true));
         } catch (IllegalArgumentException e) {
-            return Result.error(404, e.getMessage());
+            return Result.error(e instanceof com.ai.guide.domain.rag.model.KnowledgeDocumentNotFoundException ? 404 : 400, e.getMessage());
         } catch (Exception e) {
             log.error("[Knowledge] 更新失败: {}", e.getMessage());
             return Result.error(500, "更新失败，请稍后重试");

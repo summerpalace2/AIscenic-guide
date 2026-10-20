@@ -1,7 +1,7 @@
 package com.ai.guide.domain.voice.gateway;
 
-import com.ai.guide.common.model.Result;
-import org.springframework.http.ResponseEntity;
+import com.ai.guide.domain.voice.model.VoiceSynthesisResult;
+import com.ai.guide.domain.voice.model.VoiceTranscriptionResult;
 
 /**
  * 语音服务领域网关端口 (Gateway Port)
@@ -19,7 +19,7 @@ public interface VoiceGatewayPort {
      * @param devPid      语种识别代码 (如 1537 普通话)
      * @return 转写文本或错误结果
      */
-    Result<String> transcribe(byte[] audioBytes, String base64Audio, int devPid);
+    VoiceTranscriptionResult transcribe(byte[] audioBytes, String base64Audio, int devPid);
 
     /**
      * 语音合成 (TTS)
@@ -27,7 +27,7 @@ public interface VoiceGatewayPort {
      * @param text 待合成文本
      * @param per  音色编号
      * @param lang 语言代码 (zh/en)
-     * @return 音频二进制响应实体
+     * @return 与 HTTP 传输无关的合成结果
      */
-    ResponseEntity<byte[]> synthesize(String text, String per, String lang);
+    VoiceSynthesisResult synthesize(String text, String per, String lang);
 }

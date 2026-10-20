@@ -1,420 +1,328 @@
 package com.ai.guide.domain.rag.service;
 
-import lombok.extern.slf4j.Slf4j;
+import com.ai.guide.domain.attraction.service.AttractionIdentityResolver;
+import com.ai.guide.domain.rag.gateway.ScenicKnowledgePort;
+import com.ai.guide.domain.rag.gateway.SemanticEvidencePort;
+import com.ai.guide.domain.rag.model.SemanticEvidence.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.*;
 
-/**
- * 文旅知识 RAG 检索增强与事实核验服务
- *
- * 所属领域：domain.rag.service（文旅知识与检索增强服务层）
- * 架构职责：作为文旅事实知识检索的唯一统一网关，屏蔽 Qdrant 向量检索、DashScope Embedding、百炼三级重排缓存及 SQLite 本地知识降级细节，向调用方提供稳定的 Facts 与 Citations 契约。
- *
- * 核心方法与职责：
- * 1. retrieve：执行多路语义检索与重排核验
- *    - 参数：query（查询 Prompt）、city（目标城市）、constraints（用户偏好约束字典）、deep（是否启用深度多跳语义召回）
- *    - 返回值：包含 Facts 事实列表、引文溯源与核验状态的 Map
- * 2. status：查询当前 RAG 各组件（Embedding 模型、Qdrant 向量库、Rerank 缓存）的健康度与工作模式
- */
-@Slf4j
+/** Semantic evidence decisions and background retrieval have separate authority. */
 @Service
 public class RagRetrievalService {
+    private final ScenicKnowledgePort scenic;
+    private final KnowledgeDocumentService local;
+    private final RagQueryExpander expander;
+    private final SemanticEvidencePort semantic;
+    private final AttractionIdentityResolver identities;
+    private record Candidate(String id, String text, String title, Map<String,Object> citation) {}
+    private record Retrieved(List<Candidate> candidates, String source) {}
 
-    private static final int QDRANT_LIMIT = 25;
-    private static final int RERANK_TOP_N = 12;
-    private static final int LOCAL_LIMIT = 5;
-
-    private static final Pattern FUTURE_CERTAINTY_PATTERN = Pattern.compile(
-            "(?:一定不会|绝对不|肯定不|保证不|必定不|肯定没有|绝对没有).*(?:排队|拥堵|堵车|客满|下雨|停运|拥挤)|(?:排队|堵车|下雨).*(?:一定不会|绝对不|肯定不|保证不)",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern TEMPORARY_EVENT_QUERY_PATTERN = Pattern.compile(
-            "(?:今晚|今天|目前|此时|实时).*(?:有没有|是否有|确定|安排|临时).*(?:无人机|无人机表演|烟花|快闪|临时演出|明星见面)|(?:无人机表演|烟花秀).*(?:今晚|今天|确定安排)",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern EXACT_MEASUREMENT_OR_FARE_QUERY_PATTERN = Pattern.compile(
-            "(?:具体|准确|精确|精准).*(?:多少米|几米|多高|多长|多宽|多重|多大尺寸|多大厘米)|最大的.*(?:具体|到底|究竟).*(?:多少米|几米|多长)|(?:从.+)?(?:打车|网约车|出租车).*(?:到|去).*(?:准确|精确|精准).*(?:车费|多少钱|价格|运价)|(?:准确|精确|精准)车费是多少",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern TAXI_FARE_QUERY_PATTERN = Pattern.compile(
-            "(?:打车|网约车|出租车).*(?:车费|多少钱|运价)|车费是多少",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern PET_POLICY_QUERY_PATTERN = Pattern.compile(
-            "(?:带宠物|携宠|带狗|带猫|导盲犬).*(?:进入|进|入内|展厅|展馆|馆内)|(?:宠物|猫狗).*(?:准入|通行|入内|所有展厅)",
-            Pattern.CASE_INSENSITIVE
-    );
-
-    private static final Pattern DISTANCE_QUERY_PATTERN = Pattern.compile(
-            "(?:距离|离|步行|走|地铁站|入口|多远)"
-    );
-
-    private final ScenicDataImportService scenicDataImportService;
-    private final KnowledgeDocumentService knowledgeDocumentService;
-
-    public RagRetrievalService(ScenicDataImportService scenicDataImportService,
-                               KnowledgeDocumentService knowledgeDocumentService) {
-        this.scenicDataImportService = scenicDataImportService;
-        this.knowledgeDocumentService = knowledgeDocumentService;
+    @Autowired
+    public RagRetrievalService(ScenicKnowledgePort scenic, KnowledgeDocumentService local,
+            RagQueryExpander expander, SemanticEvidencePort semantic, AttractionIdentityResolver identities) {
+        this.scenic = scenic; this.local = local; this.expander = expander;
+        this.semantic = semantic; this.identities = identities;
+    }
+    /** Compatibility callers without a semantic model fail closed, including tests. */
+    public RagRetrievalService(ScenicKnowledgePort scenic, KnowledgeDocumentService local, RagQueryExpander expander) {
+        this(scenic, local, expander, null, null);
+    }
+    public RagRetrievalService(ScenicKnowledgePort scenic, KnowledgeDocumentService local) {
+        this(scenic, local, new RagQueryExpander(com.ai.guide.domain.taxonomy.gateway.RagTaxonomyPort.empty()));
     }
 
-    public record GateDecision(boolean isUnknown, String reasonCode) {
-        public static GateDecision relevant() {
-            return new GateDecision(false, "EVIDENCE_SUFFICIENT");
-        }
-        public static GateDecision unknown(String reasonCode) {
-            return new GateDecision(true, reasonCode);
-        }
-    }
-
-    private static boolean containsAny(String text, String... keywords) {
-        if (text == null || keywords == null) return false;
-        for (String kw : keywords) {
-            if (text.contains(kw.toLowerCase())) return true;
-        }
-        return false;
-    }
-
-    private static boolean hasMeasurementEvidence(String query, String corpus) {
-        if (DISTANCE_QUERY_PATTERN.matcher(query).find()) {
-            return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|公里|千米|km|m))|平路|步道").matcher(corpus).find();
-        }
-        // 通用尺寸与度量证据判定：覆盖化石标本、桥梁建筑、索道缆车、地貌高差等所有度量场景，消除特定关键词过拟合
-        return Pattern.compile("(?:\\d+(?:\\.\\d+)?\\s*(?:米|公里|千米|厘米|公分|m|cm|km|层))|高差|垂直|跨度|长达|高达|体长|高度|长度|平路|步道").matcher(corpus).find();
-    }
-
-    public static GateDecision evaluateEvidenceGate(String queryText, List<String> retrievedTexts, String retrievalSource) {
-        if (queryText == null || queryText.isBlank()) {
-            return GateDecision.unknown("INSUFFICIENT_EVIDENCE");
-        }
-        if (retrievedTexts == null || retrievedTexts.isEmpty()) {
-            return GateDecision.unknown("INSUFFICIENT_EVIDENCE");
-        }
-
-        String q = queryText.toLowerCase();
-        String combinedCorpus = String.join(" ", retrievedTexts).toLowerCase();
-
-        // 1. 查询级前置拒答：静态知识库天然无法保证的确定性未来预测
-        if (FUTURE_CERTAINTY_PATTERN.matcher(queryText).find()) {
-            return GateDecision.unknown("FUTURE_CERTAINTY_UNSUPPORTED");
-        }
-
-        // 2. 实时临时活动 / 演艺判定：
-        if (TEMPORARY_EVENT_QUERY_PATTERN.matcher(queryText).find()) {
-            boolean hasEventProof = containsAny(combinedCorpus, "无人机", "烟花", "快闪", "演出安排", "演艺节目");
-            if (!hasEventProof) {
-                return GateDecision.unknown("REALTIME_DATA_REQUIRED");
-            }
-        }
-
-        // 3. 精确数值与动态运价检查：
-        if (EXACT_MEASUREMENT_OR_FARE_QUERY_PATTERN.matcher(queryText).find()) {
-            boolean isAskingTaxi = TAXI_FARE_QUERY_PATTERN.matcher(queryText).find();
-            if (isAskingTaxi) {
-                boolean hasTaxiPrice = containsAny(combinedCorpus, "打车费约", "出租车费约", "打车约", "出租车约") &&
-                        containsAny(combinedCorpus, "元", "块");
-                if (!hasTaxiPrice) {
-                    return GateDecision.unknown("EXACT_DYNAMIC_VALUE_UNSUPPORTED");
-                }
-            } else {
-                boolean hasMeasurement = hasMeasurementEvidence(q, combinedCorpus);
-                if (!hasMeasurement) {
-                    return GateDecision.unknown("EXACT_DYNAMIC_VALUE_UNSUPPORTED");
-                }
-            }
-        }
-
-        // 4. 特殊政策检查：
-        if (PET_POLICY_QUERY_PATTERN.matcher(queryText).find()) {
-            boolean hasPetPolicy = containsAny(combinedCorpus, "宠物", "携宠", "导盲犬", "猫狗", "动物准入");
-            if (!hasPetPolicy) {
-                return GateDecision.unknown("POLICY_NOT_IN_CORPUS");
-            }
-        }
-
-        return GateDecision.relevant();
-    }
-
-    /**
-     * Run semantic retrieval first and use the Java knowledge database as the
-     * only degraded/local fallback. A failed Qdrant or rerank call is therefore
-     * represented as a normal structured response rather than leaking provider
-     * details to the Node BFF.
-     */
-    public Map<String, Object> retrieve(String query,
-                                        String city,
-                                        Map<String, Object> constraints,
-                                        boolean deep) {
-        String queryText = buildQuery(query, city, constraints);
-        if (queryText.isBlank()) {
-            return failure("检索问题不能为空");
-        }
-
-        log.info("[RAG 检索请求] mode={}, targetCollection={}, queryLength={}, city={}",
-                deep ? "DEEP" : "STANDARD", safeCollectionName(), queryText.length(), city);
-
-        boolean qdrantAvailable = true;
-        List<String> fragments = null;
+    public Map<String,Object> retrieve(String query, String city, Map<String,Object> constraints, boolean deep) {
+        if (query == null || query.isBlank() || query.length() > 8000) return failure("检索问题不能为空或过长");
+        long started = System.nanoTime(), phase = started;
+        var measurements = new ArrayList<StageMeasurement>();
+        long analyzeMs, retrievalMs = 0, assessMs = 0;
+        Analysis analysis = null;
+        String reason = "SEMANTIC_UNAVAILABLE";
+        List<CatalogIdentity> catalogIdentities = List.of();
         try {
-            fragments = deep
-                    ? scenicDataImportService.searchFragmentsDeep(queryText, QDRANT_LIMIT, RERANK_TOP_N)
-                    : scenicDataImportService.searchFragments(queryText, QDRANT_LIMIT, RERANK_TOP_N);
-
-            if (fragments != null && !fragments.isEmpty()) {
-                GateDecision gateDecision = evaluateEvidenceGate(queryText, fragments, "QDRANT");
-                if (gateDecision.isUnknown()) {
-                    log.info("[RAG 证据门禁拦截-Qdrant] reasonCode={}", gateDecision.reasonCode());
-                    return unknownResult(gateDecision.reasonCode(), true);
+            if (semantic != null) analysis = semantic.analyze(query, city == null ? "" : city);
+            if (analysis != null) {
+                validateAnalysis(analysis, query);
+                if (identities != null) {
+                    var metadata = new LinkedHashMap<String, CatalogIdentity>();
+                    for (Requirement r : analysis.requirements()) {
+                        var identity = identities.resolve(city, r.subject());
+                        if (!List.of("EXACT", "ALIAS").contains(identity.status())) continue;
+                        var names = identity.names().stream()
+                                .filter(name -> identity.id().equals(identities.resolve(city, name).id())).limit(8).toList();
+                        metadata.putIfAbsent(identity.id(), new CatalogIdentity(city, identity.id(), r.subject(), identity.canonicalName(), names));
+                    }
+                    catalogIdentities = List.copyOf(metadata.values());
                 }
-                return semanticResult(fragments, deep);
+                measurements.addAll(analysis.measurements());
+                reason = "INSUFFICIENT_EVIDENCE";
             }
-        } catch (Exception e) {
-            qdrantAvailable = false;
-            log.warn("[RAG 检索降级] 语义检索异常，转入本地知识库回退: {}", e.getMessage());
-            // The local fallback below is the contract for all provider failures.
+        } catch (SemanticEvidencePort.Failure ex) { analysis = null; measurements.addAll(ex.measurements()); }
+        catch (RuntimeException ex) { analysis = null; }
+        analyzeMs = elapsed(phase);
+        if (analysis != null && "NON_FACTUAL".equals(analysis.intent())) {
+            var response = unknown("NO_FACTUAL_CONCLUSION", new Retrieved(List.of(), "NOT_QUERIED"));
+            response.put("retrievalStatus", "NON_FACTUAL"); response.put("intent", "NON_FACTUAL");
+            response.put("claims", List.of()); response.put("reason", "这条消息不需要景区事实核验，可正常对话。");
+            response.put("message", response.get("reason"));
+            return finish(response, measurements, started, analyzeMs, 0, 0, 0);
         }
-
-        // Local Fallback 路径
+        phase = System.nanoTime();
+        // Empty city authorizes GLOBAL documents only; the chat adapter separately asks for a destination.
+        Retrieved retrieved = retrieveBackground(query, city, constraints, deep);
+        if (analysis != null && !catalogIdentities.isEmpty()) {
+            var candidates = new ArrayList<>(retrieved.candidates());
+            for (int i = 0; i < catalogIdentities.size(); i++) {
+                CatalogIdentity identity = catalogIdentities.get(i);
+                String text = "目录城市：" + identity.city() + "；目录编号：" + identity.catalogId()
+                        + "；规范名称：" + identity.canonicalName() + "；同一实体已核验名称：" + String.join("、", identity.aliases()) + "。";
+                candidates.add(new Candidate("catalog-identity-" + i, text, "目录身份关系",
+                        Map.of("title", "同城目录身份关系", "status", "只证明名称身份，不证明其他属性")));
+            }
+            retrieved = new Retrieved(List.copyOf(candidates), retrieved.source());
+        }
+        retrievalMs = elapsed(phase);
+        var result = unknown(reason, retrieved);
+        result.put("intent", "FACTUAL");
+        String unassessedReason = reason;
+        result.put("claims", analysis == null ? List.of() : analysis.requirements().stream().map(r -> unknownClaim(r, unassessedReason)).toList());
+        if (analysis == null || retrieved.candidates().isEmpty())
+            return finish(result, measurements, started, analyzeMs, retrievalMs, 0, retrieved.candidates().size());
+        if (analysis.requirements().stream().allMatch(r -> List.of("ACTUAL", "GUARANTEE").contains(r.conclusionType()))) {
+            result.put("claims", analysis.requirements().stream().map(r -> unknownClaim(r,
+                    "GUARANTEE".equals(r.conclusionType()) ? "FUTURE_CERTAINTY_UNSUPPORTED" : "LIVE_STATE_UNVERIFIED")).toList());
+            result.put("reasonCode", "TIME_SPECIFIC_EVIDENCE_REQUIRED");
+            return finish(result, measurements, started, analyzeMs, retrievalMs, 0, retrieved.candidates().size());
+        }
+        phase = System.nanoTime();
         try {
-            List<Map<String, Object>> documents =
-                    knowledgeDocumentService.searchLocalKnowledge(queryText, LOCAL_LIMIT);
-            if (documents != null && !documents.isEmpty()) {
-                List<String> localTexts = new ArrayList<>();
-                for (Map<String, Object> doc : documents) {
-                    localTexts.add(stringValue(doc.get("title"), "") + "\n" + stringValue(doc.get("content"), ""));
-                }
-                GateDecision gateDecision = evaluateEvidenceGate(queryText, localTexts, "LOCAL_FALLBACK");
-                if (gateDecision.isUnknown()) {
-                    log.info("[RAG 证据门禁拦截-LocalFallback] reasonCode={}", gateDecision.reasonCode());
-                    return unknownResult(gateDecision.reasonCode(), false);
-                }
-                return localResult(documents);
-            }
-        } catch (Exception e) {
-            log.error("[RAG 检索失败] 本地知识库检索异常: {}", e.getMessage());
-            return failure("Java 本地知识检索不可用");
-        }
-
-        return unknownResult("INSUFFICIENT_EVIDENCE", qdrantAvailable);
+            Analysis resolved = resolveSubjects(analysis, city);
+            var evidence = retrieved.candidates().stream().map(c -> new Evidence(c.id(), c.text())).toList();
+            Verdict verdict = catalogIdentities.isEmpty() ? semantic.assess(query, resolved, evidence)
+                    : semantic.assess(query, resolved, evidence, catalogIdentities);
+            measurements.addAll(verdict.measurements());
+            List<Map<String,Object>> claims = decideClaims(resolved, verdict, retrieved.candidates(), city);
+            List<Map<String,Object>> facts = claims.stream().filter(c -> "RELEVANT".equals(c.get("decision"))).toList();
+            String decision = facts.isEmpty() ? "UNKNOWN" : facts.size() == claims.size() ? "RELEVANT" : "PARTIAL";
+            result.put("claims", claims); result.put("retrievalStatus", decision);
+            result.put("reasonCode", "RELEVANT".equals(decision) ? "EVIDENCE_SUPPORTED" : "PARTIAL".equals(decision) ? "PARTIAL_EVIDENCE_SUPPORTED" : "SEMANTIC_EVIDENCE_NOT_SUPPORTED");
+            result.put("message", "仅回答逐项得到支持的结论；规则不等于个人资格，公告不等于现场核验。"); result.put("reason", result.get("message"));
+            result.put("facts", facts); result.put("evidenceCount", facts.size());
+            result.put("citations", facts.stream().flatMap(f -> ((List<?>)f.get("citations")).stream()).distinct().toList());
+        } catch (SemanticEvidencePort.Failure ex) { measurements.addAll(ex.measurements()); result.put("reasonCode", "SEMANTIC_EVIDENCE_NOT_SUPPORTED"); }
+        catch (RuntimeException ex) { result.put("reasonCode", "SEMANTIC_UNAVAILABLE"); }
+        assessMs = elapsed(phase);
+        return finish(result, measurements, started, analyzeMs, retrievalMs, assessMs, retrieved.candidates().size());
     }
 
-    /** Status is deliberately provider-neutral at the BFF boundary. */
-    public Map<String, Object> status() {
-        Map<String, Object> status = new LinkedHashMap<>();
-        status.put("configured", true);
-        status.put("provider", "Java Core Backend");
-        status.put("owner", "Java");
-        status.put("embedding", Map.of(
-                "provider", "Java EmbeddingModel",
-                "directFromNode", false
-        ));
-        Map<String, Object> vectorStore = new LinkedHashMap<>();
-        vectorStore.put("provider", "Java-managed Qdrant");
-        vectorStore.put("collection", safeCollectionName());
-        vectorStore.put("configured", true);
-        vectorStore.put("directFromNode", false);
-        vectorStore.put("verified", false);
-        vectorStore.put("indexedDocuments", null);
+    private Analysis resolveSubjects(Analysis analysis, String city) {
+        if (identities == null) return analysis;
+        List<Requirement> resolved = new ArrayList<>();
+        for (Requirement r : analysis.requirements()) {
+            var identity = identities.resolve(city, r.subject());
+            // An ambiguous entity withholds its own claim; it must not erase other subjects' evidence.
+            String subject = List.of("EXACT", "ALIAS").contains(identity.status()) ? identity.canonicalName() : r.subject();
+            resolved.add(new Requirement(r.id(), subject, r.attribute(), r.timeScope(), r.conclusionType()));
+        }
+        return new Analysis(analysis.intent(), resolved, analysis.userFacts(), analysis.measurements());
+    }
+    private static void validateAnalysis(Analysis analysis, String query) {
+        if (!List.of("FACTUAL", "NON_FACTUAL").contains(analysis.intent()) || analysis.requirements().size() > 8
+                || ("FACTUAL".equals(analysis.intent()) && analysis.requirements().isEmpty())
+                || ("NON_FACTUAL".equals(analysis.intent()) && (!analysis.requirements().isEmpty() || !analysis.userFacts().isEmpty())))
+            throw new SemanticEvidencePort.Failure("Invalid requirements");
+        var userIds = new HashSet<String>();
+        for (UserFact fact : analysis.userFacts())
+            if (fact.id() == null || fact.id().isBlank() || !userIds.add(fact.id()) || fact.quote() == null || fact.quote().isBlank() || !query.contains(fact.quote()))
+                throw new SemanticEvidencePort.Failure("Invalid user fact grounding");
+        Set<String> ids = new HashSet<>();
+        for (Requirement r : analysis.requirements()) {
+            if (r == null || r.id() == null || r.id().isBlank() || !ids.add(r.id()) || r.subject() == null || !query.contains(r.subject())
+                    || r.attribute() == null || r.attribute().isBlank() || !List.of("STATIC", "CURRENT", "DATED").contains(r.timeScope())
+                    || !List.of("REGULAR", "RULE", "ELIGIBILITY", "ANNOUNCEMENT", "ACTUAL", "GUARANTEE", "IDENTITY").contains(r.conclusionType())) throw new SemanticEvidencePort.Failure("Invalid requirements");
+        }
+    }
+    private List<Map<String,Object>> decideClaims(Analysis analysis, Verdict verdict, List<Candidate> candidates, String city) {
+        if (verdict == null) throw new SemanticEvidencePort.Failure("Missing support");
+        var byId = new HashMap<String,Candidate>(); candidates.forEach(c -> byId.put(c.id(), c));
+        var requirements = new HashMap<String,Requirement>(); analysis.requirements().forEach(r -> requirements.put(r.id(), r));
+        var seen = new HashSet<String>(); var supports = new HashMap<String,Support>();
+        for (Support s : verdict.supports()) {
+            if (s == null || !requirements.containsKey(s.requirementId()) || !seen.add(s.requirementId())) throw new SemanticEvidencePort.Failure("Invalid support identity");
+            supports.put(s.requirementId(), s);
+        }
+        List<Map<String,Object>> claims = new ArrayList<>();
+        for (Requirement r : analysis.requirements()) {
+            var claim = unknownClaim(r, "INSUFFICIENT_EVIDENCE");
+            Support s = supports.get(r.id());
+            if (List.of("ACTUAL", "GUARANTEE").contains(r.conclusionType())) {
+                claim.put("reasonCode", "GUARANTEE".equals(r.conclusionType()) ? "FUTURE_CERTAINTY_UNSUPPORTED" : "LIVE_STATE_UNVERIFIED");
+                claims.add(claim); continue;
+            }
+            if (s != null && "ELIGIBILITY".equals(r.conclusionType()) && !"CONJUNCTION".equals(s.policyShape())) {
+                claim.put("reasonCode", "ALTERNATIVES".equals(s.policyShape()) ? "ALTERNATIVE_POLICY_UNSUPPORTED" : "POLICY_STRUCTURE_UNKNOWN");
+                claims.add(claim); continue;
+            }
+            if (s != null && "ELIGIBILITY".equals(r.conclusionType())) {
+                var missing = s.conditions().stream().filter(condition -> "UNKNOWN".equals(condition.state()))
+                        .filter(condition -> candidates.stream().anyMatch(candidate -> !candidate.id().startsWith("catalog-identity-") && candidate.id().equals(condition.evidenceId())
+                                && condition.ruleQuote() != null && !condition.ruleQuote().isBlank()
+                                && candidate.text().contains(condition.ruleQuote()) && (r.subject().isBlank()
+                                || (identities == null ? candidate.text().contains(r.subject()) : identities.matches(city, r.subject(), candidate.text())))))
+                        .map(Condition::ruleQuote).distinct().toList();
+                if (!missing.isEmpty()) claim.put("missingConditions", missing);
+                claim.put("reasonCode", "QUALIFICATION_PREMISES_MISSING");
+            }
+            if (s == null || !"SUPPORTED".equals(s.decision())) { claims.add(claim); continue; }
+            claim.put("evidenceState", s.evidenceState());
+            if (!List.of("SUPPORTED_VALUE", "STATED_NEGATIVE").contains(s.evidenceState())) {
+                claim.put("reasonCode", "VALUE_NOT_STATED"); claims.add(claim); continue;
+            }
+            if (s.evidenceId() != null && s.evidenceId().startsWith("catalog-identity-") && !"IDENTITY".equals(r.conclusionType())) {
+                claim.put("reasonCode", "IDENTITY_ONLY_EVIDENCE"); claims.add(claim); continue;
+            }
+            Candidate c = byId.get(s.evidenceId());
+            if (!validQuote(c, s.quote(), s.start(), s.end())) { claim.put("reasonCode", "INVALID_QUOTATION"); claims.add(claim); continue; }
+            if (!r.subject().isBlank()) {
+                boolean match = identities == null ? c.text().contains(r.subject()) : identities.matches(city, r.subject(), c.text());
+                if (!match) { claim.put("reasonCode", "SUBJECT_NOT_SUPPORTED"); claims.add(claim); continue; }
+            }
+            if ("ANNOUNCEMENT".equals(r.conclusionType())) {
+                if (s.announcementDateQuote() == null || s.announcementDateQuote().isBlank() || !s.quote().contains(s.announcementDateQuote())) {
+                    claim.put("reasonCode", "ANNOUNCEMENT_DATE_NOT_GROUNDED"); claims.add(claim); continue;
+                }
+                claim.put("announcementDateQuote", s.announcementDateQuote());
+            }
+            if ("ELIGIBILITY".equals(r.conclusionType())) {
+                String qualification = qualification(analysis, s, byId, city, r.subject());
+                if (!verdict.coverageComplete() || "UNKNOWN".equals(qualification)) {
+                    claim.put("reasonCode", "QUALIFICATION_PREMISES_MISSING"); claims.add(claim); continue;
+                }
+                claim.put("qualificationDecision", qualification);
+            }
+            claim.put("decision", "RELEVANT"); claim.put("reasonCode", "EVIDENCE_SUPPORTED");
+            claim.put("label", r.attribute()); claim.put("value", s.quote()); claim.put("status", "证据支持，非实时核验");
+            claim.put("requirementId", r.id()); claim.put("evidenceId", c.id()); claim.put("quoteStart", s.start()); claim.put("quoteEnd", s.end());
+            claim.put("citations", List.of(c.citation())); claims.add(claim);
+        }
+        if (!verdict.coverageComplete()) claims.add(Map.of("id", "uncovered", "type", "UNRESOLVED", "subject", "", "attribute", "尚未完整覆盖的问题", "decision", "UNKNOWN", "reasonCode", "INCOMPLETE_QUESTION_COVERAGE"));
+        return claims;
+    }
+
+    private String qualification(Analysis analysis, Support support, Map<String,Candidate> candidates, String city, String subject) {
+        if (!"CONJUNCTION".equals(support.policyShape()) || !support.conditionsComplete() || support.conditions().isEmpty()) return "UNKNOWN";
+        var userFacts = new HashMap<String,UserFact>(); analysis.userFacts().forEach(f -> userFacts.put(f.id(), f));
+        var ids = new HashSet<String>(); boolean unknown = false, contradicted = false;
+        for (Condition condition : support.conditions()) {
+            Candidate c = candidates.get(condition.evidenceId());
+            if (condition.evidenceId() == null || condition.evidenceId().startsWith("catalog-identity-")
+                    || condition.id() == null || condition.id().isBlank() || !ids.add(condition.id()) || c == null
+                    || condition.ruleQuote() == null || condition.ruleQuote().isBlank() || c.text().indexOf(condition.ruleQuote()) < 0
+                    || c.text().indexOf(condition.ruleQuote()) != c.text().lastIndexOf(condition.ruleQuote())
+                    || (!subject.isBlank() && !(identities == null ? c.text().contains(subject) : identities.matches(city, subject, c.text())))) return "UNKNOWN";
+            if ("UNKNOWN".equals(condition.state())) { if (condition.userFactId() != null) return "UNKNOWN"; unknown = true; }
+            else if (List.of("SATISFIED", "CONTRADICTED").contains(condition.state()) && userFacts.containsKey(condition.userFactId()))
+                contradicted |= "CONTRADICTED".equals(condition.state());
+            else return "UNKNOWN";
+        }
+        return contradicted ? "INELIGIBLE" : unknown ? "UNKNOWN" : "ELIGIBLE";
+    }
+    private static boolean validQuote(Candidate c, String quote, int start, int end) {
+        return c != null && quote != null && !quote.isBlank() && start >= 0 && end <= c.text().length() && end > start
+                && c.text().substring(start, end).equals(quote) && c.text().indexOf(quote) == c.text().lastIndexOf(quote);
+    }
+    private static Map<String,Object> unknownClaim(Requirement r, String reason) {
+        var claim = new LinkedHashMap<String,Object>();
+        claim.put("id", r.id()); claim.put("type", r.conclusionType()); claim.put("subject", r.subject());
+        claim.put("attribute", r.attribute()); claim.put("decision", "UNKNOWN"); claim.put("reasonCode", reason); return claim;
+    }
+    private static long elapsed(long start) { return (System.nanoTime() - start) / 1_000_000; }
+    private Map<String,Object> finish(Map<String,Object> result, List<StageMeasurement> calls, long started, long analyzeMs, long retrievalMs, long assessMs, int candidates) {
+        result.put("vectorSearch", Map.of("provider", result.get("retrievalSource"), "resultCount", candidates,
+                "retrievalStatus", result.get("retrievalStatus"), "reasonCode", result.get("reasonCode")));
+        var metrics = new LinkedHashMap<String,Object>(); metrics.put("analysisMs", analyzeMs); metrics.put("retrievalMs", retrievalMs);
+        metrics.put("assessmentMs", assessMs); metrics.put("totalMs", elapsed(started)); metrics.put("modelAttempts", List.copyOf(calls));
+        metrics.put("attemptCount", calls.size()); metrics.put("retryCount", calls.stream().filter(c -> c.attempt() > 1).count());
+        metrics.put("promptTokens", sumKnown(calls, StageMeasurement::promptTokens));
+        metrics.put("completionTokens", sumKnown(calls, StageMeasurement::completionTokens));
+        metrics.put("totalTokens", sumKnown(calls, StageMeasurement::totalTokens));
+        metrics.put("usageStatus", calls.isEmpty() || calls.stream().anyMatch(c -> c.totalTokens() == null) ? "INCOMPLETE_OR_UNAVAILABLE" : "SDK_METADATA");
+        result.put("semanticMetrics", metrics); return result;
+    }
+    private static Long sumKnown(List<StageMeasurement> calls, java.util.function.Function<StageMeasurement,Long> field) {
+        if (calls.isEmpty() || calls.stream().anyMatch(c -> field.apply(c) == null)) return null;
+        return calls.stream().map(field).mapToLong(Long::longValue).sum();
+    }
+
+    private Retrieved retrieveBackground(String query, String city, Map<String,Object> constraints, boolean deep) {
+        StringBuilder raw = new StringBuilder(query);
+        if (city != null && !city.isBlank()) raw.append("\n城市：").append(city);
+        if (constraints != null && !constraints.isEmpty()) raw.append("\n约束：").append(constraints);
+        String expanded = expander.profile(raw.toString()).expandedQuery(); var scope = expander.queryScope(city);
+        List<Candidate> candidates = new ArrayList<>();
+        try {
+            var fragments = scenic.searchScoped(expanded, 25, 12, deep, scope);
+            if (fragments != null) for (var f : fragments) {
+                if (f != null && scope.permits(f.applicability()) && f.content() != null && !f.content().isBlank()) add(candidates, f.content(), title(f.content()), f.sourceUrl());
+            }
+            if (!candidates.isEmpty()) return new Retrieved(List.copyOf(candidates), "QDRANT");
+        } catch (RuntimeException ex) { /* Structured local fallback owns degraded retrieval. */ }
+        try {
+            var documents = local.searchLocalKnowledge(expanded, 5, scope);
+            if (documents != null) for (var d : documents) {
+                if (d.get("scope") != null && !scope.permits(new com.ai.guide.domain.rag.model.KnowledgeScope(String.valueOf(d.get("scope")), String.valueOf(d.getOrDefault("city", ""))))) continue;
+                String title = text(d.get("title")), content = text(d.get("content"));
+                if (!content.isBlank()) add(candidates, title + "\n" + content, title, text(d.get("source_url")));
+            }
+            return new Retrieved(List.copyOf(candidates), "LOCAL_FALLBACK");
+        } catch (RuntimeException ex) { return new Retrieved(List.of(), "UNAVAILABLE"); }
+    }
+    private static void add(List<Candidate> candidates, String content, String title, String url) {
+        if (candidates.size() >= 6) return;
+        String bounded = content.substring(0, Math.min(content.length(), 4000));
+        var citation = new LinkedHashMap<String,Object>(); citation.put("title", title); citation.put("status", "来源参考，非实时核验");
+        try {
+            var uri = java.net.URI.create(url == null ? "" : url);
+            if (("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme())) && uri.getHost() != null && uri.getUserInfo() == null) citation.put("url", uri.toString());
+        } catch (RuntimeException ignored) { }
+        candidates.add(new Candidate("e" + candidates.size(), bounded, title, citation));
+    }
+    private Map<String,Object> unknown(String code, Retrieved retrieved) {
+        var result = new LinkedHashMap<String,Object>(); result.put("ok", true); result.put("provider", "Java Core Backend");
+        result.put("retrievalStatus", "UNKNOWN"); result.put("reasonCode", code); result.put("gateSource", "SEMANTIC");
+        result.put("retrievalSource", retrieved.source()); result.put("backgroundSource", retrieved.source());
+        result.put("mode", "Java 语义证据门禁"); result.put("source", "Java Semantic Evidence Gate");
+        result.put("verified", false); result.put("evidenceCount", 0); result.put("facts", List.of()); result.put("citations", List.of()); result.put("claims", List.of());
+        result.put("message", "当前无法确认所问结论；相关资料仅供背景参考，请通过资料中提供的官方来源核实。"); result.put("reason", result.get("message"));
+        result.put("backgroundFacts", retrieved.candidates().stream().map(c -> Map.of(
+                "label", "相关资料条目", "purpose", "SOURCE_REFERENCE_ONLY", "evidenceId", c.id())).toList());
+        result.put("backgroundCitations", retrieved.candidates().stream().map(c -> {
+            var citation = new LinkedHashMap<String,Object>();
+            citation.put("title", "相关资料来源"); citation.put("status", "仅供核实来源，不支撑所问结论");
+            if (c.citation().containsKey("url")) citation.put("url", c.citation().get("url"));
+            return citation;
+        }).toList());
+        result.put("vectorSearch", Map.of("provider", retrieved.source(), "resultCount", retrieved.candidates().size(), "retrievalStatus", "UNKNOWN", "reasonCode", code));
+        result.put("vectorStore", "NOT_QUERIED".equals(retrieved.source()) ? Map.of("provider", "NOT_QUERIED", "verified", false) : status().get("vectorStore"));
+        result.put("embedding", Map.of("directFromNode", false)); result.put("fallbackOwner", "Java"); return result;
+    }
+    public Map<String,Object> status() {
+        var status = new LinkedHashMap<String,Object>(); status.put("configured", true); status.put("owner", "Java"); status.put("provider", "Java Core Backend");
+        var vectorStore = new LinkedHashMap<String,Object>();
+        vectorStore.put("provider", "Java-managed Qdrant"); vectorStore.put("collection", collection()); vectorStore.put("configured", true);
+        vectorStore.put("directFromNode", false); vectorStore.put("verified", false); vectorStore.put("indexedDocuments", null);
         status.put("vectorStore", vectorStore);
-        status.put("rerank", Map.of(
-                "provider", "Java RerankService",
-                "cacheOwner", "Java",
-                "directFromNode", false
-        ));
-        status.put("fallback", Map.of(
-                "provider", "Java kb_document",
-                "mode", "关键词检索",
-                "directFromNode", false
-        ));
-        status.put("contract", Map.of(
-                "request", "{ query, city, constraints, deep? }",
-                "response", "{ ok, mode, facts, citations, vectorSearch, vectorStore }",
-                "verified", true
-        ));
+        status.put("embedding", Map.of("provider", "Java EmbeddingModel", "directFromNode", false));
+        status.put("rerank", Map.of("provider", "Java RerankService", "cacheOwner", "Java", "directFromNode", false));
+        status.put("fallback", Map.of("provider", "Java kb_document", "mode", "关键词检索", "directFromNode", false));
+        status.put("semanticGate", Map.of("failureDecision", "UNKNOWN", "backgroundMayRemainAvailable", true));
+        status.put("contract", Map.of("request", "{ query, city, constraints, deep? }", "response", "{ ok, retrievalStatus, facts, citations, backgroundFacts, backgroundCitations }", "verified", true));
         return status;
     }
-
-    private Map<String, Object> semanticResult(List<String> fragments, boolean deep) {
-        List<Map<String, Object>> facts = new ArrayList<>();
-        for (int index = 0; index < fragments.size(); index++) {
-            String text = String.valueOf(fragments.get(index));
-            if (text.isBlank()) continue;
-            facts.add(fact(
-                    extractTitle(text, index),
-                    text,
-                    "已核验",
-                    deep ? "Java 深度 RAG 语义命中。" : "Java Qdrant 语义命中。"
-            ));
-        }
-
-        if (facts.isEmpty()) return failure("Java RAG 返回了空知识片段");
-
-        Map<String, Object> result = baseResult();
-        result.put("ok", true);
-        result.put("retrievalStatus", "RELEVANT");
-        result.put("reasonCode", "EVIDENCE_SUFFICIENT");
-        result.put("retrievalSource", "QDRANT");
-        result.put("evidenceCount", facts.size());
-        result.put("message", "检索完成");
-        result.put("mode", deep ? "Java 深度 RAG" : "Java Qdrant 语义检索");
-        result.put("source", "Java Core Backend / Qdrant");
-        result.put("verified", true);
-        result.put("reason", "");
-        result.put("vectorSearch", Map.of(
-                "provider", "Java Qdrant",
-                "collection", safeCollectionName(),
-                "resultCount", facts.size(),
-                "rerankProvider", "Java RerankService",
-                "retrievalStatus", "RELEVANT",
-                "reasonCode", "EVIDENCE_SUFFICIENT"
-        ));
-        result.put("facts", facts);
-        result.put("citations", List.of(citation(
-                "Java Core RAG",
-                "语义检索结果由 Java Core Backend 统一生成"
-        )));
-        return result;
-    }
-
-    private Map<String, Object> localResult(List<Map<String, Object>> documents) {
-        List<Map<String, Object>> facts = new ArrayList<>();
-        List<Map<String, Object>> citations = new ArrayList<>();
-        for (Map<String, Object> document : documents) {
-            String title = stringValue(document.get("title"), "Java 本地知识文档");
-            String content = stringValue(document.get("content"), "");
-            if (content.isBlank()) continue;
-            facts.add(fact(title, content, "已核验", "Java kb_document 关键词检索回退。"));
-            citations.add(citation(title, "本地知识文档由 Java kb_document 提供"));
-        }
-
-        if (facts.isEmpty()) return failure("Java 本地知识库没有可用正文");
-        Map<String, Object> result = baseResult();
-        result.put("ok", true);
-        result.put("retrievalStatus", "RELEVANT");
-        result.put("reasonCode", "LOCAL_EVIDENCE_SUFFICIENT");
-        result.put("retrievalSource", "LOCAL_FALLBACK");
-        result.put("evidenceCount", facts.size());
-        result.put("message", "本地知识库检索完成");
-        result.put("mode", "Java 本地知识回退（关键词检索）");
-        result.put("source", "Java kb_document");
-        result.put("verified", true);
-        result.put("reason", "语义检索无可用结果，已降级到 Java 本地知识库。");
-        result.put("facts", facts);
-        result.put("citations", citations);
-        result.put("vectorSearch", Map.of(
-                "provider", "Java Local",
-                "collection", safeCollectionName(),
-                "resultCount", facts.size(),
-                "fallback", true,
-                "retrievalStatus", "RELEVANT",
-                "reasonCode", "LOCAL_EVIDENCE_SUFFICIENT"
-        ));
-        return result;
-    }
-
-    private Map<String, Object> unknownResult(String reasonCode, boolean fromQdrant) {
-        Map<String, Object> result = baseResult();
-        result.put("ok", true);
-        result.put("retrievalStatus", "UNKNOWN");
-        result.put("reasonCode", reasonCode);
-        result.put("retrievalSource", fromQdrant ? "QDRANT" : "LOCAL_FALLBACK");
-        result.put("evidenceCount", 0);
-        result.put("message", "当前知识库没有足够证据确认该问题，建议查询景区官方渠道或实时地图服务。");
-        result.put("mode", fromQdrant ? "Java Qdrant 语义检索" : "Java 本地知识回退（关键词检索）");
-        result.put("source", fromQdrant ? "Java Core Backend / Qdrant" : "Java kb_document");
-        result.put("verified", false);
-        result.put("reason", "当前知识库没有足够证据确认该问题，建议查询景区官方渠道或实时地图服务。");
-        result.put("facts", Collections.emptyList());
-        result.put("citations", Collections.emptyList());
-        result.put("vectorSearch", Map.of(
-                "provider", fromQdrant ? "Java Qdrant" : "Java Local",
-                "collection", safeCollectionName(),
-                "resultCount", 0,
-                "retrievalStatus", "UNKNOWN",
-                "reasonCode", reasonCode
-        ));
-        return result;
-    }
-
-    private Map<String, Object> failure(String reason) {
-        Map<String, Object> result = baseResult();
-        result.put("ok", false);
-        result.put("retrievalStatus", "UNAVAILABLE");
-        result.put("reasonCode", "SYSTEM_UNAVAILABLE");
-        result.put("mode", "Java Core RAG");
-        result.put("source", "Java Core Backend");
-        result.put("verified", false);
-        result.put("reason", reason);
-        result.put("facts", Collections.emptyList());
-        result.put("citations", Collections.emptyList());
-        return result;
-    }
-
-    private Map<String, Object> baseResult() {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("provider", "Java Core Backend");
-        result.put("embedding", Map.of("directFromNode", false));
-        result.put("vectorStore", status().get("vectorStore"));
-        result.put("fallbackOwner", "Java");
-        return result;
-    }
-
-    private Map<String, Object> fact(String label, String value, String status, String note) {
-        Map<String, Object> fact = new LinkedHashMap<>();
-        fact.put("label", label);
-        fact.put("value", value);
-        fact.put("status", status);
-        fact.put("note", note);
-        fact.put("citations", List.of(citation(label, note)));
-        return fact;
-    }
-
-    private Map<String, Object> citation(String title, String note) {
-        Map<String, Object> citation = new LinkedHashMap<>();
-        citation.put("title", title);
-        citation.put("publisher", "Java Core Backend");
-        citation.put("endpoint", "/ai/rag/retrieve");
-        citation.put("url", "/ai/rag/retrieve");
-        citation.put("updatedAt", java.time.Instant.now().toString());
-        citation.put("status", "已核验");
-        citation.put("note", note);
-        return citation;
-    }
-
-    private String buildQuery(String query, String city, Map<String, Object> constraints) {
-        StringBuilder builder = new StringBuilder(String.valueOf(query == null ? "" : query).trim());
-        if (city != null && !city.isBlank()) builder.append("\n城市：").append(city.trim());
-        if (constraints != null && !constraints.isEmpty()) builder.append("\n约束：").append(constraints);
-        return RagQueryExpander.profile(builder.toString()).expandedQuery().trim();
-    }
-
-    private String extractTitle(String text, int index) {
-        String firstLine = text.replace('\r', '\n').split("\n", 2)[0].trim();
-        return firstLine.length() > 80 ? firstLine.substring(0, 80) : (firstLine.isBlank() ? "知识片段 " + (index + 1) : firstLine);
-    }
-
-    private String stringValue(Object value, String fallback) {
-        String text = value == null ? "" : String.valueOf(value).trim();
-        return text.isBlank() ? fallback : text;
-    }
-
-    private String safeCollectionName() {
-        try {
-            String value = scenicDataImportService.collectionName();
-            return value == null || value.isBlank()
-                    ? "Java-managed Production V2 collection"
-                    : value;
-        } catch (Exception e) {
-            return "Java-managed Production V2 collection";
-        }
-    }
+    private String collection() { try { return Objects.requireNonNullElse(scenic.collectionName(), "Java-managed collection"); } catch (RuntimeException ex) { return "Java-managed collection"; } }
+    private Map<String,Object> failure(String message) { return Map.of("ok", false, "retrievalStatus", "UNAVAILABLE", "reasonCode", "INVALID_QUERY", "reason", message, "facts", List.of(), "citations", List.of()); }
+    private static String text(Object value) { return value == null ? "" : String.valueOf(value); }
+    private static String title(String text) { String line = text.split("\\R", 2)[0]; return line.substring(0, Math.min(80, line.length())); }
 }

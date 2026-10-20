@@ -120,6 +120,22 @@ class PreferencesControllerTest {
     }
 
     @Test
+    void unknownFieldsAreRejectedWithTheSameLenientMapperUsedBySpring() throws Exception {
+        UserContext.set("java-user", "USER");
+        var mapper = new ObjectMapper().disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller)
+                .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(mapper)).build();
+        for (String json : List.of("{\"unexpected\":true}", "{\"unexpected\":true,\"interests\":[\"夜景\"]}")) {
+            assertThrows(JsonProcessingException.class, () -> mapper.readValue(json, UserPreferencesPatch.class));
+            for (var method : List.of(org.springframework.http.HttpMethod.POST, org.springframework.http.HttpMethod.PATCH, org.springframework.http.HttpMethod.PUT))
+                mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(method, "/ai/preferences")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(json))
+                        .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+        }
+        org.mockito.Mockito.verifyNoInteractions(preferencesApplicationService);
+    }
+
+    @Test
     void createdMutationUsesCreatedStatus() {
         UserContext.set("java-user", "USER");
         UserPreferencesPatch patch = UserPreferencesPatch.empty();

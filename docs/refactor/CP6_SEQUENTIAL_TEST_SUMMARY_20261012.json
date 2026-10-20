@@ -1,0 +1,9 @@
+{
+  "run": 1177,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 14,
+  "passed": 1163,
+  "log": "D:\\scenic-guide\\cp6-sequential-full.log",
+  "logSha256": "1ca1825036da44815b0acb89b6499df61586b0b5c6f9c1db9f5b3ea8ac95af2b"
+}

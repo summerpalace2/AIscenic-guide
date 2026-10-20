@@ -23,7 +23,7 @@ import java.util.Map;
 @AllArgsConstructor
 public class TravelConstraints {
     @Builder.Default
-    private String destination = "重庆";
+    private String destination = "";
     /**
      * 用户明确提供的动态规划起点。它不是目的地，也不要求出现在核心景点目录中。
      */
@@ -39,7 +39,7 @@ public class TravelConstraints {
     @Builder.Default
     private String departureAt = "未提供";
     @Builder.Default
-    private int durationDays = 2;
+    private int durationDays = 0;
     @Builder.Default
     private String companions = "未提供";
     @Builder.Default
@@ -47,7 +47,7 @@ public class TravelConstraints {
     @Builder.Default
     private String budget = "未提供";
     @Builder.Default
-    private List<String> interests = new ArrayList<>(List.of("城市", "人文", "夜景"));
+    private List<String> interests = new ArrayList<>();
     @Builder.Default
     private String stayArea = "未提供";
     @Builder.Default
@@ -98,6 +98,23 @@ public class TravelConstraints {
         result.put("shadowSemanticPreferences", shadowSemanticPreferences == null ? Map.of() : shadowSemanticPreferences);
         result.put("constraintProvenance", provenance());
         result.put("rawPrompt", rawPrompt);
+        return result;
+    }
+
+    /** Reads a server-owned persisted snapshot, retaining canonical constraints and their provenance. */
+    public static TravelConstraints fromSnapshot(com.fasterxml.jackson.databind.ObjectMapper mapper,
+                                                  Map<String, Object> snapshot) {
+        Map<String, Object> canonical = new LinkedHashMap<>(snapshot == null ? Map.of() : snapshot);
+        Object provenance = canonical.remove("constraintProvenance");
+        // These two views are derived by asMap from the canonical root fields, not independent constraints.
+        canonical.remove("hardConstraints");
+        canonical.remove("softPreferences");
+        var readerMapper = mapper.copy().enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS);
+        TravelConstraints result = readerMapper.convertValue(canonical, TravelConstraints.class);
+        if (provenance instanceof Map<?, ?> fields) fields.forEach((field, origin) -> {
+            if (origin != null && !String.valueOf(origin).isBlank())
+                result.markOrigin(String.valueOf(field), ConstraintOrigin.valueOf(String.valueOf(origin).toUpperCase(java.util.Locale.ROOT)));
+        });
         return result;
     }
 

@@ -145,7 +145,7 @@ class RouteAwarePlannerTest {
         assertNotNull(a2);
 
         // RouteCostProvider with no active AMap service (unavailable)
-        RouteCostProvider offlineProvider = new RouteCostProvider(null);
+        RouteCostProvider offlineProvider = new RouteCostProvider(null, new com.ai.guide.infrastructure.planner.taxonomy.JsonTaxonomyAdapter());
 
         RouteCost cost = offlineProvider.resolveFinalEdge(a1, a2, "walking");
         assertNotNull(cost);
@@ -173,7 +173,7 @@ class RouteAwarePlannerTest {
         TravelConstraints constraints = constraintParser.parse("2026-08-24 必须去三峡博物馆 玩1天");
 
         // Custom repairer that intentionally leaves the violation to test the 2-iteration loop bound
-        LocalPlanRepairer stubbornRepairer = new LocalPlanRepairer() {
+        LocalPlanRepairer stubbornRepairer = new LocalPlanRepairer(com.ai.guide.testing.PlannerTaxonomyFixtures.categoryPolicies()) {
             @Override
             public List<Map<String, Object>> repair(List<Map<String, Object>> d,
                                                    PlanVerifier.VerificationResult v,
@@ -200,7 +200,7 @@ class RouteAwarePlannerTest {
     void gs01_baiheliangAndDowntownDoNotProduceInfeasibleHalfDayInterdistrictBounce() {
         // Explicit request mentioning Baiheliang and Jiefangbei for a 2-day trip
         PlanRequest request = PlanRequest.builder()
-                .prompt("想去白鹤梁水下博物馆和解放碑，2天行程")
+                .prompt("重庆市2天行程，想去白鹤梁水下博物馆和解放碑")
                 .build();
 
         PlannerService.ServiceResult result = plannerService.shadow(
