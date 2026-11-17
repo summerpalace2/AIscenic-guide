@@ -748,7 +748,10 @@ public class PlannerService {
                 overrides == null ? Map.of() : overrides);
         PlannerPreferencesResolver.Resolution resolved = preferencesResolver.resolve(requested, usePreferences);
         TravelConstraints constraints = constraintParser.applyDerivedTransportFallback(resolved.constraints());
-        if (parsed.originOf("durationDays") == com.ai.guide.domain.planner.model.ConstraintOrigin.PROMPT && parsed.getDurationDays() > 0) {
+        // 仅当外部 overrides 未显式指定 durationDays 时，才允许自然语言解析天数覆盖个人偏好默认值
+        if (requested.originOf("durationDays") != com.ai.guide.domain.planner.model.ConstraintOrigin.REQUEST
+                && parsed.originOf("durationDays") == com.ai.guide.domain.planner.model.ConstraintOrigin.PROMPT
+                && parsed.getDurationDays() > 0) {
             constraints.setDurationDays(parsed.getDurationDays());
         }
         return new RequestPreparation(constraints, resolved.snapshot());

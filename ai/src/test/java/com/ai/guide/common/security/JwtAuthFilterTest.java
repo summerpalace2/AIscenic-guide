@@ -194,4 +194,24 @@ class JwtAuthFilterTest {
         }
         var request=new MockHttpServletRequest("POST","/ai/online/heartbeat");request.addHeader("Authorization","Bearer user-token");var response=new MockHttpServletResponse();var chain=new MockFilterChain();filter.doFilterInternal(request,response,chain);assertEquals(200,response.getStatus());assertTrue(chain.getRequest()!=null);
     }
+
+    /** 验证统一智能体流式与确认接口仅放行 POST 游客接入，拒绝未授权 GET 探测 */
+    @Test
+    void agentStreamAndConfirmAllowAnonymousPostWhileGetIsRejected() throws Exception {
+        for (String path : java.util.List.of("/ai/agent/v1/stream", "/ai/agent/v1/confirm")) {
+            var postReq = new MockHttpServletRequest("POST", path);
+            var postResp = new MockHttpServletResponse();
+            var postChain = new MockFilterChain();
+            filter.doFilterInternal(postReq, postResp, postChain);
+            assertEquals(200, postResp.getStatus());
+            assertTrue(postChain.getRequest() != null);
+
+            var getReq = new MockHttpServletRequest("GET", path);
+            var getResp = new MockHttpServletResponse();
+            var getChain = new MockFilterChain();
+            filter.doFilterInternal(getReq, getResp, getChain);
+            assertEquals(401, getResp.getStatus());
+            assertTrue(getChain.getRequest() == null);
+        }
+    }
 }

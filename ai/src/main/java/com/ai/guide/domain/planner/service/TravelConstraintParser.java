@@ -27,7 +27,7 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
 
     private static final Pattern ARRIVAL = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:到达|抵达|到|出发)");
     private static final Pattern DEPARTURE = Pattern.compile("((?:今天|今日|明天|后天|(?:周|星期)[一二三四五六日天]|20\\d{2}-\\d{2}-\\d{2}|\\d{1,2}月\\d{1,2}[日号]?))\\s*(上午|中午|下午|傍晚|晚上|夜间)?(?:离开|返程|回程|回家|回)");
-    private static final Pattern DAYS = Pattern.compile("([一二三四五六七八九十\\d]+)\\s*天");
+    private static final Pattern DAYS = Pattern.compile("(?<![第\\d])([一二三四五六七八九十\\d]+)\\s*天");
     private static final Pattern TIME_BUDGET = Pattern.compile("(半天|(?:\\d+(?:\\.\\d+)?|[一二两三四五六七八九十百]+)\\s*(?:个)?\\s*(?:小时|钟头|时|分钟))");
     private static final Pattern CLOCK_DEPARTURE_CLAUSE = Pattern.compile(
             "\\s*(?:(?:早上|早晨|上午|中午|下午|傍晚|晚上|夜间)\\s*)?"
@@ -163,19 +163,19 @@ public class TravelConstraintParser implements TravelConstraintParserPort {
             // 小时级或时间区间级需求永远是单日短途，不得沿用默认的两天规划。
             durationDays = 1;
             durationSpecified = true;
-        } else if (activeSource.matches(".*(全天|单天|当天|1天|一天|一日|半天).*")) {
+        } else if (activeSource.matches(".*(全天|单天|当天|(?<![第\\d])(?:1|一)天|(?<![第\\d])一日|半天).*")) {
             durationDays = 1;
             durationSpecified = true;
-        } else if (activeSource.matches(".*(2天|两天|两日|二天).*")) {
+        } else if (activeSource.matches(".*(?<![第\\d])(?:2天|两天|两日|二天).*")) {
             durationDays = 2;
             durationSpecified = true;
-        } else if (activeSource.matches(".*(3天|三天|三日).*")) {
+        } else if (activeSource.matches(".*(?<![第\\d])(?:3天|三天|三日).*")) {
             durationDays = 3;
             durationSpecified = true;
-        } else if (activeSource.matches(".*(4天|四天|四日).*")) {
+        } else if (activeSource.matches(".*(?<![第\\d])(?:4天|四天|四日).*")) {
             durationDays = 4;
             durationSpecified = true;
-        } else if (activeSource.matches(".*(5天|五天|五日).*")) {
+        } else if (activeSource.matches(".*(?<![第\\d])(?:5天|五天|五日).*")) {
             durationDays = 5;
             durationSpecified = true;
         } else if (daysFound) {

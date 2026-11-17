@@ -102,6 +102,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // 游客体验页只提供普通旅行问答；会话由 BFF 生成的匿名 chat id 隔离，
         // 不拥有规划、偏好写入、行程保存或管理能力。
         if (("GET".equals(method) || "POST".equals(method)) && "/ai/chat/stream".equals(path)) return true;
+        // 统一智能体入口与 HIL 确认端点允许游客以匿名会话接入；写工具内部仍严格校验登录态与会话能力令牌。
+        if ("POST".equals(method) && ("/ai/agent/v1/stream".equals(path) || "/ai/agent/v1/confirm".equals(path))) {
+            return true;
+        }
         if ("GET".equals(method) && ("/ai/search/baidu".equals(path) || path.startsWith("/ai/search/"))) return true;
         if ("POST".equals(method) && "/ai/planner/v1/plan".equals(path)) return true;
         if ("POST".equals(method) && (
