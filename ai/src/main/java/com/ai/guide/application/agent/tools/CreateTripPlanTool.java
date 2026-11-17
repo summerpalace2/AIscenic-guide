@@ -1,12 +1,10 @@
 package com.ai.guide.application.agent.tools;
 
-import com.ai.guide.application.planner.PlanningApplicationService;
+import com.ai.guide.application.agent.AgentTripAuthoringService;
 import com.ai.guide.domain.agent.gateway.AgentToolPort;
 import com.ai.guide.domain.agent.model.AgentExecutionContext;
 import com.ai.guide.domain.agent.model.AgentToolResult;
 import com.ai.guide.domain.agent.model.AgentToolSpec;
-import com.ai.guide.domain.planner.model.PlanRequest;
-import com.ai.guide.domain.planner.service.PlannerService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
@@ -14,13 +12,13 @@ import org.springframework.stereotype.Component;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
- * 全新多天行程生成工具：调用确定性排程引擎从零生成结构化行程草案。
+ * 全智能体原生多天行程编排工具（Agent-Native Draft Creation）。
  *
- * <p>模型仅接收精简的天/站点摘要以保护上下文窗口，完整 {@code trip} 快照与 {@code plannerSessionId}
- * 通过 {@code clientData} 经由 SSE {@code tool_result} 同步给前端工作区展示，严禁向模型上下文泄露访问令牌。
+ * <p>由智能体先检索 POI、天气、路网耗时与个人偏好，再自行按天编排景点、餐饮与弹性时段，
+ * 交由 {@link AgentTripAuthoringService} 完成地理坐标核验、高德路线水化与限量校核后落库；
+ * 模型仅接收轻量日/站摘要，完整 {@code createdTrip} 经 {@code clientData} 同步前端画布展示。
  */
 @Component
 public class CreateTripPlanTool implements AgentToolPort {
@@ -31,47 +29,79 @@ public class CreateTripPlanTool implements AgentToolPort {
             {
               "type": "object",
               "properties": {
-                "prompt": {
+                "title": {
                   "type": "string",
-                  "description": "用户的完整出行需求描述，需包含目的地、游玩天数及同行人或偏好线索"
+                  "description": "本次行程标题，如“重庆亲子2日轻松游”"
                 },
-                "durationDays": {
-                  "type": "integer",
-                  "description": "可选：明确指定的游玩天数（1~7 天）"
-                },
-                "destination": {
+                "subtitle": {
                   "type": "string",
-                  "description": "可选：明确指定目标旅游城市，留空默认沿用当前上下文城市"
+                  "description": "可选：一行副标题概括节奏、人群或主题"
                 },
-                "companions": {
+                "city": {
                   "type": "string",
-                  "description": "可选：同行人群（如 带父母、带孩子、情侣、朋友、独自）"
+                  "description": "目标城市，默认使用当前上下文城市"
                 },
-                "pace": {
+                "summary": {
                   "type": "string",
-                  "description": "可选：步行节奏偏好（如 少走路、轻松、充实）"
+                  "description": "可选：整体行程安排说明"
                 },
-                "usePreferences": {
-                  "type": "boolean",
-                  "description": "是否自动融合当前用户的已保存个人旅行偏好（默认 true）"
+                "constraints": {
+                  "type": "object",
+                  "description": "可选：已确认的出行约束，如 companions、walkingTolerance、transportPreference、budget、dietPreference"
+                },
+                "days": {
+                  "type": "array",
+                  "description": "按天编排的行程列表（1~7 天）。每天必须严格尊重用户口头指定的站点所属天数与顺序。",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "day": { "type": "integer", "description": "第几天（从 1 开始）" },
+                      "theme": { "type": "string", "description": "当天主题，如“母城地标与两江夜景”" },
+                      "agentNotes": { "type": "string", "description": "可选：当天天气应对、避雨或节奏说明" },
+                      "stops": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": { "type": "string", "description": "真实景点、餐厅或活动名称" },
+                            "type": { "type": "string", "enum": ["SCENIC", "DINING", "FREE_TIME"], "description": "节点类型" },
+                            "district": { "type": "string", "description": "所属片区/行政区" },
+                            "time": { "type": "string", "description": "建议时段，如 09:30 / 12:00 午餐 / 18:30 夜游" },
+                            "duration": { "type": "string", "description": "建议停留时长，如“约 90 分钟”" },
+                            "summary": { "type": "string", "description": "简洁亮点介绍" },
+                            "recommendationReason": { "type": "string", "description": "结合天气/偏好/路线的真实推荐依据" },
+                            "ticket": { "type": "string", "description": "门票或人均参考（若未查证写待确认）" },
+                            "specialtyDish": { "type": "string", "description": "餐饮类必尝特色菜" },
+                            "openingHours": { "type": "string", "description": "已核验开放时间" },
+                            "bookingPolicy": { "type": "string", "description": "预约/限流提示" },
+                            "poiId": { "type": "string", "description": "建议填写 search_poi_and_dining 返回的 poiId" },
+                            "venueId": { "type": "string", "description": "可选本地目录 id" },
+                            "location": { "type": "string", "description": "建议填写已查证经纬度 lng,lat" }
+                          },
+                          "required": ["name", "type"]
+                        }
+                      }
+                    },
+                    "required": ["day", "theme", "stops"]
+                  }
                 }
               },
-              "required": ["prompt"]
+              "required": ["title", "days"]
             }
             """;
 
     private static final AgentToolSpec SPEC = new AgentToolSpec(
             TOOL_NAME,
-            "根据用户的目的地、天数与偏好通过确定性规划引擎从零生成全新的多天行程草案（生成草稿，不会覆盖已保存正式行程）。",
+            "将智能体自主编排的多天行程草案（含每日景点、餐饮、理由与核验 POI 坐标）经过高德实景核验与路线水化后落库为正式可编辑草稿。",
             SCHEMA,
             false
     );
 
-    private final PlanningApplicationService planningApplicationService;
+    private final AgentTripAuthoringService authoringService;
     private final ObjectMapper objectMapper;
 
-    public CreateTripPlanTool(PlanningApplicationService planningApplicationService, ObjectMapper objectMapper) {
-        this.planningApplicationService = planningApplicationService;
+    public CreateTripPlanTool(AgentTripAuthoringService authoringService, ObjectMapper objectMapper) {
+        this.authoringService = authoringService;
         this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     }
 
@@ -82,80 +112,30 @@ public class CreateTripPlanTool implements AgentToolPort {
 
     @Override
     public AgentToolResult execute(String argumentsJson, AgentExecutionContext context) {
-        if (context == null || context.anonymous() || context.userId().isBlank()) {
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "LOGIN_REQUIRED",
-                    "生成并管理多天专属行程需要先登录账号，请引导用户登录后再发起规划。");
-        }
         JsonNode args = AgentToolJsonSupport.parseArgs(objectMapper, argumentsJson);
-        String prompt = AgentToolJsonSupport.text(args, "prompt", "");
-        if (prompt.isBlank()) {
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "MISSING_PROMPT",
-                    "请先提供包含目的地与天数要求的行程规划描述 prompt。");
+        AgentTripAuthoringService.CreateDraftResult result = authoringService.createDraft(context, args);
+        if (!result.ok()) {
+            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, result.errorCode(), result.message());
         }
 
-        Map<String, Object> constraints = new LinkedHashMap<>();
-        String destination = AgentToolJsonSupport.text(args, "destination", context.activeCity());
-        if (!destination.isBlank()) {
-            constraints.put("destination", destination);
-        }
-        if (args.hasNonNull("durationDays")) {
-            int days = Math.max(1, Math.min(7, args.get("durationDays").asInt(2)));
-            constraints.put("durationDays", days);
-        }
-        String companions = AgentToolJsonSupport.text(args, "companions", "");
-        if (!companions.isBlank()) {
-            constraints.put("companions", companions);
-        }
-        String pace = AgentToolJsonSupport.text(args, "pace", "");
-        if (!pace.isBlank()) {
-            constraints.put("pace", pace);
-        }
-        boolean usePreferences = !args.hasNonNull("usePreferences") || args.get("usePreferences").asBoolean(true);
-
-        PlanRequest planRequest = PlanRequest.builder()
-                .prompt(prompt)
-                .freeText(prompt)
-                .constraints(constraints)
-                .usePreferences(usePreferences)
-                .idempotencyKey("agent-plan-" + UUID.randomUUID())
-                .build();
-
-        PlannerService.ServiceResult serviceResult = planningApplicationService.create(planRequest);
-        if (serviceResult == null || serviceResult.status() >= 400 || serviceResult.body() == null) {
-            String message = serviceResult != null && serviceResult.body() != null
-                    && serviceResult.body().get("message") != null
-                    ? String.valueOf(serviceResult.body().get("message"))
-                    : "行程规划生成失败，请补充目的地或明确游玩天数后重试。";
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "CREATE_PLAN_FAILED", message);
-        }
-
-        Map<String, Object> body = serviceResult.body();
-        String newSessionId = body.get("sessionId") == null ? "" : String.valueOf(body.get("sessionId"));
-        Object rawTrip = body.get("trip");
-        Map<?, ?> tripMap = rawTrip instanceof Map<?, ?> m ? m : Map.of();
-        Object version = body.get("currentVersion") != null ? body.get("currentVersion") : tripMap.get("version");
+        Map<String, Object> tripMap = result.trip() == null ? Map.of() : result.trip();
         List<Map<String, Object>> daysSummary = AgentToolJsonSupport.summarizeTripDays(tripMap.get("days"), null);
 
         Map<String, Object> llmPayload = new LinkedHashMap<>();
         llmPayload.put("ok", true);
-        llmPayload.put("plannerSessionId", newSessionId);
-        llmPayload.put("currentVersion", version);
+        llmPayload.put("plannerSessionId", result.sessionId());
+        llmPayload.put("currentVersion", result.currentVersion());
         llmPayload.put("title", tripMap.get("title"));
         llmPayload.put("city", tripMap.get("city"));
+        llmPayload.put("sourceMode", tripMap.get("sourceMode"));
         llmPayload.put("days", daysSummary);
-        if (Boolean.TRUE.equals(body.get("needsClarification"))) {
-            llmPayload.put("needsClarification", true);
-        }
-        if (body.get("constraintWarning") != null) {
-            llmPayload.put("constraintWarning", body.get("constraintWarning"));
-        }
 
         Map<String, Object> clientData = new LinkedHashMap<>();
-        clientData.put("plannerSessionId", newSessionId);
-        if (version != null) clientData.put("currentVersion", version);
-        if (rawTrip != null) clientData.put("createdTrip", rawTrip);
+        clientData.put("plannerSessionId", result.sessionId());
+        clientData.put("currentVersion", result.currentVersion());
+        clientData.put("createdTrip", tripMap);
 
-        String summary = "已生成新行程草案（" + daysSummary.size() + " 天，v" + (version == null ? 1 : version) + "）";
+        String summary = "已按您的要求编排并核验生成新行程（" + daysSummary.size() + " 天，v" + result.currentVersion() + "）";
         return AgentToolResult.successWithClientData(
                 TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, llmPayload), summary, clientData);
     }

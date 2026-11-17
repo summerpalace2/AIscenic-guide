@@ -1,14 +1,10 @@
 package com.ai.guide.application.agent.tools;
 
-import com.ai.guide.application.planner.ApplyAdjustmentResult;
-import com.ai.guide.application.planner.PlanningActor;
+import com.ai.guide.application.agent.AgentTripAuthoringService;
 import com.ai.guide.application.planner.PlanningApplicationService;
-import com.ai.guide.application.planner.PreviewAdjustmentResult;
 import com.ai.guide.application.preferences.PreferencesApplicationService;
 import com.ai.guide.domain.agent.model.AgentExecutionContext;
 import com.ai.guide.domain.agent.model.AgentToolResult;
-import com.ai.guide.domain.planner.model.ApplyAdjustmentRequestDto;
-import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
 import com.ai.guide.domain.planner.service.PlannerService;
 import com.ai.guide.domain.preferences.model.BudgetPreference;
 import com.ai.guide.domain.preferences.model.UserPreferences;
@@ -79,58 +75,47 @@ class AgentPlannerAndPreferenceToolsTest {
 
     @Test
     void previewAndConfirmApplyTripAdjustmentToolsDelegateToDeterministicSandbox() throws Exception {
-        PlanningApplicationService planner = mock(PlanningApplicationService.class);
-        PreviewTripAdjustmentTool previewTool = new PreviewTripAdjustmentTool(planner, MAPPER);
-        ConfirmApplyTripAdjustmentTool applyTool = new ConfirmApplyTripAdjustmentTool(planner, MAPPER);
+        AgentTripAuthoringService authoringService = mock(AgentTripAuthoringService.class);
+        PreviewTripAdjustmentTool previewTool = new PreviewTripAdjustmentTool(authoringService, MAPPER);
+        ConfirmApplyTripAdjustmentTool applyTool = new ConfirmApplyTripAdjustmentTool(authoringService, MAPPER);
 
         assertFalse(previewTool.spec().requiresConfirmation());
         assertTrue(applyTool.spec().requiresConfirmation(), "正式应用调整必须标记 requiresConfirmation=true");
 
-        when(planner.previewAdjustment(any(PlanningActor.class), eq("plan-sess-1"), any(PlanConversationRequestDto.class)))
-                .thenReturn(PreviewAdjustmentResult.success(Map.of(
-                        "ok", true,
-                        "proposalId", "prop-888",
-                        "baseRevision", 3,
-                        "feasible", true,
-                        "canApply", true,
-                        "message", "已生成替换方案预览",
-                        "changedSegments", List.of("第2天下午"),
-                        "optionStatus", Map.of("opt-1", "FEASIBLE")
-                )));
+        when(authoringService.previewPatch(eq(BOUND_USER_CTX), any()))
+                .thenReturn(new AgentTripAuthoringService.PreviewPatchResult(
+                        true, "", "将南山一棵树替换为重庆中国三峡博物馆", "agent-prop-888", 3,
+                        List.of(Map.of("action", "ADDED", "stopName", "第2天 · 重庆中国三峡博物馆")),
+                        List.of("新增 第2天 · 重庆中国三峡博物馆")
+                ));
 
-        AgentToolResult previewRes = previewTool.execute("{\"instruction\":\"把南山一棵树换成三峡博物馆\"}", BOUND_USER_CTX);
+        AgentToolResult previewRes = previewTool.execute(
+                "{\"changeSummary\":\"将南山一棵树替换为三峡博物馆\",\"baseRevision\":3,\"days\":[{\"day\":2,\"stops\":[{\"name\":\"重庆中国三峡博物馆\",\"type\":\"SCENIC\"}]}]}",
+                BOUND_USER_CTX
+        );
         assertTrue(previewRes.ok());
         JsonNode previewJson = MAPPER.readTree(previewRes.jsonPayload());
-        assertEquals("prop-888", previewJson.path("proposalId").asText());
+        assertEquals("agent-prop-888", previewJson.path("proposalId").asText());
         assertEquals(3, previewJson.path("baseRevision").asInt());
 
-        ArgumentCaptor<PlanConversationRequestDto> reqCaptor = ArgumentCaptor.forClass(PlanConversationRequestDto.class);
-        verify(planner).previewAdjustment(eq(new PlanningActor("user-1", false)), eq("plan-sess-1"), reqCaptor.capture());
-        assertEquals(3, reqCaptor.getValue().getBaseRevision());
-        assertEquals("tok-123", reqCaptor.getValue().getSessionAccessToken());
-        assertEquals(2, reqCaptor.getValue().getContext().getActiveDay());
-        assertEquals("stop-2", reqCaptor.getValue().getContext().getSelectedStopId());
-
-        // 模拟应用时版本冲突保留观测供前端提示
-        when(planner.applyAdjustment(any(PlanningActor.class), eq("plan-sess-1"), any(ApplyAdjustmentRequestDto.class)))
-                .thenReturn(ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.CONFLICT,
-                        Map.of("ok", false, "message", "行程版本已更新，请刷新后重试")));
+        when(authoringService.applyPreviewedPatch(eq(BOUND_USER_CTX), eq("agent-prop-888"), eq(3)))
+                .thenReturn(new AgentTripAuthoringService.ApplyPatchResult(
+                        false, "REVISION_CONFLICT", "行程版本已更新，请刷新后重试", "", 0, Map.of(), List.of()));
 
         AgentToolResult conflictRes = applyTool.execute(
-                "{\"proposalId\":\"prop-888\",\"optionId\":\"opt-1\",\"baseRevision\":3,\"changeSummary\":\"替换为三峡博物馆\"}",
+                "{\"proposalId\":\"agent-prop-888\",\"baseRevision\":3,\"changeSummary\":\"替换为三峡博物馆\"}",
                 BOUND_USER_CTX
         );
         assertFalse(conflictRes.ok());
         assertTrue(conflictRes.jsonPayload().contains("REVISION_CONFLICT"));
 
-        // 成功应用
-        when(planner.applyAdjustment(any(PlanningActor.class), eq("plan-sess-1"), any(ApplyAdjustmentRequestDto.class)))
-                .thenReturn(ApplyAdjustmentResult.of(ApplyAdjustmentResult.Outcome.SUCCESS,
-                        Map.of("ok", true, "sessionId", "plan-sess-1", "currentVersion", 4,
-                                "changedSegments", List.of("第2天下午"), "message", "行程调整已成功应用", "trip", Map.of("version", 4))));
+        when(authoringService.applyPreviewedPatch(eq(BOUND_USER_CTX), eq("agent-prop-888"), eq(3)))
+                .thenReturn(new AgentTripAuthoringService.ApplyPatchResult(
+                        true, "", "行程调整已成功应用", "plan-sess-1", 4,
+                        Map.of("version", 4), List.of("第2天下午")));
 
         AgentToolResult applyOk = applyTool.execute(
-                "{\"proposalId\":\"prop-888\",\"optionId\":\"opt-1\",\"baseRevision\":3,\"changeSummary\":\"替换为三峡博物馆\"}",
+                "{\"proposalId\":\"agent-prop-888\",\"baseRevision\":3,\"changeSummary\":\"替换为三峡博物馆\"}",
                 BOUND_USER_CTX
         );
         assertTrue(applyOk.ok());

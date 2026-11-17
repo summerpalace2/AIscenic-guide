@@ -1,29 +1,23 @@
 package com.ai.guide.application.agent.tools;
 
-import com.ai.guide.application.planner.PlanningActor;
-import com.ai.guide.application.planner.PlanningApplicationService;
-import com.ai.guide.application.planner.PreviewAdjustmentResult;
+import com.ai.guide.application.agent.AgentTripAuthoringService;
 import com.ai.guide.domain.agent.gateway.AgentToolPort;
 import com.ai.guide.domain.agent.model.AgentExecutionContext;
 import com.ai.guide.domain.agent.model.AgentToolResult;
 import com.ai.guide.domain.agent.model.AgentToolSpec;
-import com.ai.guide.domain.planner.model.PlanConversationRequestDto;
-import com.ai.guide.domain.planner.model.PlanPageContext;
-import com.ai.guide.domain.planner.service.PlannerService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
- * 确定性行程调整预演工具（只读沙箱，零副作用）。
+ * 全智能体自由局部/跨天行程调整预演工具（只读沙箱，零持久化副作用）。
  *
- * <p>将自然语言调整指令交由 {@link PlanningApplicationService#previewAdjustment} 在沙箱内运行
- * RouteAwarePlanner / PlanVerifier，生成包含 {@code proposalId}、候选方案、可行性与路线变更的预览结果。
- * 绝不直接修改正式或草稿行程，真实失败原因（如闭馆、跨午夜超时、版本冲突）原样返回给模型自纠。
+ * <p>接收智能体在读取当前草稿 {@code get_current_trip_draft} 后自由修订的 {@code days[]} 方案，
+ * 在 {@link AgentTripAuthoringService} 中完成 POI 真实坐标核验、已固定（Pin）站点守卫与高德路线水化，
+ * 生成包含 {@code proposalId} 与前后站点差异的预演提案；仅当随后调用 {@code confirm_apply_trip_adjustment} 并经人工批准后才提交修改。
  */
 @Component
 public class PreviewTripAdjustmentTool implements AgentToolPort {
@@ -34,40 +28,108 @@ public class PreviewTripAdjustmentTool implements AgentToolPort {
             {
               "type": "object",
               "properties": {
-                "instruction": {
+                "changeSummary": {
                   "type": "string",
-                  "description": "用户的明确行程调整指令，如“把第2天下午的南山一棵树换成重庆中国三峡博物馆”或“第1天晚上加一家不辣江湖菜”"
-                },
-                "activeDay": {
-                  "type": "integer",
-                  "description": "目标调整天数（1 起计数），留空则优先沿用上下文焦点天"
-                },
-                "targetStopId": {
-                  "type": "string",
-                  "description": "可选：目标站点 ID，留空则沿用当前选中站点"
+                  "description": "简明概括本次拟调整的内容，如“将第1天十八梯传统风貌区替换为湖广会馆”"
                 },
                 "baseRevision": {
                   "type": "integer",
-                  "description": "可选：当前行程版本号（用于 CAS 校验），留空则自动对齐上下文或当前草稿版本"
+                  "description": "当前草稿基线版本号（须与 get_current_trip_draft 一致）"
+                },
+                "operations": {
+                  "type": "array",
+                  "description": "【局部调整首选】仅传需增删改移的局部操作补丁，无需重写整份行程。单站替换/增删/调时优先用 operations。",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "op": { "type": "string", "enum": ["REPLACE_STOP", "REMOVE_STOP", "ADD_STOP", "MOVE_STOP", "UPDATE_STOP"] },
+                      "day": { "type": "integer", "description": "目标所在第几天" },
+                      "fromDay": { "type": "integer", "description": "MOVE_STOP 时源天" },
+                      "toDay": { "type": "integer", "description": "MOVE_STOP 时目标天" },
+                      "targetStopId": { "type": "string", "description": "待替换/删除/移动/更新的已有 stopId" },
+                      "targetStopName": { "type": "string", "description": "待定位站点的已有名称" },
+                      "insertIndex": { "type": "integer", "description": "ADD_STOP/MOVE_STOP 插入序号（从 0 开始）" },
+                      "insertAfterStopName": { "type": "string", "description": "可选：插在某站点之后" },
+                      "newStop": {
+                        "type": "object",
+                        "description": "REPLACE_STOP 或 ADD_STOP 时的新站点对象",
+                        "properties": {
+                          "name": { "type": "string" },
+                          "type": { "type": "string", "enum": ["SCENIC", "DINING", "FREE_TIME"] },
+                          "district": { "type": "string" },
+                          "time": { "type": "string" },
+                          "duration": { "type": "string" },
+                          "summary": { "type": "string" },
+                          "recommendationReason": { "type": "string" },
+                          "poiId": { "type": "string" },
+                          "venueId": { "type": "string" },
+                          "location": { "type": "string" },
+                          "openingHours": { "type": "string" }
+                        },
+                        "required": ["name", "type"]
+                      }
+                    },
+                    "required": ["op"]
+                  }
+                },
+                "title": {
+                  "type": "string",
+                  "description": "可选：若用户要求顺便修改行程标题"
+                },
+                "days": {
+                  "type": "array",
+                  "description": "【全局重构备选】仅在多天大改或重排整体天数时传完整 days 数组；局部调整请改传 operations。",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "day": { "type": "integer" },
+                      "theme": { "type": "string" },
+                      "agentNotes": { "type": "string" },
+                      "stops": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "stopId": { "type": "string", "description": "保留未变或修改前原有站点的 stopId" },
+                            "name": { "type": "string" },
+                            "type": { "type": "string", "enum": ["SCENIC", "DINING", "FREE_TIME"] },
+                            "district": { "type": "string" },
+                            "time": { "type": "string" },
+                            "duration": { "type": "string" },
+                            "summary": { "type": "string" },
+                            "recommendationReason": { "type": "string" },
+                            "ticket": { "type": "string" },
+                            "specialtyDish": { "type": "string" },
+                            "openingHours": { "type": "string" },
+                            "bookingPolicy": { "type": "string" },
+                            "poiId": { "type": "string" },
+                            "venueId": { "type": "string" },
+                            "location": { "type": "string" }
+                          },
+                          "required": ["name", "type"]
+                        }
+                      }
+                    },
+                    "required": ["day", "stops"]
+                  }
                 }
               },
-              "required": ["instruction"]
+              "required": ["changeSummary"]
             }
             """;
 
     private static final AgentToolSpec SPEC = new AgentToolSpec(
             TOOL_NAME,
-            "在确定性规划沙箱中预演行程调整（不会修改当前行程），返回 proposalId、可选 optionId 列表与可行性校验结果。仅在已有行程调整需求时调用。",
+            "在只读沙箱中预演智能体提出的任意跨天/单站/餐饮/顺序修改方案，校验固定站点与高德路线可行性并返回 proposalId（不改写当前草稿）。",
             SCHEMA,
             false
     );
 
-    private final PlanningApplicationService planningApplicationService;
+    private final AgentTripAuthoringService authoringService;
     private final ObjectMapper objectMapper;
 
-    public PreviewTripAdjustmentTool(PlanningApplicationService planningApplicationService,
-                                     ObjectMapper objectMapper) {
-        this.planningApplicationService = planningApplicationService;
+    public PreviewTripAdjustmentTool(AgentTripAuthoringService authoringService, ObjectMapper objectMapper) {
+        this.authoringService = authoringService;
         this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
     }
 
@@ -78,88 +140,22 @@ public class PreviewTripAdjustmentTool implements AgentToolPort {
 
     @Override
     public AgentToolResult execute(String argumentsJson, AgentExecutionContext context) {
-        if (context == null || !context.hasPlannerSession()) {
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "NO_PLANNER_SESSION",
-                    "当前未绑定行程草稿，无法执行调整预演。请提示用户先生成或打开一份行程。");
-        }
         JsonNode args = AgentToolJsonSupport.parseArgs(objectMapper, argumentsJson);
-        String instruction = AgentToolJsonSupport.text(args, "instruction", "");
-        if (instruction.isBlank()) {
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "MISSING_INSTRUCTION",
-                    "请提供明确的行程调整指令 instruction。");
-        }
-
-        Integer activeDay = args.hasNonNull("activeDay") ? args.get("activeDay").asInt() : context.activeDay();
-        String targetStopId = AgentToolJsonSupport.text(args, "targetStopId", context.activeStopId());
-        int baseRevision = resolveBaseRevision(args, context);
-
-        PlanPageContext pageContext = PlanPageContext.builder()
-                .activeDay(activeDay)
-                .selectedStopId(targetStopId == null || targetStopId.isBlank() ? null : targetStopId)
-                .build();
-
-        PlanConversationRequestDto dto = PlanConversationRequestDto.builder()
-                .sessionId(context.plannerSessionId())
-                .baseRevision(baseRevision)
-                .message(instruction)
-                .context(pageContext)
-                .sessionAccessToken(context.plannerAccessToken())
-                .build();
-
-        PlanningActor actor = new PlanningActor(
-                context.userId().isBlank() ? null : context.userId(),
-                context.anonymous()
-        );
-        PreviewAdjustmentResult result = planningApplicationService.previewAdjustment(actor, context.plannerSessionId(), dto);
-        if (result == null || result.body() == null) {
-            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "PREVIEW_EMPTY", "预演引擎未返回有效结果。");
-        }
-
-        Map<String, Object> body = result.body();
-        if (result.outcome() != PreviewAdjustmentResult.Outcome.SUCCESS) {
-            String message = body.get("message") == null ? "预演未能生成可应用方案" : String.valueOf(body.get("message"));
-            Map<String, Object> failurePayload = new LinkedHashMap<>();
-            failurePayload.put("ok", false);
-            failurePayload.put("outcome", result.outcome().name());
-            failurePayload.put("message", message);
-            if (body.get("reasonCodes") != null) failurePayload.put("reasonCodes", body.get("reasonCodes"));
-            if (body.get("currentVersion") != null) failurePayload.put("currentVersion", body.get("currentVersion"));
-            return AgentToolResult.failure(TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, failurePayload),
-                    "预演未通过：" + message);
+        AgentTripAuthoringService.PreviewPatchResult result = authoringService.previewPatch(context, args);
+        if (!result.ok()) {
+            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, result.errorCode(), result.message());
         }
 
         Map<String, Object> concise = new LinkedHashMap<>();
         concise.put("ok", true);
-        concise.put("proposalId", body.get("proposalId"));
-        concise.put("baseRevision", body.get("baseRevision") != null ? body.get("baseRevision") : baseRevision);
-        concise.put("feasible", body.get("feasible"));
-        concise.put("canApply", body.get("canApply"));
-        concise.put("message", body.get("message"));
-        concise.put("changedSegments", body.get("changedSegments") == null ? List.of() : body.get("changedSegments"));
-        concise.put("reasonCodes", body.get("reasonCodes") == null ? List.of() : body.get("reasonCodes"));
-        if (body.get("stopChanges") != null) concise.put("stopChanges", body.get("stopChanges"));
-        if (body.get("optionStopChanges") != null) concise.put("optionStopChanges", body.get("optionStopChanges"));
-        if (body.get("optionStatus") != null) concise.put("optionStatus", body.get("optionStatus"));
-        if (body.get("candidateReplacements") != null) concise.put("candidateReplacements", body.get("candidateReplacements"));
+        concise.put("canApply", true);
+        concise.put("proposalId", result.proposalId());
+        concise.put("baseRevision", result.baseRevision());
+        concise.put("message", result.message());
+        concise.put("stopChanges", result.stopChanges());
+        concise.put("changedSegments", result.changedSegments());
 
-        String summary = body.get("message") != null ? String.valueOf(body.get("message")) : "已生成调整方案预览";
-        return AgentToolResult.success(TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, concise), summary);
-    }
-
-    private int resolveBaseRevision(JsonNode args, AgentExecutionContext context) {
-        if (args.hasNonNull("baseRevision")) {
-            return args.get("baseRevision").asInt(1);
-        }
-        if (context.baseRevision() != null && context.baseRevision() > 0) {
-            return context.baseRevision();
-        }
-        PlannerService.ServiceResult draft = planningApplicationService.get(context.plannerSessionId(), context.plannerAccessToken());
-        if (draft != null && draft.status() == 200 && draft.body() != null) {
-            Object v = draft.body().get("currentVersion");
-            if (v instanceof Number num) {
-                return num.intValue();
-            }
-        }
-        return 1;
+        return AgentToolResult.success(TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, concise),
+                "已生成调整预演：" + result.message());
     }
 }

@@ -136,6 +136,9 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
                 row.put("category", safe(item.getCategory()));
                 row.put("location", safe(item.getLocation()));
                 row.put("openingHours", safe(item.getOpeningHours()));
+                if (!safe(item.getTicket()).isBlank()) row.put("ticket", safe(item.getTicket()));
+                if (!safe(item.getSummary()).isBlank()) row.put("summary", safe(item.getSummary()));
+                if (item.getTags() != null && !item.getTags().isEmpty()) row.put("tags", item.getTags());
                 matches.add(row);
             }
         }

@@ -16,10 +16,15 @@ import com.ai.guide.domain.ai.model.LanguageModelUsage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
+import org.reactivestreams.Subscription;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -221,6 +226,69 @@ class TravelAgentOrchestratorTest {
         assertEquals("call-hil", confirmEvent.data().get("toolCallId"));
         assertEquals("{\"day\":2}", confirmEvent.data().get("argumentsJson"));
         assertEquals("done", events.get(events.size() - 1).event());
+    }
+
+    @Test
+    void streamsStepEventsImmediatelyUnderBackpressureRequestOne() throws Exception {
+        CountDownLatch toolCallEventReceived = new CountDownLatch(1);
+        CountDownLatch releaseToolExecution = new CountDownLatch(1);
+        List<RecordedCall> recordedCalls = new ArrayList<>();
+        ScriptedLanguageModel model = new ScriptedLanguageModel(recordedCalls, List.of(
+                new LanguageModelToolTurn("", List.of(
+                        new LanguageModelToolCall("call-s1", "query_weather_forecast", "{}")
+                ), LanguageModelUsage.unknown(), "stub", 5L),
+                new LanguageModelToolTurn("实时流式回复完成。", List.of(), LanguageModelUsage.unknown(), "stub", 5L)
+        ));
+        AgentToolPort blockingWeatherTool = stubTool("query_weather_forecast", false, (args, ctx) -> {
+            try {
+                assertTrue(releaseToolExecution.await(3, TimeUnit.SECONDS), "tool_call 事件应在工具执行完成前实时到达下游");
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return AgentToolResult.success("query_weather_forecast", "{\"ok\":true}", "晴 22℃");
+        });
+        TravelAgentOrchestrator orchestrator = new TravelAgentOrchestrator(
+                model, new AgentToolRegistry(List.of(blockingWeatherTool), MAPPER), MAPPER);
+
+        List<AgentStepEvent> received = new CopyOnWriteArrayList<>();
+        CountDownLatch completed = new CountDownLatch(1);
+        orchestrator.runStream("重庆天气", List.of(),
+                new AgentExecutionContext("u1", "s1", "", "", "重庆", null, "", "", false))
+                .subscribe(new Subscriber<>() {
+                    private Subscription subscription;
+
+                    @Override
+                    public void onSubscribe(Subscription s) {
+                        this.subscription = s;
+                        s.request(1);
+                    }
+
+                    @Override
+                    public void onNext(AgentStepEvent item) {
+                        received.add(item);
+                        if ("tool_call".equals(item.phase())) {
+                            toolCallEventReceived.countDown();
+                            releaseToolExecution.countDown();
+                        }
+                        subscription.request(1);
+                    }
+
+                    @Override
+                    public void onError(Throwable t) {
+                        completed.countDown();
+                    }
+
+                    @Override
+                    public void onComplete() {
+                        completed.countDown();
+                    }
+                });
+
+        assertTrue(toolCallEventReceived.await(3, TimeUnit.SECONDS),
+                "request(1) 背压下 tool_call 事件必须实时推送，不能等待循环结束");
+        assertTrue(completed.await(3, TimeUnit.SECONDS));
+        assertTrue(received.stream().anyMatch(e -> "tool_result".equals(e.event())));
+        assertEquals("done", received.get(received.size() - 1).event());
     }
 
     private static AgentToolPort stubTool(String name, boolean requiresConfirmation, ToolHandler handler) {

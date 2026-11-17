@@ -84,6 +84,9 @@ final class AgentToolJsonSupport {
             }
             Map<String, Object> daySummary = new LinkedHashMap<>();
             daySummary.put("day", dayNum);
+            if (dayMap.get("theme") != null) {
+                daySummary.put("theme", dayMap.get("theme"));
+            }
             if (dayMap.get("title") != null) {
                 daySummary.put("title", dayMap.get("title"));
             }
@@ -96,9 +99,13 @@ final class AgentToolJsonSupport {
                     Map<String, Object> item = new LinkedHashMap<>();
                     item.put("stopId", stop.get("stopId") != null ? stop.get("stopId") : stop.get("id"));
                     item.put("name", stop.get("name"));
+                    if (stop.get("type") != null) item.put("type", stop.get("type"));
                     if (stop.get("category") != null) item.put("category", stop.get("category"));
-                    if (stop.get("period") != null) item.put("period", stop.get("period"));
-                    if (stop.get("timeRange") != null) item.put("timeRange", stop.get("timeRange"));
+                    if (stop.get("time") != null) item.put("time", stop.get("time"));
+                    else if (stop.get("period") != null) item.put("period", stop.get("period"));
+                    if (stop.get("duration") != null) item.put("duration", stop.get("duration"));
+                    if (stop.get("location") != null) item.put("location", stop.get("location"));
+                    if (stop.get("openingHours") != null) item.put("openingHours", stop.get("openingHours"));
                     if (Boolean.TRUE.equals(stop.get("pinned"))) item.put("pinned", true);
                     if (Boolean.TRUE.equals(stop.get("fixed"))) item.put("fixed", true);
                     stopList.add(item);

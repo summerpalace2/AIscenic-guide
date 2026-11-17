@@ -1,11 +1,11 @@
 package com.ai.guide.application.agent.tools;
 
+import com.ai.guide.application.agent.AgentTripAuthoringService;
 import com.ai.guide.application.planner.PlanningActor;
 import com.ai.guide.application.planner.PlanningApplicationService;
 import com.ai.guide.application.trip.TripApplicationService;
 import com.ai.guide.domain.agent.model.AgentExecutionContext;
 import com.ai.guide.domain.agent.model.AgentToolResult;
-import com.ai.guide.domain.planner.model.PlanRequest;
 import com.ai.guide.domain.planner.model.PlannerPinsRequest;
 import com.ai.guide.domain.planner.model.PlannerSaveResult;
 import com.ai.guide.domain.planner.service.PlannerService;
@@ -39,35 +39,34 @@ class AgentPhase4LifecycleToolsTest {
 
     @Test
     void createTripPlanToolEnforcesLoginExcludesBulkPolylineFromLlmAndAttachesClientData() throws Exception {
-        PlanningApplicationService planner = mock(PlanningApplicationService.class);
-        CreateTripPlanTool tool = new CreateTripPlanTool(planner, MAPPER);
+        AgentTripAuthoringService authoringService = mock(AgentTripAuthoringService.class);
+        CreateTripPlanTool tool = new CreateTripPlanTool(authoringService, MAPPER);
         assertFalse(tool.spec().requiresConfirmation());
 
-        // 游客态拒绝对话创建行程
-        AgentToolResult guestRes = tool.execute("{\"prompt\":\"重庆两日游\"}", GUEST_CTX);
+        when(authoringService.createDraft(eq(GUEST_CTX), any()))
+                .thenReturn(new AgentTripAuthoringService.CreateDraftResult(
+                        false, "LOGIN_REQUIRED", "请先登录", "", 0, Map.of(), List.of()));
+        AgentToolResult guestRes = tool.execute("{\"title\":\"重庆两日游\",\"days\":[{\"day\":1,\"theme\":\"市区\",\"stops\":[{\"name\":\"解放碑\",\"type\":\"SCENIC\"}]}]}", GUEST_CTX);
         assertFalse(guestRes.ok());
         assertTrue(guestRes.jsonPayload().contains("LOGIN_REQUIRED"));
-        verifyNoInteractions(planner);
 
         Map<String, Object> generatedTrip = Map.of(
                 "title", "重庆两日慢游",
                 "city", "重庆",
                 "version", 1,
+                "sourceMode", "高德实时接口",
                 "days", List.of(
-                        Map.of("day", 1, "stops", List.of(
-                                Map.of("stopId", "stop-jfb", "name", "解放碑", "polyline", "GIANT_POLYLINE_ARRAY")
+                        Map.of("day", 1, "theme", "母城经典", "stops", List.of(
+                                Map.of("id", "day1-1-jfb", "stopId", "day1-1-jfb", "name", "解放碑", "type", "SCENIC", "polyline", "GIANT_POLYLINE_ARRAY")
                         ))
                 )
         );
-        when(planner.create(any(PlanRequest.class))).thenReturn(new PlannerService.ServiceResult(200, Map.of(
-                "ok", true,
-                "sessionId", "ps-new-100",
-                "currentVersion", 1,
-                "trip", generatedTrip
-        )));
+        when(authoringService.createDraft(eq(USER_BOUND_CTX), any()))
+                .thenReturn(new AgentTripAuthoringService.CreateDraftResult(
+                        true, "", "已创建", "ps-new-100", 1, generatedTrip, List.of()));
 
         AgentToolResult res = tool.execute(
-                "{\"prompt\":\"周末两天带父母玩重庆，少走路\",\"durationDays\":2,\"companions\":\"带父母\",\"pace\":\"少走路\"}",
+                "{\"title\":\"重庆两日慢游\",\"days\":[{\"day\":1,\"theme\":\"母城经典\",\"stops\":[{\"name\":\"解放碑\",\"type\":\"SCENIC\"}]}]}",
                 USER_BOUND_CTX
         );
         assertTrue(res.ok());
@@ -77,11 +76,6 @@ class AgentPhase4LifecycleToolsTest {
         assertEquals(1, llmJson.path("days").size());
         assertEquals("ps-new-100", res.clientData().get("plannerSessionId"));
         assertEquals(generatedTrip, res.clientData().get("createdTrip"));
-
-        ArgumentCaptor<PlanRequest> reqCaptor = ArgumentCaptor.forClass(PlanRequest.class);
-        verify(planner).create(reqCaptor.capture());
-        assertEquals(2, reqCaptor.getValue().getConstraints().get("durationDays"));
-        assertEquals("带父母", reqCaptor.getValue().getConstraints().get("companions"));
     }
 
     @Test

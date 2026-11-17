@@ -101,23 +101,30 @@ public class TravelAgentOrchestrator {
             String prevRole = UserContext.getRole();
             try {
                 bindWorkerUserContext(context);
-                executeLoop(userMessage, historyMessages, context, sink::next);
-                sink.complete();
+                executeLoop(userMessage, historyMessages, context, sink::next, sink::isCancelled);
+                if (!sink.isCancelled()) {
+                    sink.complete();
+                }
             } catch (Exception ex) {
                 log.warn("[TravelAgent] 编排执行异常: {}", ex.getMessage(), ex);
-                sink.next(AgentStepEvent.error("智能体执行遇到异常：" + safeError(ex)));
-                sink.next(AgentStepEvent.done());
-                sink.complete();
+                if (!sink.isCancelled()) {
+                    sink.next(AgentStepEvent.error("智能体执行遇到异常：" + safeError(ex)));
+                    sink.next(AgentStepEvent.done());
+                    sink.complete();
+                }
             } finally {
                 restoreWorkerUserContext(prevUserId, prevUsername, prevRole);
             }
-        }).subscribeOn(Schedulers.boundedElastic());
+        // requestOn=false：避免 Spring MVC ReactiveTypeHandler 的逐条 request(1) 被排入执行循环所在的单线程 Worker 队列，
+        // 确保每条 agent_step / tool_result 实时刷新到 SSE 客户端而不是积压到循环结束。
+        }).subscribeOn(Schedulers.boundedElastic(), false);
     }
 
     private void executeLoop(String userMessage,
                              List<LanguageModelMessage> historyMessages,
                              AgentExecutionContext context,
-                             java.util.function.Consumer<AgentStepEvent> emitter) {
+                             java.util.function.Consumer<AgentStepEvent> emitter,
+                             java.util.function.BooleanSupplier cancelled) {
         AgentExecutionContext effectiveContext = context == null
                 ? new AgentExecutionContext("", "", "", "", "重庆", null, "", "", false)
                 : context;
@@ -128,8 +135,14 @@ public class TravelAgentOrchestrator {
         Set<Object> collectedCitations = new LinkedHashSet<>();
 
         for (int step = 1; step <= maxSteps; step++) {
+            if (cancelled.getAsBoolean()) {
+                return;
+            }
             emitter.accept(AgentStepEvent.agentStep(step, "reasoning", "", "正在分析问题与规划核查步骤…"));
             LanguageModelToolTurn turn = languageModel.completeWithTools(conversation, fixedTools, DEFAULT_TEMPERATURE);
+            if (cancelled.getAsBoolean()) {
+                return;
+            }
 
             if (!turn.hasToolCalls()) {
                 if (!collectedCitations.isEmpty()) {
@@ -147,6 +160,9 @@ public class TravelAgentOrchestrator {
             conversation.add(LanguageModelMessage.assistantToolCalls(turn.textContent(), turn.toolCalls()));
 
             for (LanguageModelToolCall call : turn.toolCalls()) {
+                if (cancelled.getAsBoolean()) {
+                    return;
+                }
                 AgentToolSpec spec = toolRegistry.specOf(call.name()).orElse(null);
                 if (spec != null && spec.requiresConfirmation()) {
                     if (!collectedCitations.isEmpty()) {
