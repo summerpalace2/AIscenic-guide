@@ -26,6 +26,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -226,6 +228,202 @@ class TravelAgentOrchestratorTest {
         assertEquals("call-hil", confirmEvent.data().get("toolCallId"));
         assertEquals("{\"day\":2}", confirmEvent.data().get("argumentsJson"));
         assertEquals("done", events.get(events.size() - 1).event());
+    }
+
+    @Test
+    void confirmApplyTripAdjustmentInheritsStopChangesFromPreviewToolResult() throws Exception {
+        List<RecordedCall> recordedCalls = new ArrayList<>();
+        ScriptedLanguageModel scriptModel = new ScriptedLanguageModel(recordedCalls, List.of(
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("call-prev", "preview_trip_adjustment", "{\"baseRevision\":1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5
+                ),
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("call-apply", "confirm_apply_trip_adjustment", "{\"proposalId\":\"prop-1\",\"baseRevision\":1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5
+                )
+        ));
+        AgentToolPort previewTool = stubTool("preview_trip_adjustment", false, (args, ctx) ->
+                AgentToolResult.success("preview_trip_adjustment",
+                        "{\"ok\":true,\"proposalId\":\"prop-1\",\"stopChanges\":[{\"action\":\"UPDATED\",\"key\":\"stop-2\",\"stopName\":\"重庆湖广会馆\",\"after\":{\"day\":1},\"fields\":{\"name\":{\"before\":\"十八梯\",\"after\":\"重庆湖广会馆\"}}}]}",
+                        "预演完成"));
+        AgentToolPort applyTool = stubTool("confirm_apply_trip_adjustment", true, (args, ctx) ->
+                AgentToolResult.success("confirm_apply_trip_adjustment", "{\"ok\":true}", "已应用"));
+        TravelAgentOrchestrator orchestrator = new TravelAgentOrchestrator(
+                scriptModel, new AgentToolRegistry(List.of(previewTool, applyTool), MAPPER), MAPPER);
+
+        List<AgentStepEvent> events = orchestrator.runStream("十八梯换成湖广会馆", List.of(), null).collectList().block();
+        assertNotNull(events);
+        AgentStepEvent confirmEvent = events.stream()
+                .filter(e -> "confirm_request".equals(e.event()))
+                .findFirst()
+                .orElseThrow();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> argsMap = (Map<String, Object>) confirmEvent.data().get("args");
+        assertNotNull(argsMap);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> stopChanges = (List<Map<String, Object>>) argsMap.get("stopChanges");
+        assertNotNull(stopChanges);
+        assertEquals(1, stopChanges.size());
+        assertEquals("stop-2", stopChanges.get(0).get("key"));
+        assertEquals("重庆湖广会馆", stopChanges.get(0).get("stopName"));
+    }
+
+    @Test
+    void transientLlmFailureRetriesAndCompletesCleanly() {
+        AtomicInteger llmCalls = new AtomicInteger();
+        LanguageModelPort flakyModel = new LanguageModelPort() {
+            @Override
+            public Publisher<String> stream(List<LanguageModelMessage> messages) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public <T> T complete(List<LanguageModelMessage> messages, Class<T> responseType) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public String completeText(List<LanguageModelMessage> messages) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public LanguageModelCompletion completeMeasured(List<LanguageModelMessage> messages, double temperature) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public LanguageModelToolTurn completeWithTools(List<LanguageModelMessage> messages,
+                                                           List<LanguageModelToolDefinition> tools,
+                                                           double temperature) {
+                if (llmCalls.incrementAndGet() == 1) {
+                    throw new IllegalStateException("upstream timeout");
+                }
+                return new LanguageModelToolTurn("重试后已为您顺利完成解答。", List.of(), LanguageModelUsage.unknown(), "stub", 5L);
+            }
+        };
+        TravelAgentOrchestrator orchestrator = new TravelAgentOrchestrator(
+                flakyModel, new AgentToolRegistry(List.of(), MAPPER), MAPPER);
+
+        List<AgentStepEvent> events = orchestrator.runStream("重庆旅游咨询", List.of(), null).collectList().block();
+        assertNotNull(events);
+        assertEquals(2, llmCalls.get());
+        assertTrue(events.stream().anyMatch(e -> "agent_step".equals(e.event()) && e.message().contains("自动重试")));
+        assertTrue(events.stream().anyMatch(e -> "message".equals(e.event()) && e.message().contains("重试后已为您顺利完成解答")));
+        assertEquals("done", events.get(events.size() - 1).event());
+    }
+
+    @Test
+    void multiOptionComparisonDoesNotForcePrematureConfirmation() {
+        List<RecordedCall> recordedCalls = new ArrayList<>();
+        ScriptedLanguageModel model = new ScriptedLanguageModel(recordedCalls, List.of(
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("c1", "preview_trip_adjustment", "{\"changeSummary\":\"候选1：湖广会馆\",\"baseRevision\":1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5L
+                ),
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("c2", "preview_trip_adjustment", "{\"changeSummary\":\"候选2：三峡博物馆\",\"baseRevision\":1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5L
+                ),
+                new LanguageModelToolTurn(
+                        "对比结果：三峡博物馆室内平层且有电梯，更适合带老人；湖广会馆有部分台阶。请告诉我您想采用哪一个方案。",
+                        List.of(),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5L
+                )
+        ));
+        AtomicInteger previewCount = new AtomicInteger();
+        AgentToolPort previewTool = stubTool("preview_trip_adjustment", false, (a, c) -> {
+            int n = previewCount.incrementAndGet();
+            return AgentToolResult.success("preview_trip_adjustment",
+                    "{\"ok\":true,\"proposalId\":\"prop-" + n + "\",\"baseRevision\":1}", "已预演候选 " + n);
+        });
+        TravelAgentOrchestrator orchestrator = new TravelAgentOrchestrator(
+                model, new AgentToolRegistry(List.of(previewTool), MAPPER), MAPPER);
+        AgentExecutionContext ctx = new AgentExecutionContext("u1", false, "s1", "ps-1", "tok", "", 1, "重庆", 1, "stop-18t", "十八梯", false);
+
+        List<AgentStepEvent> events = orchestrator.runStream("比较湖广会馆和三峡博物馆，看看哪个更适合带老人", List.of(), ctx)
+                .collectList().block();
+        assertNotNull(events);
+        assertEquals(2, previewCount.get(), "多方案对比场景必须允许连续预演两个候选，不得在首次预览后截断");
+        assertFalse(events.stream().anyMatch(e -> "confirm_request".equals(e.event())), "用户未选定方案前不得强行弹出确认卡");
+        assertTrue(events.stream().anyMatch(e -> "message".equals(e.event()) && e.message().contains("三峡博物馆")));
+        assertEquals("done", events.get(events.size() - 1).event());
+    }
+
+    @Test
+    void duplicateIdenticalReadOnlyToolCallReusesCachedObservationWithoutReExecuting() {
+        List<RecordedCall> recordedCalls = new ArrayList<>();
+        ScriptedLanguageModel model = new ScriptedLanguageModel(recordedCalls, List.of(
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("c1", "get_current_trip_draft", "{\"day\":1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5L
+                ),
+                new LanguageModelToolTurn(
+                        "",
+                        List.of(new LanguageModelToolCall("c2", "get_current_trip_draft", "{\"day\": 1}")),
+                        LanguageModelUsage.unknown(),
+                        "deepseek-chat",
+                        5L
+                ),
+                new LanguageModelToolTurn("已核对第1天安排。", List.of(), LanguageModelUsage.unknown(), "deepseek-chat", 5L)
+        ));
+        AtomicInteger draftHits = new AtomicInteger();
+        AgentToolPort draftTool = stubTool("get_current_trip_draft", false, (a, c) -> {
+            draftHits.incrementAndGet();
+            return AgentToolResult.success("get_current_trip_draft", "{\"ok\":true,\"currentVersion\":1}", "已读取草稿");
+        });
+        TravelAgentOrchestrator orchestrator = new TravelAgentOrchestrator(
+                model, new AgentToolRegistry(List.of(draftTool), MAPPER), MAPPER);
+
+        List<AgentStepEvent> events = orchestrator.runStream("看一下第1天行程", List.of(), null).collectList().block();
+        assertNotNull(events);
+        assertEquals(1, draftHits.get(), "单轮内参数完全相同的只读查询应复用缓存，不得重复外呼");
+        long emittedToolResults = events.stream().filter(e -> "tool_result".equals(e.event())).count();
+        assertEquals(1L, emittedToolResults, "重复缓存命中的只读查询不应重复推送工具胶囊");
+        assertEquals("done", events.get(events.size() - 1).event());
+    }
+
+    @Test
+    void transientReadOnlyToolFailureRetriesOnceWhileWriteToolDoesNotRetryBlindly() {
+        AtomicInteger readAttempts = new AtomicInteger();
+        AgentToolPort flakyReadTool = stubTool("search_poi_and_dining", false, (args, ctx) -> {
+            if (readAttempts.incrementAndGet() == 1) {
+                return AgentToolResult.failure("search_poi_and_dining", "{\"ok\":false,\"error\":\"TLS_ERROR\"}", "高德TLS握手失败");
+            }
+            return AgentToolResult.success("search_poi_and_dining", "{\"ok\":true}", "检索到 3 条重庆景点候选");
+        });
+        AtomicInteger writeAttempts = new AtomicInteger();
+        AgentToolPort flakyCreateTool = stubTool("create_trip_plan", false, (args, ctx) -> {
+            writeAttempts.incrementAndGet();
+            return AgentToolResult.failure("create_trip_plan", "{\"ok\":false,\"error\":\"TIMEOUT\"}", "超时");
+        });
+        AgentToolRegistry registry = new AgentToolRegistry(List.of(flakyReadTool, flakyCreateTool), MAPPER);
+
+        AgentToolResult readResult = registry.execute("search_poi_and_dining", "{\"query\":\"博物馆\",\"category\":\"SCENIC\"}", null);
+        assertTrue(readResult.ok());
+        assertEquals(2, readAttempts.get(), "只读工具遇到瞬态 TLS 错误应自动重试 1 次");
+
+        AgentToolResult writeResult = registry.execute("create_trip_plan", "{}", null);
+        assertFalse(writeResult.ok());
+        assertEquals(1, writeAttempts.get(), "写操作 create_trip_plan 超时不得盲目自动重试，防止重复创建");
     }
 
     @Test

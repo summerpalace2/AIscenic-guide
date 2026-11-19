@@ -264,6 +264,40 @@ class AmapRouteServiceTest {
     }
 
     @Test
+    void transientTlsHandshakeErrorRetriesAndRecovers() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        RestTemplate restTemplate = new RestTemplate() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public <T> T getForObject(URI url, Class<T> responseType) {
+                int attempt = calls.incrementAndGet();
+                if (attempt == 1) {
+                    throw new ResourceAccessException(
+                            "I/O error on GET request",
+                            new javax.net.ssl.SSLHandshakeException("Remote host terminated the handshake"));
+                }
+                try {
+                    String json = url.toString().contains("walking") ? walkingJson() : transitJson();
+                    return (T) mapper.readTree(json);
+                } catch (Exception ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+        };
+        AmapRouteService service = new AmapRouteService(
+                new AmapWebServiceClient("https://restapi.amap.com", "test-key", restTemplate));
+
+        GeoRoutePairOutcome outcome = service.routePair(
+                "106.580,29.563", "106.581,29.564", "重庆市", "", "", "walking");
+
+        assertEquals(GeoOutcomeStatus.SUCCESS, outcome.walking().status());
+        assertEquals(GeoOutcomeStatus.SUCCESS, outcome.selected().status());
+        assertTrue(calls.get() >= 3, "walking 首次 TLS 握手失败后应自动重试并成功（至少 1 次失败 + 1 次步行重试 + 1 次公交）");
+        service.close();
+    }
+
+    @Test
     void routePairExecutesWalkingAndTransitConcurrently() throws Exception {
         AtomicInteger active = new AtomicInteger();
         AtomicInteger maxActive = new AtomicInteger();

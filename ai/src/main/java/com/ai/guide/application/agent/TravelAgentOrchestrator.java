@@ -28,7 +28,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 文旅智能体统一编排器（Single Orchestrator + Bounded ReAct Loop）。
@@ -48,7 +50,20 @@ public class TravelAgentOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(TravelAgentOrchestrator.class);
     private static final double DEFAULT_TEMPERATURE = 0.2d;
+    private static final int LLM_MAX_ATTEMPTS = 3;
+    private static final long LLM_RETRY_BACKOFF_MS = 250L;
+    private static final long LLM_RETRY_JITTER_MS = 120L;
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
+
+    /** 单轮内允许按参数完全一致去重复用的纯只读查询工具 */
+    private static final Set<String> READ_ONLY_DEDUP_TOOLS = Set.of(
+            "get_current_trip_draft",
+            "get_user_preferences",
+            "query_weather_forecast",
+            "search_poi_and_dining",
+            "calculate_route_matrix",
+            "search_travel_knowledge"
+    );
 
     private final LanguageModelPort languageModel;
     private final AgentToolRegistry toolRegistry;
@@ -133,13 +148,15 @@ public class TravelAgentOrchestrator {
         List<LanguageModelToolDefinition> fixedTools = toolRegistry.toolDefinitions();
         List<String> completedActions = new ArrayList<>();
         Set<Object> collectedCitations = new LinkedHashSet<>();
+        Map<String, Object> previewStopChangesByProposalId = new LinkedHashMap<>();
+        Map<String, String> readOnlyCallCache = new LinkedHashMap<>();
 
         for (int step = 1; step <= maxSteps; step++) {
             if (cancelled.getAsBoolean()) {
                 return;
             }
             emitter.accept(AgentStepEvent.agentStep(step, "reasoning", "", "正在分析问题与规划核查步骤…"));
-            LanguageModelToolTurn turn = languageModel.completeWithTools(conversation, fixedTools, DEFAULT_TEMPERATURE);
+            LanguageModelToolTurn turn = completeWithToolsWithRetry(step, conversation, fixedTools, emitter, cancelled);
             if (cancelled.getAsBoolean()) {
                 return;
             }
@@ -168,13 +185,30 @@ public class TravelAgentOrchestrator {
                     if (!collectedCitations.isEmpty()) {
                         emitter.accept(AgentStepEvent.citations(new ArrayList<>(collectedCitations)));
                     }
-                    emitter.accept(buildConfirmEvent(step, call, effectiveContext));
+                    emitter.accept(buildConfirmEvent(step, call, effectiveContext, previewStopChangesByProposalId));
                     emitter.accept(AgentStepEvent.done());
                     return;
                 }
 
+                // 单轮内重复调用完全一致的只读查询时直接复用已得观测结果，避免无效外呼与重复胶囊
+                String dedupKey = READ_ONLY_DEDUP_TOOLS.contains(call.name())
+                        ? canonicalToolCacheKey(call.name(), call.argumentsJson())
+                        : null;
+                if (dedupKey != null && readOnlyCallCache.containsKey(dedupKey)) {
+                    log.debug("[TravelAgent] 复用单轮内已成功执行的只读工具结果 tool={}", call.name());
+                    conversation.add(LanguageModelMessage.toolResult(call.id(), call.name(), readOnlyCallCache.get(dedupKey)));
+                    continue;
+                }
+
                 emitter.accept(AgentStepEvent.agentStep(step, "tool_call", call.name(), "正在调用工具：" + call.name()));
                 AgentToolResult result = toolRegistry.execute(call.name(), call.argumentsJson(), effectiveContext);
+
+                if (result.ok() && "preview_trip_adjustment".equals(call.name())) {
+                    capturePreviewStopChanges(result.jsonPayload(), previewStopChangesByProposalId);
+                }
+                if (result.ok() && dedupKey != null) {
+                    readOnlyCallCache.put(dedupKey, result.jsonPayload());
+                }
 
                 if (result.citations() != null && !result.citations().isEmpty()) {
                     collectedCitations.addAll(result.citations());
@@ -182,10 +216,11 @@ public class TravelAgentOrchestrator {
                 emitter.accept(AgentStepEvent.toolResult(
                         step, call.name(), result.ok(), result.summary(), result.clientData()));
 
-                // 若本步工具（如 create_trip_plan）在同一轮内创建了新的规划会话，则同步更新后续步的运行时上下文
+                // 若本步工具（如 create_trip_plan）在同一轮内创建了新的规划会话，则同步更新后续步的运行时上下文并清空草稿读缓存
                 if (result.ok() && result.clientData() != null
                         && result.clientData().get("plannerSessionId") instanceof String createdSessionId
                         && !createdSessionId.isBlank()) {
+                    readOnlyCallCache.keySet().removeIf(k -> k.startsWith("get_current_trip_draft:"));
                     Integer nextRevision = result.clientData().get("currentVersion") instanceof Number n
                             ? n.intValue()
                             : 1;
@@ -225,8 +260,20 @@ public class TravelAgentOrchestrator {
         emitter.accept(AgentStepEvent.done());
     }
 
-    private AgentStepEvent buildConfirmEvent(int step, LanguageModelToolCall call, AgentExecutionContext effectiveContext) {
-        Map<String, Object> parsedArgs = parseArgsSafe(call.argumentsJson());
+    private AgentStepEvent buildConfirmEvent(int step,
+                                             LanguageModelToolCall call,
+                                             AgentExecutionContext effectiveContext,
+                                             Map<String, Object> previewStopChangesByProposalId) {
+        Map<String, Object> parsedArgs = new LinkedHashMap<>(parseArgsSafe(call.argumentsJson()));
+        if ("confirm_apply_trip_adjustment".equals(call.name()) && previewStopChangesByProposalId != null) {
+            Object proposalId = parsedArgs.get("proposalId");
+            if (proposalId != null) {
+                Object changes = previewStopChangesByProposalId.get(String.valueOf(proposalId));
+                if (changes != null) {
+                    parsedArgs.put("stopChanges", changes);
+                }
+            }
+        }
         Object rawSummary = parsedArgs.get("changeSummary");
         String summary = (rawSummary != null && !String.valueOf(rawSummary).isBlank())
                 ? String.valueOf(rawSummary).trim()
@@ -248,6 +295,70 @@ public class TravelAgentOrchestrator {
             payload.put("confirmId", "cfg_" + UUID.randomUUID().toString().replace("-", ""));
         }
         return AgentStepEvent.confirmRequest(step, call.name(), summary, payload);
+    }
+
+    private LanguageModelToolTurn completeWithToolsWithRetry(
+            int step,
+            List<LanguageModelMessage> conversation,
+            List<LanguageModelToolDefinition> fixedTools,
+            java.util.function.Consumer<AgentStepEvent> emitter,
+            java.util.function.BooleanSupplier cancelled) {
+        RuntimeException lastError = null;
+        for (int attempt = 1; attempt <= LLM_MAX_ATTEMPTS; attempt++) {
+            if (cancelled.getAsBoolean()) {
+                throw new IllegalStateException("请求已取消");
+            }
+            try {
+                return languageModel.completeWithTools(conversation, fixedTools, DEFAULT_TEMPERATURE);
+            } catch (IllegalArgumentException | UnsupportedOperationException nonRetryable) {
+                throw nonRetryable;
+            } catch (RuntimeException ex) {
+                lastError = ex;
+                log.warn("[TravelAgent] 模型调用异常 step={} attempt={}/{}: {}",
+                        step, attempt, LLM_MAX_ATTEMPTS, ex.getMessage());
+                if (attempt >= LLM_MAX_ATTEMPTS || cancelled.getAsBoolean()) {
+                    break;
+                }
+                emitter.accept(AgentStepEvent.agentStep(
+                        step, "reasoning", "", "模型响应波动，正在自动重试（第 " + attempt + " 次）…"));
+                try {
+                    long jitterMs = ThreadLocalRandom.current().nextLong(0L, LLM_RETRY_JITTER_MS);
+                    Thread.sleep(LLM_RETRY_BACKOFF_MS * attempt + jitterMs);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw ex;
+                }
+            }
+        }
+        throw lastError != null ? lastError : new IllegalStateException("模型未返回有效响应");
+    }
+
+    private String canonicalToolCacheKey(String toolName, String argumentsJson) {
+        Map<String, Object> parsed = parseArgsSafe(argumentsJson);
+        if (parsed.isEmpty()) {
+            return toolName + ":{}";
+        }
+        try {
+            return toolName + ":" + objectMapper.writeValueAsString(new TreeMap<>(parsed));
+        } catch (Exception ignored) {
+            return toolName + ":" + (argumentsJson == null ? "" : argumentsJson.trim());
+        }
+    }
+
+    private void capturePreviewStopChanges(String jsonPayload, Map<String, Object> target) {
+        if (jsonPayload == null || jsonPayload.isBlank() || target == null) {
+            return;
+        }
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(jsonPayload, MAP_TYPE);
+            if (parsed == null) return;
+            Object proposalId = parsed.get("proposalId");
+            Object stopChanges = parsed.get("stopChanges");
+            if (proposalId != null && stopChanges instanceof List<?> list && !list.isEmpty()) {
+                target.put(String.valueOf(proposalId), list);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private Map<String, Object> parseArgsSafe(String argumentsJson) {

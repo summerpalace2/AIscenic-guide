@@ -970,46 +970,174 @@ public class AgentTripAuthoringService {
     }
 
     private List<Map<String, Object>> computeStopChanges(Map<String, Object> beforeTrip, Map<String, Object> afterTrip) {
-        Map<String, String> beforeDayStop = dayStopNamesMap(beforeTrip);
-        Map<String, String> afterDayStop = dayStopNamesMap(afterTrip);
+        List<IndexedStop> beforeList = flattenIndexedStops(beforeTrip);
+        List<IndexedStop> afterList = flattenIndexedStops(afterTrip);
+
+        Map<String, IndexedStop> beforeById = new LinkedHashMap<>();
+        for (IndexedStop s : beforeList) {
+            if (!s.id().isBlank()) beforeById.put(s.id(), s);
+        }
+        Map<String, IndexedStop> afterById = new LinkedHashMap<>();
+        for (IndexedStop s : afterList) {
+            if (!s.id().isBlank()) afterById.put(s.id(), s);
+        }
+
+        Set<String> matchedBeforeKeys = new HashSet<>();
+        Set<String> matchedAfterKeys = new HashSet<>();
         List<Map<String, Object>> changes = new ArrayList<>();
 
-        for (var entry : afterDayStop.entrySet()) {
-            if (!beforeDayStop.containsKey(entry.getKey())) {
-                changes.add(Map.of("action", "ADDED", "key", entry.getKey(), "stopName", entry.getValue()));
+        // 1. 先按相同 stopId 匹配，识别位置移动或时间/文案字段更新
+        for (IndexedStop after : afterList) {
+            if (after.id().isBlank()) continue;
+            IndexedStop before = beforeById.get(after.id());
+            if (before == null) continue;
+            matchedBeforeKeys.add(before.slotKey());
+            matchedAfterKeys.add(after.slotKey());
+
+            Map<String, Object> fields = diffStopFields(before, after);
+            boolean posChanged = before.day() != after.day() || before.index() != after.index();
+            if (posChanged) {
+                fields.put("position", Map.of(
+                        "before", Map.of("day", before.day(), "index", before.index()),
+                        "after", Map.of("day", after.day(), "index", after.index())
+                ));
+            }
+            if (!fields.isEmpty()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("action", posChanged ? "MOVED" : "UPDATED");
+                item.put("key", after.id());
+                item.put("stopName", after.name());
+                item.put("before", Map.of("day", before.day(), "index", before.index()));
+                item.put("after", Map.of("day", after.day(), "index", after.index()));
+                item.put("fields", fields);
+                changes.add(item);
             }
         }
-        for (var entry : beforeDayStop.entrySet()) {
-            if (!afterDayStop.containsKey(entry.getKey())) {
-                changes.add(Map.of("action", "REMOVED", "key", entry.getKey(), "stopName", entry.getValue()));
+
+        // 2. 再按同天同序号对位匹配，将原地换点归并为单条 UPDATED（指向新站 stopId 便于前端定位高亮）
+        Map<String, IndexedStop> remainingBeforeByPos = new LinkedHashMap<>();
+        for (IndexedStop before : beforeList) {
+            if (!matchedBeforeKeys.contains(before.slotKey())) {
+                remainingBeforeByPos.put(before.day() + ":" + before.index(), before);
             }
+        }
+        for (IndexedStop after : afterList) {
+            if (matchedAfterKeys.contains(after.slotKey())) continue;
+            IndexedStop replaced = remainingBeforeByPos.get(after.day() + ":" + after.index());
+            if (replaced != null && Objects.equals(replaced.type(), after.type())) {
+                matchedBeforeKeys.add(replaced.slotKey());
+                matchedAfterKeys.add(after.slotKey());
+                Map<String, Object> fields = diffStopFields(replaced, after);
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("action", "UPDATED");
+                item.put("key", !after.id().isBlank() ? after.id() : after.slotKey());
+                item.put("stopName", after.name());
+                item.put("before", Map.of("day", replaced.day(), "index", replaced.index()));
+                item.put("after", Map.of("day", after.day(), "index", after.index()));
+                item.put("fields", fields);
+                changes.add(item);
+            }
+        }
+
+        // 3. 其余未配对站点分别标记为 ADDED / REMOVED
+        for (IndexedStop after : afterList) {
+            if (matchedAfterKeys.contains(after.slotKey())) continue;
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("position", Map.of(
+                    "before", "未安排",
+                    "after", Map.of("day", after.day(), "index", after.index())
+            ));
+            if (!after.time().isBlank()) {
+                fields.put("time", Map.of("before", "未安排", "after", after.time()));
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("action", "ADDED");
+            item.put("key", !after.id().isBlank() ? after.id() : after.slotKey());
+            item.put("stopName", "第" + after.day() + "天 · " + after.name());
+            item.put("after", Map.of("day", after.day(), "index", after.index()));
+            item.put("fields", fields);
+            changes.add(item);
+        }
+        for (IndexedStop before : beforeList) {
+            if (matchedBeforeKeys.contains(before.slotKey())) continue;
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("position", Map.of(
+                    "before", Map.of("day", before.day(), "index", before.index()),
+                    "after", "已移除"
+            ));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("action", "REMOVED");
+            item.put("key", !before.id().isBlank() ? before.id() : before.slotKey());
+            item.put("stopName", "第" + before.day() + "天 · " + before.name());
+            item.put("before", Map.of("day", before.day(), "index", before.index()));
+            item.put("fields", fields);
+            changes.add(item);
         }
         return changes;
     }
+
+    private Map<String, Object> diffStopFields(IndexedStop before, IndexedStop after) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        if (!Objects.equals(before.name(), after.name())) {
+            fields.put("name", Map.of("before", before.name(), "after", after.name()));
+        }
+        if (!Objects.equals(before.time(), after.time())) {
+            fields.put("time", Map.of("before", before.time(), "after", after.time()));
+        }
+        if (!Objects.equals(before.duration(), after.duration())) {
+            fields.put("duration", Map.of("before", before.duration(), "after", after.duration()));
+        }
+        return fields;
+    }
+
+    private List<IndexedStop> flattenIndexedStops(Map<String, Object> trip) {
+        List<IndexedStop> out = new ArrayList<>();
+        if (trip == null || !(trip.get("days") instanceof List<?> days)) return out;
+        for (Object dayObj : days) {
+            if (!(dayObj instanceof Map<?, ?> d)) continue;
+            int dayNum = d.get("day") instanceof Number n ? n.intValue() : 1;
+            if (!(d.get("stops") instanceof List<?> stops)) continue;
+            for (int i = 0; i < stops.size(); i++) {
+                if (!(stops.get(i) instanceof Map<?, ?> s)) continue;
+                String id = firstNonBlank(safeText(s.get("id")), safeText(s.get("stopId")));
+                out.add(new IndexedStop(
+                        id,
+                        dayNum,
+                        i,
+                        safeText(s.get("name")),
+                        safeText(s.get("type")),
+                        safeText(s.get("time")),
+                        safeText(s.get("duration")),
+                        "D" + dayNum + "#" + i + ":" + safeText(s.get("name"))
+                ));
+            }
+        }
+        return out;
+    }
+
+    private record IndexedStop(
+            String id,
+            int day,
+            int index,
+            String name,
+            String type,
+            String time,
+            String duration,
+            String slotKey
+    ) {}
 
     private List<String> collectChangedSegments(List<Map<String, Object>> stopChanges) {
         if (stopChanges == null || stopChanges.isEmpty()) return List.of();
         List<String> out = new ArrayList<>();
         for (Map<String, Object> change : stopChanges) {
-            String action = "ADDED".equals(change.get("action")) ? "新增 " : "移除 ";
-            out.add(action + safeText(change.get("stopName")));
-        }
-        return out;
-    }
-
-    private Map<String, String> dayStopNamesMap(Map<String, Object> trip) {
-        Map<String, String> out = new LinkedHashMap<>();
-        if (!(trip.get("days") instanceof List<?> days)) return out;
-        for (Object dayObj : days) {
-            if (!(dayObj instanceof Map<?, ?> d)) continue;
-            String dayKey = String.valueOf(d.get("day"));
-            if (!(d.get("stops") instanceof List<?> stops)) continue;
-            int idx = 1;
-            for (Object sObj : stops) {
-                if (!(sObj instanceof Map<?, ?> s)) continue;
-                String name = safeText(s.get("name"));
-                out.put("D" + dayKey + "#" + idx++ + ":" + name, "第" + dayKey + "天 · " + name);
-            }
+            String act = safeText(change.get("action"));
+            String prefix = switch (act) {
+                case "ADDED" -> "新增 ";
+                case "REMOVED" -> "移除 ";
+                case "MOVED" -> "移动 ";
+                default -> "更新 ";
+            };
+            out.add(prefix + safeText(change.get("stopName")));
         }
         return out;
     }

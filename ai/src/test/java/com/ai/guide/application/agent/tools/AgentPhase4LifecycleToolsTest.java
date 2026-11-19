@@ -165,5 +165,6 @@ class AgentPhase4LifecycleToolsTest {
         JsonNode renamedJson = MAPPER.readTree(renamed.jsonPayload());
         assertEquals("山城调试验证之旅", renamedJson.path("title").asText());
         assertEquals(2, renamedJson.path("currentVersion").asInt());
+        assertEquals("ps-9", renamedJson.path("sessionId").asText());
     }
 }

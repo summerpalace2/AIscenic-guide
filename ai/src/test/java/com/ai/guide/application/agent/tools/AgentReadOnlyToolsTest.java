@@ -98,18 +98,38 @@ class AgentReadOnlyToolsTest {
         assertFalse(missing.ok());
         assertTrue(missing.jsonPayload().contains("MISSING_QUERY"));
 
-        // 指定 SCENIC 类别时不查餐饮、保留本地景点与高德景点
+        // 缺少或非法 category 时在执行层显式拒绝，迫使模型按用户意图显式传值自纠
+        AgentToolResult missingCategory = tool.execute("{\"query\":\"博物馆\"}", DEFAULT_CTX);
+        assertFalse(missingCategory.ok());
+        assertTrue(missingCategory.jsonPayload().contains("INVALID_CATEGORY"));
+
+        AgentToolResult invalidCategory = tool.execute("{\"query\":\"博物馆\",\"category\":\"HOTEL\"}", DEFAULT_CTX);
+        assertFalse(invalidCategory.ok());
+        assertTrue(invalidCategory.jsonPayload().contains("INVALID_CATEGORY"));
+
+        // 指定 SCENIC 类别时不查餐饮、保留本地景点与高德景点，且输出景点专属摘要与标签
         AgentToolResult scenic = tool.execute("{\"query\":\"博物馆\",\"category\":\"SCENIC\"}", DEFAULT_CTX);
         assertTrue(scenic.ok());
+        assertTrue(scenic.summary().contains("景点候选"));
+        assertEquals("SCENIC", scenic.clientData().get("category"));
+        assertEquals("景点候选检索", scenic.clientData().get("toolLabel"));
         JsonNode scenicJson = MAPPER.readTree(scenic.jsonPayload());
         assertEquals(1, scenicJson.path("localScenic").size());
         assertEquals(0, scenicJson.path("localDining").size());
         assertEquals(1, scenicJson.path("livePois").size());
 
+        // 指定 DINING 类别时不查景点、输出餐饮专属摘要与标签
+        AgentToolResult dining = tool.execute("{\"query\":\"江湖菜\",\"category\":\"DINING\"}", DEFAULT_CTX);
+        assertTrue(dining.ok());
+        assertTrue(dining.summary().contains("餐饮候选"));
+        assertEquals("DINING", dining.clientData().get("category"));
+        assertEquals("餐饮美食检索", dining.clientData().get("toolLabel"));
+        assertEquals(0, MAPPER.readTree(dining.jsonPayload()).path("localScenic").size());
+
         // 无候选结果时返回结构化 failure 供模型换词重查
         when(geo.searchPoi(anyString(), anyString())).thenReturn(
                 new GeoPoiOutcome(GeoOutcomeStatus.UNAVAILABLE, List.of(), "empty", Instant.now()));
-        AgentToolResult empty = tool.execute("{\"query\":\"不存在的地址XYZ\"}", DEFAULT_CTX);
+        AgentToolResult empty = tool.execute("{\"query\":\"不存在的地址XYZ\",\"category\":\"ALL\"}", DEFAULT_CTX);
         assertFalse(empty.ok());
         assertTrue(empty.jsonPayload().contains("NO_POI_FOUND"));
     }

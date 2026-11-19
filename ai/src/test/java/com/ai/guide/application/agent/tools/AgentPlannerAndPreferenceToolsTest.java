@@ -46,19 +46,24 @@ class AgentPlannerAndPreferenceToolsTest {
         assertTrue(unbound.jsonPayload().contains("NO_PLANNER_SESSION"));
         verifyNoInteractions(planner);
 
-        // 绑定后返回精简日程摘要，过滤大体积折线字段
+        // 绑定后返回精简日程摘要，过滤大体积折线字段，同时保留 constraints、天气时效、路线状态与站点区域
         Map<String, Object> trip = Map.of(
                 "title", "重庆三日经典游",
                 "city", "重庆",
                 "version", 3,
+                "routeDataStatus", "VERIFIED_AMAP",
+                "sourceMode", "高德实时接口",
+                "constraints", Map.of("companions", "FAMILY", "walkingTolerance", "LOW"),
                 "pinnedStopIds", List.of("stop-1"),
                 "days", List.of(
-                        Map.of("day", 1, "title", "母城人文", "stops", List.of(
-                                Map.of("stopId", "stop-1", "name", "解放碑", "category", "地标", "pinned", true, "polyline", "HUGE_POLYLINE")
+                        Map.of("day", 1, "date", "2026-11-18", "title", "母城人文", "stops", List.of(
+                                Map.of("stopId", "stop-1", "name", "解放碑", "district", "渝中区", "category", "地标", "pinned", true, "polyline", "HUGE_POLYLINE")
                         )),
-                        Map.of("day", 2, "title", "山城夜景", "stops", List.of(
-                                Map.of("stopId", "stop-2", "name", "南山一棵树", "category", "观景")
-                        ))
+                        Map.of("day", 2, "date", "2026-11-19", "title", "山城夜景",
+                                "weather", Map.of("value", "小雨 · 14°/11°C", "status", "动态", "note", "查询时间 2026-11-19 08:00", "citations", List.of("omit")),
+                                "stops", List.of(
+                                        Map.of("stopId", "stop-2", "name", "南山一棵树", "district", "南岸区", "category", "观景", "walk", "500 米 · 8 分钟")
+                                ))
                 )
         );
         when(planner.get("plan-sess-1", "tok-123"))
@@ -69,7 +74,13 @@ class AgentPlannerAndPreferenceToolsTest {
         assertFalse(res.jsonPayload().contains("HUGE_POLYLINE"));
         JsonNode json = MAPPER.readTree(res.jsonPayload());
         assertEquals(3, json.path("currentVersion").asInt());
+        assertEquals("VERIFIED_AMAP", json.path("routeDataStatus").asText());
+        assertEquals("FAMILY", json.path("constraints").path("companions").asText());
         assertEquals(1, json.path("days").size());
+        assertEquals("2026-11-19", json.path("days").get(0).path("date").asText());
+        assertEquals("小雨 · 14°/11°C", json.path("days").get(0).path("weather").path("value").asText());
+        assertTrue(json.path("days").get(0).path("weather").path("note").asText().contains("2026-11-19"));
+        assertEquals("南岸区", json.path("days").get(0).path("stops").get(0).path("district").asText());
         assertEquals("南山一棵树", json.path("days").get(0).path("stops").get(0).path("name").asText());
     }
 

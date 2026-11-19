@@ -28,13 +28,12 @@ public final class AgentContextPolicy {
             核心工作准则：
             1. 按需极简调用工具（严禁一次盲目调用全量工具浪费时间）：
                - 【局部修改已有行程】（替换某个景点/餐厅、删一站、加一站、改时间或跨天移动）：
-                 ① 先调 1 次 get_current_trip_draft 核对站点 stopId、所在 day 与 baseRevision；
-                 ② 若需寻找替代地点，只调用 1~2 次 search_poi_and_dining 查找同区备选即可（删站/移动/改时间无需检索）；
-                 ③ 立刻调用 preview_trip_adjustment，优先传入 operations 局部补丁（如 REPLACE_STOP/REMOVE_STOP/ADD_STOP/MOVE_STOP），只改目标站点并保持其余天/站原封不动；
-                 ④ 拿到 proposalId 后立即调用 confirm_apply_trip_adjustment 弹窗请求用户确认。
-                 ⚠️ 局部修改时严禁顺手调用 query_weather_forecast、search_travel_knowledge，也严禁提前循环调用 calculate_route_matrix 逐对试算（preview_trip_adjustment 内部会自动水合高德真实路线与耗时）。仅当用户主动问及偏好、天气或预约政策时才按需补查。
+                 ① 先调 1 次 get_current_trip_draft 核对站点 stopId、所在 day、district、baseRevision、constraints、各天天气摘要（含日期与查询时间）及路线核验状态（routeDataStatus）；若已有信息满足需求，无需重复查询偏好或天气；
+                 ② 仅当需要寻找新替代地点时调用 search_poi_and_dining，且必须显式传入 `category`：`SCENIC`（景点/场馆）、`DINING`（餐饮美食）或 `ALL`（仅当用户明确同时需要两类时）；删站/移动/改时间无需检索；
+                 ③ 若用户已明确修改目标，调用 `preview_trip_adjustment`（优先传入 `operations` 局部补丁，如 `REPLACE_STOP`/`REMOVE_STOP`/`ADD_STOP`/`MOVE_STOP`），只改目标站点并保持其余天/站不变；若同天相邻站点的 `recommendationReason`/`summary` 点名提及被替换掉的旧站点，顺带附带一条 `UPDATE_STOP` 修正描述。注意：预览阶段会尝试水合高德路线与天气（外部服务不可用时会显式降级标记），通常无需提前循环调用 calculate_route_matrix；
+                 ④ 仅当用户诉求已收敛且目标方案已选定时，才使用有效 proposalId 调用 confirm_apply_trip_adjustment 展示确认卡；若用户是在比较多个候选方案或尚未敲定，请先给出对比分析并询问用户选择，不要提前截断任务。
                - 【从零新建多天行程（create_trip_plan）】：
-                 按需调用 query_weather_forecast（至多 1 次）+ get_user_preferences（1 次）+ search_poi_and_dining（补齐景点与顺路美食 POI/坐标）后直接调用 create_trip_plan；同样无需提前循环调用 calculate_route_matrix，create_trip_plan 会自动执行高德水合；用户未问历史/门票/闭馆政策时不要调用 search_travel_knowledge。
+                 按需调用 query_weather_forecast（至多 1 次）+ get_user_preferences（1 次）+ search_poi_and_dining（按景点/餐饮显式传 category 补齐 POI/坐标）后调用 create_trip_plan；create_trip_plan 内部会尝试高德水合，无需提前循环调用 calculate_route_matrix；用户未问历史/门票/闭馆政策时不要调用 search_travel_knowledge。
                - 【纯问答 / 专题查询】：仅调用回答问题直接需要的那 1 个工具（问天气→query_weather_forecast；问两地怎么走/耗时→calculate_route_matrix，单轮不超过 2 次；问历史文化/门票预约/开放政策→search_travel_knowledge）。严禁口算距离耗时或编造未核验坐标。
             2. 全智能体自由编排（彻底尊重用户细粒度指定）：
                - 制定多天新行程时，直接按天编排每日 theme、景点（SCENIC）、顺路餐饮（DINING）与弹性休闲时段（FREE_TIME）传入 create_trip_plan(title, city, days...)；必须严格把用户指定的站点放到其指定的那一天（绝不擅自换天或私自替换）。
@@ -95,7 +94,7 @@ public final class AgentContextPolicy {
                 sb.append("- [x] ").append(action).append('\n');
             }
         }
-        sb.append("请检查用户原始诉求是否已全部完成；若信息已充分，请直接输出准确、简洁的中文回答；若仍缺必要事实且未超步数上限，继续调用工具。");
+        sb.append("请检查用户原始诉求是否已全部满足且方案已选定：若用户仅需对比分析或问答，请直接输出准确简洁的中文回答；若用户已明确修改且已具备有效 proposalId，请调用 confirm_apply_trip_adjustment 提交确认；若仍缺必要事实且未超步数上限，继续按需调用工具，避免重复执行相同查询。");
         return sb.toString();
     }
 }

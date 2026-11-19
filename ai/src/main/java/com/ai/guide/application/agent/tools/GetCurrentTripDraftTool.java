@@ -92,6 +92,15 @@ public class GetCurrentTripDraftTool implements AgentToolPort {
         payload.put("currentVersion", currentVersion);
         payload.put("title", tripMap.get("title"));
         payload.put("city", tripMap.get("city"));
+        if (tripMap.get("constraints") != null) {
+            payload.put("constraints", tripMap.get("constraints"));
+        }
+        if (tripMap.get("routeDataStatus") != null) {
+            payload.put("routeDataStatus", tripMap.get("routeDataStatus"));
+        }
+        if (tripMap.get("sourceMode") != null) {
+            payload.put("sourceMode", tripMap.get("sourceMode"));
+        }
         payload.put("pinnedStopIds", tripMap.get("pinnedStopIds") == null ? List.of() : tripMap.get("pinnedStopIds"));
         payload.put("days", daysSummary);
 

@@ -331,7 +331,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
             String resolvedCityCode = cityCode == null ? "" : cityCode.trim();
             if (!resolvedCityCode.matches("\\d{6}")) {
                 JsonNode geocodeResponse = execute(
-                        () -> client.get(client.buildGeocodeRequest(cityCode, cityCode)), requestTimeoutMs, 0);
+                        () -> client.get(client.buildGeocodeRequest(cityCode, cityCode)), requestTimeoutMs, 1);
                 resolvedCityCode = AmapResponseNormalizer.normalizeGeocode(geocodeResponse).adcode();
             }
             if (resolvedCityCode == null || !resolvedCityCode.matches("\\d{6}")) {
@@ -341,7 +341,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
             JsonNode response = execute(
                     () -> client.get(client.buildWeatherRequest(weatherCityCode, "all")),
                     requestTimeoutMs,
-                    0);
+                    1);
             return new GeoWeatherOutcome(GeoOutcomeStatus.SUCCESS,
                     AmapResponseNormalizer.normalizeWeather(response), "", Instant.now());
         } catch (RuntimeException failure) {
@@ -476,7 +476,7 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
             throw rateLimited("高德接口处于 QPS 冷却期");
         }
         ProviderFailure latest = null;
-        for (int attempt = 0; attempt <= retries; attempt++) {
+        for (int attempt = 0; ; attempt++) {
             if (OperationDeadline.expired()) throw new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "规划请求预算已用尽", false);
             Supplier<JsonNode> boundedOperation = OperationDeadline.carry(() -> {
                 if (OperationDeadline.expired()) throw new ProviderFailure(GeoOutcomeStatus.TIMEOUT, "规划请求预算已用尽", false);
@@ -506,13 +506,22 @@ public class AmapRouteService implements PoiSearchGatewayPort, GeoRouteGatewayPo
                 }
                 if (latest.status == GeoOutcomeStatus.INVALID) break;
             }
-            if (attempt >= retries || latest == null || !latest.retryable
-                    || (latest.status != GeoOutcomeStatus.TIMEOUT && latest.status != GeoOutcomeStatus.UNAVAILABLE)) {
+            int maxRetries = (latest != null && latest.status == GeoOutcomeStatus.TLS_ERROR)
+                    ? Math.max(retries, 2)
+                    : retries;
+            if (attempt >= maxRetries || latest == null || !latest.retryable
+                    || (latest.status != GeoOutcomeStatus.TIMEOUT
+                        && latest.status != GeoOutcomeStatus.UNAVAILABLE
+                        && latest.status != GeoOutcomeStatus.TLS_ERROR)) {
                 break;
             }
             try {
                 if (OperationDeadline.expired()) break;
-                TimeUnit.NANOSECONDS.sleep(Math.min(OperationDeadline.remainingNanos(), TimeUnit.MILLISECONDS.toNanos(180L)));
+                long baseDelayMs = 150L * (attempt + 1);
+                long jitterMs = java.util.concurrent.ThreadLocalRandom.current().nextLong(0L, 80L);
+                TimeUnit.NANOSECONDS.sleep(Math.min(
+                        OperationDeadline.remainingNanos(),
+                        TimeUnit.MILLISECONDS.toNanos(baseDelayMs + jitterMs)));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 return fail(new ProviderFailure(GeoOutcomeStatus.UNAVAILABLE, "高德接口调用被中断", false));

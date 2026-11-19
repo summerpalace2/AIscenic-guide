@@ -136,6 +136,9 @@ public class ConfirmSaveFormalTripTool implements AgentToolPort {
         Map<String, Object> receipt = new LinkedHashMap<>();
         receipt.put("ok", true);
         receipt.put("saved", true);
+        if (context.hasPlannerSession()) {
+            receipt.put("sessionId", context.plannerSessionId());
+        }
         receipt.put("tripId", body.get("tripId"));
         receipt.put("currentVersion", resolvedVersion);
         if (resolvedTitle != null) receipt.put("title", resolvedTitle);

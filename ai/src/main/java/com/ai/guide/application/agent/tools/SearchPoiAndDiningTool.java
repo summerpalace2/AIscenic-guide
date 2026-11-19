@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 景点与餐饮 POI 检索工具：融合本地受控目录与高德实时 POI 搜索。
@@ -29,6 +30,7 @@ import java.util.Map;
 public class SearchPoiAndDiningTool implements AgentToolPort {
 
     public static final String TOOL_NAME = "search_poi_and_dining";
+    private static final Set<String> VALID_CATEGORIES = Set.of("SCENIC", "DINING", "ALL");
 
     private static final String SCHEMA = """
             {
@@ -44,15 +46,15 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
                 },
                 "category": {
                   "type": "string",
-                  "enum": ["ALL", "SCENIC", "DINING"],
-                  "description": "检索类别：ALL(全部)、SCENIC(景点/场馆)、DINING(餐饮美食)"
+                  "enum": ["SCENIC", "DINING", "ALL"],
+                  "description": "必填检索类别：SCENIC(仅检索景点/场馆)、DINING(仅检索餐饮美食)、ALL(仅当用户明确同时需要景点与餐饮时使用)"
                 },
                 "limit": {
                   "type": "integer",
                   "description": "返回最大条数（1~10，默认 5）"
                 }
               },
-              "required": ["query"]
+              "required": ["query", "category"]
             }
             """;
 
@@ -91,7 +93,11 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
             return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "MISSING_QUERY", "请提供景点或餐饮检索关键词 query");
         }
         String city = AgentToolJsonSupport.text(args, "city", context.activeCity());
-        String category = AgentToolJsonSupport.text(args, "category", "ALL").toUpperCase(Locale.ROOT);
+        String category = AgentToolJsonSupport.text(args, "category", "").toUpperCase(Locale.ROOT);
+        if (!VALID_CATEGORIES.contains(category)) {
+            return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "INVALID_CATEGORY",
+                    "参数 category 必填且仅支持 SCENIC（仅景点/场馆）、DINING（仅餐饮美食）或 ALL（同时检索两类），请按用户意图显式指定后重试。");
+        }
         int limit = AgentToolJsonSupport.intValue(args, "limit", 5, 1, 10);
 
         List<Map<String, Object>> localScenic = "DINING".equals(category) ? List.of() : matchLocalAttractions(city, query, limit);
@@ -102,6 +108,7 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
         payload.put("ok", true);
         payload.put("city", city);
         payload.put("query", query);
+        payload.put("category", category);
         payload.put("localScenic", localScenic);
         payload.put("localDining", localDining);
         payload.put("livePois", livePois);
@@ -109,10 +116,44 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
         int total = localScenic.size() + localDining.size() + livePois.size();
         if (total == 0) {
             return AgentToolJsonSupport.failure(objectMapper, TOOL_NAME, "NO_POI_FOUND",
-                    "未在" + city + "检索到匹配“" + query + "”的景点或餐饮，请尝试更换关键词或放宽区域。");
+                    "未在" + city + "检索到匹配“" + query + "”的" + categoryDisplayNoun(category) + "，请尝试更换关键词或放宽区域。");
         }
-        return AgentToolResult.success(TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, payload),
-                "检索到 " + total + " 条" + city + "相关地点候选");
+        String displayCategory = resolveDisplayCategory(category, localScenic, localDining);
+        String summary = "检索到 " + total + " 条" + city + categoryDisplayNoun(displayCategory) + "候选";
+        Map<String, Object> clientData = Map.of(
+                "category", displayCategory,
+                "toolLabel", toolLabelForCategory(displayCategory)
+        );
+        return AgentToolResult.successWithClientData(
+                TOOL_NAME, AgentToolJsonSupport.writeJson(objectMapper, payload), summary, clientData);
+    }
+
+    private static String resolveDisplayCategory(String effectiveCategory,
+                                                 List<Map<String, Object>> localScenic,
+                                                 List<Map<String, Object>> localDining) {
+        if ("SCENIC".equals(effectiveCategory) || (!localScenic.isEmpty() && localDining.isEmpty())) {
+            return "SCENIC";
+        }
+        if ("DINING".equals(effectiveCategory) || (!localDining.isEmpty() && localScenic.isEmpty())) {
+            return "DINING";
+        }
+        return "ALL";
+    }
+
+    private static String categoryDisplayNoun(String category) {
+        return switch (category) {
+            case "SCENIC" -> "景点";
+            case "DINING" -> "餐饮";
+            default -> "地点";
+        };
+    }
+
+    private static String toolLabelForCategory(String category) {
+        return switch (category) {
+            case "SCENIC" -> "景点候选检索";
+            case "DINING" -> "餐饮美食检索";
+            default -> "地点候选检索";
+        };
     }
 
     private List<Map<String, Object>> matchLocalAttractions(String city, String query, int limit) {
@@ -183,6 +224,9 @@ public class SearchPoiAndDiningTool implements AgentToolPort {
         GeoPoiOutcome outcome = types.isEmpty()
                 ? geoRouteGateway.searchPoi(query, city)
                 : geoRouteGateway.searchPoi(query, city, types);
+        if (outcome == null && !types.isEmpty()) {
+            outcome = geoRouteGateway.searchPoi(query, city);
+        }
         if (outcome == null || outcome.status() != GeoOutcomeStatus.SUCCESS || outcome.candidates() == null) {
             return List.of();
         }

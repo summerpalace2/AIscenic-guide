@@ -84,11 +84,23 @@ final class AgentToolJsonSupport {
             }
             Map<String, Object> daySummary = new LinkedHashMap<>();
             daySummary.put("day", dayNum);
+            if (dayMap.get("date") != null) {
+                daySummary.put("date", dayMap.get("date"));
+            }
             if (dayMap.get("theme") != null) {
                 daySummary.put("theme", dayMap.get("theme"));
             }
             if (dayMap.get("title") != null) {
                 daySummary.put("title", dayMap.get("title"));
+            }
+            if (dayMap.get("weather") instanceof Map<?, ?> weatherMap) {
+                Map<String, Object> weatherSummary = new LinkedHashMap<>();
+                if (weatherMap.get("value") != null) weatherSummary.put("value", weatherMap.get("value"));
+                if (weatherMap.get("status") != null) weatherSummary.put("status", weatherMap.get("status"));
+                if (weatherMap.get("note") != null) weatherSummary.put("note", weatherMap.get("note"));
+                if (!weatherSummary.isEmpty()) {
+                    daySummary.put("weather", weatherSummary);
+                }
             }
             List<Map<String, Object>> stopList = new ArrayList<>();
             if (dayMap.get("stops") instanceof Collection<?> stops) {
@@ -101,11 +113,18 @@ final class AgentToolJsonSupport {
                     item.put("name", stop.get("name"));
                     if (stop.get("type") != null) item.put("type", stop.get("type"));
                     if (stop.get("category") != null) item.put("category", stop.get("category"));
+                    if (stop.get("district") != null) item.put("district", stop.get("district"));
                     if (stop.get("time") != null) item.put("time", stop.get("time"));
                     else if (stop.get("period") != null) item.put("period", stop.get("period"));
                     if (stop.get("duration") != null) item.put("duration", stop.get("duration"));
                     if (stop.get("location") != null) item.put("location", stop.get("location"));
                     if (stop.get("openingHours") != null) item.put("openingHours", stop.get("openingHours"));
+                    if (stop.get("walk") != null) item.put("walk", stop.get("walk"));
+                    if (stop.get("routeDataStatus") != null) {
+                        item.put("routeDataStatus", stop.get("routeDataStatus"));
+                    } else if (stop.get("walkingInfo") instanceof Map<?, ?> walkInfo && walkInfo.get("status") != null) {
+                        item.put("routeStatus", walkInfo.get("status"));
+                    }
                     if (Boolean.TRUE.equals(stop.get("pinned"))) item.put("pinned", true);
                     if (Boolean.TRUE.equals(stop.get("fixed"))) item.put("fixed", true);
                     stopList.add(item);

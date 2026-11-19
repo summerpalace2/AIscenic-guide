@@ -264,6 +264,16 @@ class AgentTripAuthoringServiceTest {
                 """);
         var previewed = service.previewPatch(ctx, surgicalPatch);
         assertTrue(previewed.ok(), previewed.message());
+        assertEquals(1, previewed.stopChanges().size());
+        Map<String, Object> change = previewed.stopChanges().get(0);
+        assertEquals("UPDATED", change.get("action"));
+        assertFalse(String.valueOf(change.get("key")).isBlank(), "必须返回真实 stop.id 作为定位 key");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> changeFields = (Map<String, Object>) change.get("fields");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> nameDiff = (Map<String, Object>) changeFields.get("name");
+        assertEquals("十八梯传统风貌区", nameDiff.get("before"));
+        assertEquals("重庆湖广会馆", nameDiff.get("after"));
 
         when(repo.update(eq(currentSession), any(), eq(1), eq("AGENT_NATIVE_PATCH"), anyString(), anyString(), any()))
                 .thenAnswer(inv -> {
